@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BitShares Wallet</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app" class="wallet-container">
+    
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="screen active">
+      <div class="loading-content">
+        <div class="logo-with-spinner">
+          <div class="loading-spinner"></div>
+          <svg class="bts-logo" viewBox="0 0 100 100" width="80" height="80">
+            <defs>
+              <linearGradient id="btsGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#00D4AA"/>
+                <stop offset="50%" style="stop-color:#00B4D8"/>
+                <stop offset="100%" style="stop-color:#0077B6"/>
+              </linearGradient>
+            </defs>
+            <polygon points="50,5 95,30 95,70 50,95 5,70 5,30" fill="none" stroke="url(#btsGradient)" stroke-width="3"/>
+            <polygon points="50,20 75,35 75,65 50,80 25,65 25,35" fill="url(#btsGradient)" opacity="0.3"/>
+            <text x="50" y="58" text-anchor="middle" fill="url(#btsGradient)" font-size="24" font-weight="bold">BTS</text>
+          </svg>
+        </div>
+        <p class="loading-text">Initializing BitShares Wallet...</p>
+      </div>
+    </div>
+
+    <!-- Welcome/Setup Screen -->
+    <div id="welcome-screen" class="screen">
+      <div class="welcome-header">
+        <svg class="bts-logo-large" viewBox="0 0 100 100" width="100" height="100">
+          <defs>
+            <linearGradient id="btsGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#00D4AA"/>
+              <stop offset="50%" style="stop-color:#00B4D8"/>
+              <stop offset="100%" style="stop-color:#0077B6"/>
+            </linearGradient>
+          </defs>
+          <polygon points="50,5 95,30 95,70 50,95 5,70 5,30" fill="none" stroke="url(#btsGradient2)" stroke-width="3"/>
+          <polygon points="50,20 75,35 75,65 50,80 25,65 25,35" fill="url(#btsGradient2)" opacity="0.3"/>
+          <text x="50" y="58" text-anchor="middle" fill="url(#btsGradient2)" font-size="24" font-weight="bold">BTS</text>
+        </svg>
+        <h1>BitShares Wallet</h1>
+        <p class="subtitle">Your gateway to decentralized finance</p>
+      </div>
+      <div class="welcome-actions">
+        <button id="btn-create-wallet" class="btn btn-primary">
+          <span class="btn-icon">+</span>
+          Create New Wallet
+        </button>
+        <button id="btn-import-wallet" class="btn btn-secondary">
+          <span class="btn-icon">↓</span>
+          Import Existing Wallet
+        </button>
+      </div>
+      <div class="welcome-footer">
+        <p class="security-note">🔒 Your keys never leave your device</p>
+      </div>
+    </div>
+
+    <!-- Create Wallet Screen -->
+    <div id="create-wallet-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="welcome-screen">←</button>
+        <h2>Create Wallet</h2>
+      </div>
+      <div class="form-container">
+        <div class="form-group">
+          <label for="wallet-name">Wallet Name</label>
+          <input type="text" id="wallet-name" placeholder="My BitShares Wallet" maxlength="32">
+        </div>
+        <div class="form-group">
+          <label for="wallet-password">Password</label>
+          <input type="password" id="wallet-password" placeholder="Enter a strong password">
+          <div class="password-strength" id="password-strength"></div>
+        </div>
+        <div class="form-group">
+          <label for="wallet-password-confirm">Confirm Password</label>
+          <input type="password" id="wallet-password-confirm" placeholder="Confirm your password">
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="agree-terms">
+          <label for="agree-terms">I understand that I am responsible for keeping my password safe</label>
+        </div>
+        <button id="btn-generate-wallet" class="btn btn-primary" disabled>Generate Wallet</button>
+      </div>
+    </div>
+
+    <!-- Backup Brainkey Screen -->
+    <div id="backup-brainkey-screen" class="screen">
+      <div class="screen-header">
+        <h2>🔐 Backup Your Brainkey</h2>
+      </div>
+      <div class="brainkey-container">
+        <div class="warning-box">
+          <span class="warning-icon">⚠️</span>
+          <p>Write down these words in order and store them safely. This is the ONLY way to recover your wallet.</p>
+        </div>
+        <div id="brainkey-display" class="brainkey-words"></div>
+        <div class="brainkey-actions">
+          <button id="btn-copy-brainkey" class="btn btn-secondary">
+            <span class="btn-icon">📋</span> Copy to Clipboard
+          </button>
+          <button id="btn-verify-brainkey" class="btn btn-primary">
+            I've Backed Up My Brainkey
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Wallet Screen -->
+    <div id="import-wallet-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="welcome-screen">←</button>
+        <h2>Import Wallet</h2>
+      </div>
+      <div class="import-tabs">
+        <button class="tab-btn active" data-tab="import-account">Account</button>
+        <button class="tab-btn" data-tab="import-brainkey">Brainkey</button>
+      </div>
+      <div class="form-container">
+        <!-- Import by Account -->
+        <div id="import-account" class="import-tab-content active">
+          <div class="form-group">
+            <label for="import-account-name">BitShares Account Name</label>
+            <input type="text" id="import-account-name" placeholder="e.g., my-account">
+          </div>
+          <div class="form-group">
+            <label for="import-account-password">BitShares Password</label>
+            <div class="password-input-wrapper">
+              <input type="password" id="import-account-password" placeholder="Your BitShares password">
+              <button type="button" class="password-toggle" data-target="import-account-password">
+                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Import by Brainkey -->
+        <div id="import-brainkey" class="import-tab-content">
+          <div class="form-group">
+            <label for="import-brainkey-input">Brainkey (16 words)</label>
+            <textarea id="import-brainkey-input" rows="3" placeholder="Enter your 16-word brainkey..."></textarea>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="import-wallet-password">Wallet Password (to encrypt locally)</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="import-wallet-password" placeholder="Create a local password">
+            <button type="button" class="password-toggle" data-target="import-wallet-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="import-wallet-password-confirm">Confirm Wallet Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="import-wallet-password-confirm" placeholder="Repeat wallet password">
+            <button type="button" class="password-toggle" data-target="import-wallet-password-confirm">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button id="btn-import-submit" class="btn btn-primary">Import Wallet</button>
+      </div>
+    </div>
+
+    <!-- Add Account Screen -->
+    <div id="add-account-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="dashboard-screen">←</button>
+        <h2>Add Account</h2>
+      </div>
+      <div class="form-container">
+        <p class="form-description">Add another BitShares account to your wallet. Enter the account name and its BitShares password.</p>
+        <div class="form-group">
+          <label for="add-account-name">Account Name</label>
+          <input type="text" id="add-account-name" placeholder="e.g., my-other-account">
+          <span id="add-account-status" class="input-status"></span>
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="add-account-watch-only">
+          <label for="add-account-watch-only">Watch only (no private keys, view balances only)</label>
+        </div>
+        <div id="add-account-keys-section">
+          <div class="form-group">
+            <label for="add-account-password">BitShares Password</label>
+            <div class="password-input-wrapper">
+              <input type="password" id="add-account-password" placeholder="Account's BitShares password">
+              <button type="button" class="password-toggle" data-target="add-account-password">
+                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="add-account-wallet-password">Wallet Password</label>
+            <div class="password-input-wrapper">
+              <input type="password" id="add-account-wallet-password" placeholder="Enter your wallet password">
+              <button type="button" class="password-toggle" data-target="add-account-wallet-password">
+                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="add-account-skip-verify">
+            <label for="add-account-skip-verify">Skip key verification (use if account has custom keys)</label>
+          </div>
+        </div>
+        <button id="btn-add-account-submit" class="btn btn-primary">Add Account</button>
+      </div>
+    </div>
+
+    <!-- Unlock Screen -->
+    <div id="unlock-screen" class="screen">
+      <div class="unlock-container">
+        <div class="unlock-logo">
+          <svg class="bts-logo" viewBox="0 0 100 100" width="64" height="64">
+            <defs>
+              <linearGradient id="btsGradientUnlock" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#00D4AA"/>
+                <stop offset="50%" style="stop-color:#00B4D8"/>
+                <stop offset="100%" style="stop-color:#0077B6"/>
+              </linearGradient>
+            </defs>
+            <polygon points="50,5 95,30 95,70 50,95 5,70 5,30" fill="none" stroke="url(#btsGradientUnlock)" stroke-width="3"/>
+            <polygon points="50,20 75,35 75,65 50,80 25,65 25,35" fill="url(#btsGradientUnlock)" opacity="0.3"/>
+            <text x="50" y="58" text-anchor="middle" fill="url(#btsGradientUnlock)" font-size="24" font-weight="bold">BTS</text>
+          </svg>
+        </div>
+        <h2>Unlock Wallet</h2>
+        <div class="unlock-form">
+          <div class="form-group">
+            <div class="password-input-wrapper">
+              <input type="password" id="unlock-password" placeholder="Enter your password">
+              <button type="button" class="password-toggle" data-target="unlock-password">
+                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <button id="btn-unlock" class="btn btn-primary btn-full">Unlock</button>
+        </div>
+        <div class="unlock-footer">
+          <p class="unlock-hint">Forgot password? Reset wallet and restore with your private key or brainkey.</p>
+          <button id="btn-reset-wallet-unlock" class="btn btn-text">Reset Wallet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard-screen" class="screen">
+      <div class="dashboard-header">
+        <div class="network-selector">
+          <span class="network-dot"></span>
+          <select id="network-select">
+            <option value="mainnet">BitShares Mainnet</option>
+            <option value="testnet">BitShares Testnet</option>
+          </select>
+        </div>
+        <div class="header-actions">
+          <button id="btn-lock" class="btn-icon-only" title="Lock Wallet">🔒</button>
+          <button id="btn-settings" class="btn-icon-only" title="Settings">⚙️</button>
+        </div>
+      </div>
+      
+      <div class="account-card">
+        <div class="account-info">
+          <canvas class="account-avatar" id="account-avatar" width="80" height="80"></canvas>
+          <div class="account-details">
+            <div class="account-selector-wrapper">
+              <select id="account-selector" class="account-selector">
+                <!-- Accounts populated dynamically -->
+              </select>
+            </div>
+            <p id="account-id" class="account-id">1.2.xxxxx</p>
+          </div>
+        </div>
+        
+        <div class="balance-display">
+          <span class="balance-label">Total Balance</span>
+          <span class="balance-amount" id="balance-bts">0.00000 BTS</span>
+          <span class="balance-usd" id="balance-usd">≈ $0.00 USD</span>
+          <span class="bts-price" id="bts-price-display">Loading price...</span>
+        </div>
+      </div>
+      
+      <div class="action-buttons">
+        <button id="btn-send" class="action-btn">
+          <span class="action-icon">↑</span>
+          <span>Send</span>
+        </button>
+        <button id="btn-receive" class="action-btn">
+          <span class="action-icon">↓</span>
+          <span>Receive</span>
+        </button>
+        <button id="btn-swap" class="action-btn">
+          <span class="action-icon">⇄</span>
+          <span>Swap</span>
+        </button>
+        <button id="btn-history" class="action-btn">
+          <span class="action-icon">📜</span>
+          <span>History</span>
+        </button>
+      </div>
+      
+      <div class="assets-section">
+        <div class="section-header">
+          <h4>Assets</h4>
+        </div>
+        <div id="assets-list" class="assets-list">
+          <!-- Assets will be populated here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Send Screen -->
+    <div id="send-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="dashboard-screen">←</button>
+        <h2>Send</h2>
+      </div>
+      <div class="form-container">
+        <div class="form-group">
+          <label for="send-to">Recipient</label>
+          <div class="recipient-input-wrapper">
+            <input type="text" id="send-to" placeholder="Account name or ID">
+            <button id="btn-open-address-book" class="btn-address-book" title="Address Book">📖</button>
+          </div>
+          <span id="send-to-status" class="input-status"></span>
+        </div>
+        <div class="form-group">
+          <label for="send-asset">Asset</label>
+          <select id="send-asset">
+            <option value="1.3.0">BTS (BitShares)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="send-amount">Amount</label>
+          <div class="amount-input-wrapper">
+            <input type="number" id="send-amount" placeholder="0.00" step="0.00001">
+            <button id="btn-max-amount" class="btn-max">MAX</button>
+          </div>
+          <span class="available-balance">Available: <span id="available-balance">0.00000</span></span>
+        </div>
+        <div class="form-group">
+          <label for="send-memo">Memo (Optional)</label>
+          <input type="text" id="send-memo" placeholder="Add a memo...">
+        </div>
+        <div class="fee-display">
+          <span>Transaction Fee:</span>
+          <span id="tx-fee">~0.01000 BTS</span>
+        </div>
+        <button id="btn-send-confirm" class="btn btn-primary">Review Transaction</button>
+      </div>
+    </div>
+
+    <!-- Receive Screen -->
+    <div id="receive-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="dashboard-screen">←</button>
+        <h2>Receive</h2>
+      </div>
+      <div class="receive-container">
+        <div class="receive-account-card">
+          <div class="receive-account-details">
+            <div class="account-selector-wrapper">
+              <select id="receive-account-selector" class="account-selector">
+                <!-- Accounts populated dynamically -->
+              </select>
+            </div>
+            <p id="receive-account-id" class="account-id">1.2.xxxxx</p>
+          </div>
+        </div>
+        <div class="receive-identicon-wrapper">
+          <canvas id="receive-identicon" class="receive-identicon" width="240" height="240"></canvas>
+          <button class="btn btn-secondary" id="btn-copy-receive-account" title="Copy Account Name">
+            <span class="btn-icon">📋</span> Copy to Clipboard
+          </button>
+        </div>
+        <p class="receive-hint">Share your account name to receive any BitShares asset</p>
+      </div>
+    </div>
+
+    <!-- Transaction Confirmation Modal -->
+    <div id="tx-confirm-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Confirm Transaction</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="tx-summary">
+            <div class="tx-row">
+              <span>To:</span>
+              <span id="confirm-to"></span>
+            </div>
+            <div class="tx-row">
+              <span>Amount:</span>
+              <span id="confirm-amount"></span>
+            </div>
+            <div class="tx-row">
+              <span>Fee:</span>
+              <span id="confirm-fee"></span>
+            </div>
+            <div class="tx-row" id="confirm-memo-row">
+              <span>Memo:</span>
+              <span id="confirm-memo"></span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-tx-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="btn-tx-confirm" class="btn btn-primary">Confirm & Sign</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- dApp Connection Request Modal -->
+    <div id="dapp-connect-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Connection Request</h3>
+        </div>
+        <div class="modal-body">
+          <div class="dapp-info">
+            <img id="dapp-icon" class="dapp-icon" src="" alt="">
+            <h4 id="dapp-name"></h4>
+            <p id="dapp-origin" class="dapp-origin"></p>
+          </div>
+          <p class="connect-message">This site wants to connect to your BitShares wallet</p>
+          <div class="form-group" style="margin: var(--spacing-md) 0;">
+            <label for="dapp-connect-account">Connect with account:</label>
+            <select id="dapp-connect-account" class="account-selector">
+              <!-- Accounts populated dynamically -->
+            </select>
+          </div>
+          <div class="permissions-list">
+            <h5>Permissions requested:</h5>
+            <ul id="dapp-permissions">
+              <li>✓ View your account name</li>
+              <li>✓ View your balance</li>
+              <li>✓ Request transaction signatures</li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-dapp-reject" class="btn btn-secondary">Reject</button>
+          <button id="btn-dapp-connect" class="btn btn-primary">Connect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- dApp Transfer Request Modal -->
+    <div id="dapp-transfer-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Transfer Request</h3>
+        </div>
+        <div class="modal-body">
+          <div class="dapp-info">
+            <p id="transfer-origin" class="dapp-origin"></p>
+          </div>
+          <p class="connect-message">This site wants to send a transfer from your wallet:</p>
+          <div class="transfer-details">
+            <div class="transfer-row">
+              <span class="transfer-label">To:</span>
+              <span id="transfer-to" class="transfer-value"></span>
+            </div>
+            <div class="transfer-row">
+              <span class="transfer-label">Amount:</span>
+              <span id="transfer-amount" class="transfer-value"></span>
+            </div>
+            <div class="transfer-row" id="transfer-memo-row">
+              <span class="transfer-label">Memo:</span>
+              <span id="transfer-memo" class="transfer-value mono"></span>
+            </div>
+            <div class="transfer-row">
+              <span class="transfer-label">Fee:</span>
+              <span id="transfer-fee" class="transfer-value">~0.01 BTS</span>
+            </div>
+          </div>
+          <p class="warning-text">Only approve if you trust this site.</p>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-transfer-reject" class="btn btn-secondary">Reject</button>
+          <button id="btn-transfer-approve" class="btn btn-primary">Approve</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generic Transaction Signing Modal -->
+    <div id="dapp-transaction-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Sign Transaction</h3>
+        </div>
+        <div class="modal-body">
+          <div class="dapp-info">
+            <p id="tx-sign-origin" class="dapp-origin"></p>
+          </div>
+          <p class="connect-message">This site wants to sign the following transaction:</p>
+          <div id="tx-sign-op-badge" class="op-type-badge"></div>
+          <div id="tx-sign-details" class="tx-sign-details"></div>
+          <p class="warning-text">Only approve if you trust this site.</p>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-tx-sign-reject" class="btn btn-secondary">Reject</button>
+          <button id="btn-tx-sign-approve" class="btn btn-primary">Approve</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Swap Confirmation Modal -->
+    <div id="swap-confirm-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Confirm Swap</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="swap-confirm-details">
+            <div class="swap-confirm-row">
+              <span>You Pay:</span>
+              <span id="swap-confirm-from" class="swap-confirm-value"></span>
+            </div>
+            <div class="swap-confirm-row">
+              <span>You Receive:</span>
+              <span id="swap-confirm-to" class="swap-confirm-value positive"></span>
+            </div>
+            <div class="swap-confirm-row">
+              <span>Rate:</span>
+              <span id="swap-confirm-rate" class="swap-confirm-value"></span>
+            </div>
+            <div class="swap-confirm-row">
+              <span>Pool Fee:</span>
+              <span id="swap-confirm-pool-fee" class="swap-confirm-value"></span>
+            </div>
+            <div class="swap-confirm-row">
+              <span>Network Fee:</span>
+              <span id="swap-confirm-network-fee" class="swap-confirm-value"></span>
+            </div>
+            <div class="swap-confirm-row">
+              <span>Min. Received:</span>
+              <span id="swap-confirm-min" class="swap-confirm-value"></span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-swap-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="btn-swap-confirm" class="btn btn-primary">Confirm Swap</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transaction History Screen -->
+    <div id="history-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="dashboard-screen">←</button>
+        <h2>Transaction History</h2>
+      </div>
+      <div class="history-filter">
+        <select id="history-filter-select">
+          <option value="all">All Operations</option>
+          <option value="transfer">Transfers</option>
+          <option value="limit_order_create">Limit Orders</option>
+          <option value="limit_order_cancel">Order Cancels</option>
+          <option value="fill_order">Filled Orders</option>
+          <option value="liquidity_pool">Pool Swaps</option>
+          <option value="asset_issue">Asset Issued</option>
+        </select>
+      </div>
+      <div id="history-list" class="history-list">
+        <!-- History items will be populated here -->
+      </div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="settings-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="dashboard-screen">←</button>
+        <h2>Settings</h2>
+      </div>
+      <div class="settings-list">
+        <div class="settings-group">
+          <h4>Accounts</h4>
+          <div class="settings-item" id="setting-accounts">
+            <span>Manage Accounts</span>
+            <span class="settings-arrow">→</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h4>Security</h4>
+          <div class="settings-item" id="setting-backup">
+            <span>Backup Brainkey</span>
+            <span class="settings-arrow">→</span>
+          </div>
+          <div class="settings-item" id="setting-change-password">
+            <span>Change Password</span>
+            <span class="settings-arrow">→</span>
+          </div>
+          <div class="settings-item" id="setting-retrieve-key">
+            <span>Retrieve Private Key</span>
+            <span class="settings-arrow">→</span>
+          </div>
+          <div class="settings-item">
+            <span>Auto-lock Timer</span>
+            <select id="autolock-timer">
+              <option value="0">Never</option>
+              <option value="5">5 minutes</option>
+              <option value="15" selected>15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 hour</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h4>Address Book</h4>
+          <div class="settings-item" id="setting-address-book">
+            <span>Manage Contacts</span>
+            <span class="settings-arrow">→</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h4>Network</h4>
+          <div class="settings-item" id="setting-nodes">
+            <span>Manage Nodes</span>
+            <span class="settings-arrow">→</span>
+          </div>
+          <div class="settings-item" id="setting-fees">
+            <span>Network Fees</span>
+            <span class="settings-arrow">→</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h4>Connected Sites</h4>
+          <div class="settings-item" id="setting-connections">
+            <span>Manage Connections</span>
+            <span class="settings-arrow">→</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h4>Developer</h4>
+          <div class="settings-item clickable" id="btn-show-dev-docs">
+            <span>Documentation</span>
+            <span class="settings-arrow">→</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h4>About</h4>
+          <div class="settings-item">
+            <span>Version</span>
+            <span class="settings-value">1.0.0</span>
+          </div>
+        </div>
+        <button id="btn-reset-wallet" class="btn btn-danger">Reset Wallet</button>
+      </div>
+    </div>
+
+    <!-- Node Management Screen -->
+    <div id="nodes-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Manage Nodes</h2>
+      </div>
+      <div class="nodes-container">
+        <div class="current-node-info">
+          <label>Current Node</label>
+          <div class="current-node" id="current-node-display">Connecting...</div>
+          <div class="node-latency" id="node-latency"></div>
+        </div>
+
+        <div class="nodes-section">
+          <h4>Available Nodes</h4>
+          <div id="nodes-list" class="nodes-list">
+            <!-- Nodes will be populated here -->
+          </div>
+        </div>
+
+        <div class="add-node-section">
+          <h4>Add Custom Node</h4>
+          <div class="form-group">
+            <input type="text" id="custom-node-input" placeholder="wss://your-node.com/ws">
+          </div>
+          <button id="btn-add-node" class="btn btn-secondary">Add Node</button>
+        </div>
+
+        <div class="node-actions">
+          <button id="btn-test-nodes" class="btn btn-secondary">Test All Nodes</button>
+          <button id="btn-reset-nodes" class="btn btn-secondary">Reset to Defaults</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connected Sites Screen -->
+    <div id="connections-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Connected Sites</h2>
+      </div>
+      <div id="connections-list" class="connections-list">
+        <!-- Connected sites will be populated here -->
+      </div>
+    </div>
+
+    <!-- Developer Documentation Screen -->
+    <div id="dev-docs-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Developer Docs</h2>
+      </div>
+      <div class="dev-docs-container">
+        <div class="docs-section">
+          <h4>Integrating with BitShares Wallet</h4>
+          <p class="docs-text">Your dApp can connect to this wallet using the injected <code>window.bitsharesWallet</code> API.</p>
+        </div>
+
+        <div class="docs-section">
+          <h4>1. Check Wallet Availability</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">if (window.bitsharesWallet) {
+  console.log('Wallet detected!');
+}</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>2. Request Connection</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">const result = await window.bitsharesWallet
+  .request({ method: 'connect' });
+
+// Returns: { account, accountId }</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>3. Get Account Info</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">const result = await window.bitsharesWallet
+  .request({ method: 'getAccount' });
+
+// Returns: { account, accountId }</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>4. Transfer</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">const result = await window.bitsharesWallet
+  .request({
+    method: 'transfer',
+    params: {
+      to: 'recipient-account',
+      amount: '10.00000',
+      asset: '1.3.0',
+      memo: 'Optional memo'
+    }
+  });
+
+// Returns: { txId, blockNum }</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>5. Sign Message</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">const result = await window.bitsharesWallet
+  .signMessage('Hello BitShares!');
+
+// Returns: { signature: '...', message: '...' }</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>6. Swap (Liquidity Pool)</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">const result = await window.bitsharesWallet
+  .request({
+    method: 'swap',
+    params: {
+      pool: '1.19.0',
+      sellAsset: '1.3.0',
+      sellAmount: '100',
+      buyAsset: '1.3.121',
+      minReceive: '95'
+    }
+  });
+
+// Returns: { txId, result }</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>7. Create Limit Order</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">const result = await window.bitsharesWallet
+  .request({
+    method: 'createLimitOrder',
+    params: {
+      sellAsset: '1.3.0',
+      sellAmount: '100',
+      buyAsset: '1.3.121',
+      buyAmount: '50',
+      expiration: 86400
+    }
+  });
+
+// Returns: { txId, result }</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="docs-section">
+          <h4>8. Events</h4>
+          <div class="code-wrapper">
+            <pre class="code-block copyable">window.addEventListener(
+  'bitsharesWallet:accountChanged',
+  (e) => console.log(e.detail)
+);
+
+window.addEventListener(
+  'bitsharesWallet:disconnected',
+  () => console.log('Disconnected')
+);</pre>
+            <button class="code-copy-btn" title="Copy code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change Password Screen -->
+    <div id="change-password-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Change Password</h2>
+      </div>
+      <div class="form-container">
+        <div class="form-group">
+          <label for="current-password">Current Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="current-password" placeholder="Enter current password">
+            <button type="button" class="password-toggle" data-target="current-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="new-password">New Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="new-password" placeholder="Enter new password (min 12 chars)">
+            <button type="button" class="password-toggle" data-target="new-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="password-strength" id="new-password-strength"></div>
+        </div>
+        <div class="form-group">
+          <label for="new-password-confirm">Confirm New Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="new-password-confirm" placeholder="Confirm new password">
+            <button type="button" class="password-toggle" data-target="new-password-confirm">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button id="btn-change-password" class="btn btn-primary">Change Password</button>
+      </div>
+    </div>
+
+    <!-- Retrieve Private Key Screen -->
+    <div id="retrieve-key-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Retrieve Private Key</h2>
+      </div>
+      <div class="form-container">
+        <div class="warning-box">
+          <span class="warning-icon">⚠️</span>
+          <p>Never share your private key with anyone. Anyone with access to your private key can steal your funds.</p>
+        </div>
+        <div class="form-group">
+          <label for="retrieve-key-account">Account</label>
+          <select id="retrieve-key-account">
+            <!-- Accounts populated dynamically -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="key-type-select">Key Type</label>
+          <select id="key-type-select">
+            <option value="active">Active Key</option>
+            <option value="owner">Owner Key</option>
+            <option value="memo">Memo Key</option>
+            <option value="bitsharesPassword">BitShares Password</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="retrieve-key-password">Enter Password to Reveal</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="retrieve-key-password" placeholder="Enter your wallet password">
+            <button type="button" class="password-toggle" data-target="retrieve-key-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button id="btn-reveal-key" class="btn btn-primary">Reveal Key</button>
+        <div id="private-key-display" class="private-key-display" style="display: none;">
+          <label>Private Key (WIF)</label>
+          <div class="key-box">
+            <span id="revealed-private-key"></span>
+            <button id="btn-copy-private-key" class="btn-copy" title="Copy">📋</button>
+          </div>
+          <div class="key-box" style="margin-top: 10px;">
+            <label>Public Key</label>
+            <span id="revealed-public-key"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Address Book Screen -->
+    <div id="address-book-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Address Book</h2>
+      </div>
+      <div class="address-book-container">
+        <div class="add-contact-section">
+          <h4>Add Contact</h4>
+          <div class="form-group">
+            <input type="text" id="contact-name" placeholder="Contact name (e.g., Alice)">
+          </div>
+          <div class="form-group">
+            <input type="text" id="contact-account" placeholder="BitShares account name">
+            <span id="contact-account-status" class="input-status"></span>
+          </div>
+          <button id="btn-add-contact" class="btn btn-secondary">Add Contact</button>
+        </div>
+        <div class="contacts-section">
+          <h4>Contacts</h4>
+          <div id="contacts-list" class="contacts-list">
+            <!-- Contacts will be populated here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Swap Screen -->
+    <div id="swap-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="dashboard-screen">←</button>
+        <h2>Swap</h2>
+      </div>
+      <div class="swap-container">
+        <div class="swap-card">
+          <div class="swap-input-group">
+            <label>From</label>
+            <select id="swap-from-asset" class="swap-asset-select">
+              <option value="">Select asset</option>
+            </select>
+            <input type="number" id="swap-from-amount" placeholder="0.00" step="0.00001">
+            <div class="swap-balance-row">
+              <span class="swap-balance">Balance: <span id="swap-from-balance">0.00</span></span>
+              <button id="btn-swap-max" class="btn-max-swap" type="button">MAX</button>
+            </div>
+          </div>
+
+          <button id="btn-swap-direction" class="swap-direction-btn">⇅</button>
+
+          <div class="swap-input-group">
+            <label>To</label>
+            <select id="swap-to-asset" class="swap-asset-select">
+              <option value="">Select asset</option>
+            </select>
+            <input type="number" id="swap-to-amount" placeholder="0.00" step="0.00001">
+          </div>
+        </div>
+
+        <div id="swap-pools-section" class="swap-pools-section" style="display: none;">
+          <h4>Available Pools</h4>
+          <div id="swap-pools-list" class="swap-pools-list">
+            <!-- Pools will be populated here -->
+          </div>
+        </div>
+
+        <div id="swap-details" class="swap-details" style="display: none;">
+          <div class="swap-detail-row">
+            <span>Rate:</span>
+            <span id="swap-rate">-</span>
+          </div>
+          <div class="swap-detail-row">
+            <span>Pool Fee:</span>
+            <span id="swap-pool-fee">-</span>
+          </div>
+          <div class="swap-detail-row">
+            <span>Minimum Received:</span>
+            <span id="swap-min-received">-</span>
+          </div>
+          <div class="swap-detail-row">
+            <span>Transaction Fee:</span>
+            <span id="swap-tx-fee">~0.01 BTS</span>
+          </div>
+        </div>
+
+        <button id="btn-execute-swap" class="btn btn-primary" disabled>Select assets to swap</button>
+      </div>
+    </div>
+
+    <!-- Account Management Screen -->
+    <div id="accounts-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Manage Accounts</h2>
+      </div>
+      <div class="accounts-container">
+        <div id="accounts-list" class="accounts-list">
+          <!-- Accounts will be populated here -->
+        </div>
+        <button id="btn-add-account-settings" class="btn btn-secondary">
+          <span class="btn-icon">+</span> Add Account
+        </button>
+      </div>
+    </div>
+
+    <!-- Network Fees Screen -->
+    <div id="fees-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Network Fees</h2>
+      </div>
+      <div class="fees-container">
+        <p class="fees-description">Current BitShares network transaction fees:</p>
+        <div id="fees-list" class="fees-list">
+          <div class="fee-item loading">
+            <span class="fee-name">Loading fees...</span>
+          </div>
+        </div>
+        <button id="btn-refresh-fees" class="btn btn-secondary">Refresh Fees</button>
+      </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

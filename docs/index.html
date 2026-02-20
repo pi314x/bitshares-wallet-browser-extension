@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BitShares Wallet - Secure Browser Extension for BitShares</title>
+  <meta name="description" content="A secure browser extension for the BitShares blockchain. Sign all 75 operation types, manage assets, and connect dApps — available for Chrome, Brave, and Firefox.">
+  <meta property="og:title" content="BitShares Wallet Extension">
+  <meta property="og:description" content="A secure browser extension for the BitShares blockchain. Sign all 75 operation types with human-readable confirmations. Free, open source, and non-custodial.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="BitShares Wallet Extension">
+  <meta name="twitter:description" content="A secure browser extension for the BitShares blockchain. Sign all 75 operation types with human-readable confirmations. Free, open source, non-custodial.">
+  <link rel="canonical" href="https://pi314x.github.io/bitshares-wallet-extension/">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "BitShares Wallet Extension",
+    "operatingSystem": "Chrome, Brave, Firefox",
+    "applicationCategory": "FinanceApplication",
+    "softwareVersion": "0.2.0",
+    "description": "A secure browser extension for the BitShares blockchain. Sign all 75 operation types with human-readable confirmations. Free, open source, and non-custodial.",
+    "url": "https://pi314x.github.io/bitshares-wallet-extension/",
+    "downloadUrl": "https://github.com/pi314x/bitshares-wallet-extension/releases",
+    "codeRepository": "https://github.com/pi314x/bitshares-wallet-extension",
+    "license": "https://opensource.org/licenses/MIT",
+    "author": {
+      "@type": "Organization",
+      "name": "BitShares Community"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #00D4AA;
+      --primary-dark: #00B492;
+      --secondary: #0088FF;
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: #1a2235;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --gradient-primary: linear-gradient(135deg, #00D4AA 0%, #00B4D8 50%, #0077B6 100%);
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    a:hover {
+      color: var(--primary-dark);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 16px 0;
+      background: rgba(10, 14, 23, 0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(0, 212, 170, 0.1);
+    }
+
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text-primary);
+    }
+
+    .nav-logo svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 160px 0 100px;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(0, 212, 170, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-logo {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 32px;
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 16px;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 20px;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 40px;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--gradient-primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 212, 170, 0.25);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: rgba(0, 212, 170, 0.1);
+      color: var(--primary);
+      border: 1px solid rgba(0, 212, 170, 0.3);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(0, 212, 170, 0.15);
+      transform: translateY(-2px);
+      color: var(--primary);
+    }
+
+    .btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Sections */
+    section {
+      padding: 100px 0;
+    }
+
+    .section-title {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    .section-title h2 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .section-title p {
+      color: var(--text-secondary);
+      font-size: 18px;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* Features */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: linear-gradient(180deg, rgba(26, 34, 53, 0.8) 0%, rgba(17, 24, 39, 0.9) 100%);
+      border: 1px solid rgba(0, 212, 170, 0.08);
+      border-radius: 16px;
+      padding: 32px;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(0, 212, 170, 0.2);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(0, 212, 170, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .feature-card h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .feature-card-wide {
+      grid-column: span 2;
+    }
+
+    /* Browsers */
+    .browsers {
+      background: var(--bg-secondary);
+    }
+
+    .browser-grid {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      flex-wrap: wrap;
+    }
+
+    .browser-item {
+      text-align: center;
+    }
+
+    .browser-icon {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 12px;
+      border-radius: 16px;
+      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      border: 1px solid rgba(0, 212, 170, 0.1);
+    }
+
+    .browser-item h4 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .browser-item span {
+      font-size: 13px;
+      color: var(--primary);
+      font-weight: 500;
+    }
+
+    /* Security */
+    .security-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    .security-item {
+      text-align: center;
+      padding: 24px 16px;
+    }
+
+    .security-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      background: rgba(0, 212, 170, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+
+    .security-item h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .security-item p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Developer */
+    .developer {
+      background: var(--bg-secondary);
+    }
+
+    .code-block {
+      background: var(--bg-primary);
+      border: 1px solid rgba(0, 212, 170, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+      overflow-x: auto;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .code-block pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+
+    .code-block .comment { color: var(--text-muted); }
+    .code-block .keyword { color: #c792ea; }
+    .code-block .string { color: #c3e88d; }
+    .code-block .function { color: #82aaff; }
+    .code-block .variable { color: #f78c6c; }
+    .code-block .property { color: var(--primary); }
+
+    /* CTA */
+    .cta {
+      text-align: center;
+      padding: 100px 0;
+    }
+
+    .cta h2 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .cta p {
+      color: var(--text-secondary);
+      font-size: 18px;
+      margin-bottom: 32px;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid rgba(0, 212, 170, 0.08);
+      padding: 40px 0;
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .footer-left svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-primary);
+    }
+
+    /* Callout */
+    .callout {
+      padding: 80px 0;
+    }
+
+    .callout-box {
+      background: linear-gradient(135deg, rgba(0, 212, 170, 0.06) 0%, rgba(0, 136, 255, 0.06) 100%);
+      border: 1px solid rgba(0, 212, 170, 0.15);
+      border-radius: 20px;
+      padding: 48px;
+      display: flex;
+      align-items: center;
+      gap: 40px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .callout-box::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(0, 212, 170, 0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .callout-icon {
+      flex-shrink: 0;
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      background: rgba(0, 212, 170, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+    }
+
+    .callout-content h3 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .callout-content p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.7;
+      max-width: 700px;
+    }
+
+    .callout-content p strong {
+      color: var(--primary);
+    }
+
+    /* Screenshots Carousel */
+    .screenshots {
+      background: var(--bg-secondary);
+      overflow: hidden;
+    }
+
+    .carousel-wrapper {
+      position: relative;
+      padding: 0 60px;
+    }
+
+    .carousel-track {
+      display: flex;
+      gap: 32px;
+      overflow-x: auto;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding: 10px 0 40px;
+    }
+
+    .carousel-track::-webkit-scrollbar {
+      display: none;
+    }
+
+    .screenshot-item {
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .screenshot-frame {
+      width: 260px;
+      background: #0d1117;
+      border-radius: 20px;
+      border: 2px solid rgba(0, 212, 170, 0.15);
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 212, 170, 0.08);
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .screenshot-frame:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 60px rgba(0, 212, 170, 0.12);
+    }
+
+    .screenshot-frame svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .screenshot-item h4 {
+      margin-top: 16px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .screenshot-item p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .carousel-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-60%);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 212, 170, 0.3);
+      background: rgba(10, 14, 23, 0.9);
+      color: var(--primary);
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 10;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(10px);
+    }
+
+    .carousel-btn:hover {
+      background: rgba(0, 212, 170, 0.15);
+      border-color: var(--primary);
+    }
+
+    .carousel-btn.prev { left: 4px; }
+    .carousel-btn.next { right: 4px; }
+
+    .carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .carousel-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(0, 212, 170, 0.2);
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      padding: 0;
+    }
+
+    .carousel-dot.active {
+      background: var(--primary);
+      width: 24px;
+      border-radius: 4px;
+    }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+      .hero { padding: 120px 0 60px; }
+      .hero h1 { font-size: 32px; }
+      .hero p { font-size: 16px; }
+
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: rgba(10, 14, 23, 0.98);
+        padding: 24px;
+        gap: 20px;
+        border-bottom: 1px solid rgba(0, 212, 170, 0.1);
+      }
+      .nav-toggle { display: block; }
+
+      .features-grid { grid-template-columns: 1fr; }
+      .feature-card-wide { grid-column: span 1; }
+      .security-grid { grid-template-columns: repeat(2, 1fr); }
+
+      section { padding: 60px 0; }
+      .section-title h2 { font-size: 28px; }
+
+      .browser-grid { gap: 32px; }
+
+      .screenshot-frame { width: 220px; }
+      .carousel-btn { display: none; }
+
+      .callout-box { flex-direction: column; text-align: center; padding: 32px; gap: 24px; }
+
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .security-grid { grid-template-columns: 1fr; }
+      .hero-buttons { flex-direction: column; align-items: center; }
+    }
+
+    /* Install steps */
+    .install {
+      background: var(--bg-secondary);
+    }
+
+    .install-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      counter-reset: step;
+    }
+
+    .install-step {
+      position: relative;
+      padding: 32px;
+      background: var(--bg-card);
+      border: 1px solid rgba(0, 212, 170, 0.08);
+      border-radius: 16px;
+      counter-increment: step;
+      transition: border-color 0.3s;
+    }
+
+    .install-step:hover {
+      border-color: rgba(0, 212, 170, 0.2);
+    }
+
+    .install-step::before {
+      content: counter(step);
+      position: absolute;
+      top: -14px;
+      left: 28px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--gradient-primary);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 28px;
+      text-align: center;
+    }
+
+    .install-step h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .install-step p {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .install-step code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: var(--bg-primary);
+      border: 1px solid rgba(0, 212, 170, 0.15);
+      border-radius: 6px;
+      padding: 2px 7px;
+      color: var(--primary);
+    }
+
+    .install-note {
+      margin-top: 32px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .install-note a {
+      color: var(--primary);
+    }
+
+    @media (max-width: 768px) {
+      .install-steps { grid-template-columns: 1fr; }
+    }
+
+    /* Operations list */
+    .operations { }
+
+    .ops-toggle-bar {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    .ops-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 24px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 212, 170, 0.3);
+      background: rgba(0, 212, 170, 0.08);
+      color: var(--primary);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .ops-toggle-btn:hover {
+      background: rgba(0, 212, 170, 0.15);
+    }
+
+    .ops-categories {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .ops-category {
+      background: var(--bg-card);
+      border: 1px solid rgba(0, 212, 170, 0.08);
+      border-radius: 14px;
+      padding: 20px 24px;
+    }
+
+    .ops-category h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ops-count {
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(0, 212, 170, 0.12);
+      color: var(--primary);
+      padding: 2px 7px;
+      border-radius: 20px;
+    }
+
+    .ops-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .ops-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 6px;
+      padding: 3px 8px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .ops-pill.virtual {
+      opacity: 0.55;
+      font-style: italic;
+    }
+
+    @media (max-width: 900px) {
+      .ops-categories { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 600px) {
+      .ops-categories { grid-template-columns: 1fr; }
+    }
+
+    /* FAQ */
+    .faq {
+      background: var(--bg-secondary);
+    }
+
+    .faq-list {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .faq-item {
+      background: var(--bg-card);
+      border: 1px solid rgba(0, 212, 170, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .faq-item.open {
+      border-color: rgba(0, 212, 170, 0.2);
+    }
+
+    .faq-q {
+      width: 100%;
+      text-align: left;
+      padding: 18px 24px;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .faq-q svg {
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      color: var(--primary);
+      transition: transform 0.2s;
+    }
+
+    .faq-item.open .faq-q svg {
+      transform: rotate(45deg);
+    }
+
+    .faq-a {
+      display: none;
+      padding: 0 24px 18px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    .faq-item.open .faq-a {
+      display: block;
+    }
+
+    .faq-a a {
+      color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="container">
+      <a href="#" class="nav-logo">
+        <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#0a0e17"/>
+              <stop offset="100%" style="stop-color:#1a2332"/>
+            </linearGradient>
+            <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#00D4AA"/>
+              <stop offset="100%" style="stop-color:#0088FF"/>
+            </linearGradient>
+          </defs>
+          <circle cx="64" cy="64" r="60" fill="url(#bgGrad)" stroke="url(#accentGrad)" stroke-width="4"/>
+          <path d="M40 32 L40 96 L72 96 C88 96 96 84 96 72 C96 62 90 54 80 52 C88 50 92 42 92 34 C92 22 84 32 72 32 L40 32 Z M52 44 L68 44 C76 44 80 48 80 54 C80 60 76 64 68 64 L52 64 L52 44 Z M52 72 L72 72 C80 72 84 76 84 82 C84 88 80 84 72 84 L52 84 L52 72 Z" fill="url(#accentGrad)"/>
+          <circle cx="28" cy="48" r="4" fill="#00D4AA" opacity="0.6"/>
+          <circle cx="100" cy="48" r="4" fill="#0088FF" opacity="0.6"/>
+          <circle cx="28" cy="80" r="4" fill="#00D4AA" opacity="0.6"/>
+          <circle cx="100" cy="80" r="4" fill="#0088FF" opacity="0.6"/>
+        </svg>
+        BitShares Wallet
+      </a>
+      <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">&#9776;</button>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="#operations">Operations</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#developers">Developers</a></li>
+        <li><a href="https://github.com/pi314x/bitshares-wallet-extension" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-logo">
+        <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#0a0e17"/>
+              <stop offset="100%" style="stop-color:#1a2332"/>
+            </linearGradient>
+            <linearGradient id="accentGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#00D4AA"/>
+              <stop offset="100%" style="stop-color:#0088FF"/>
+            </linearGradient>
+          </defs>
+          <circle cx="64" cy="64" r="60" fill="url(#bgGrad2)" stroke="url(#accentGrad2)" stroke-width="4"/>
+          <path d="M40 32 L40 96 L72 96 C88 96 96 84 96 72 C96 62 90 54 80 52 C88 50 92 42 92 34 C92 22 84 32 72 32 L40 32 Z M52 44 L68 44 C76 44 80 48 80 54 C80 60 76 64 68 64 L52 64 L52 44 Z M52 72 L72 72 C80 72 84 76 84 82 C84 88 80 84 72 84 L52 84 L52 72 Z" fill="url(#accentGrad2)"/>
+          <circle cx="28" cy="48" r="4" fill="#00D4AA" opacity="0.6"/>
+          <circle cx="100" cy="48" r="4" fill="#0088FF" opacity="0.6"/>
+          <circle cx="28" cy="80" r="4" fill="#00D4AA" opacity="0.6"/>
+          <circle cx="100" cy="80" r="4" fill="#0088FF" opacity="0.6"/>
+          <line x1="32" y1="48" x2="40" y2="48" stroke="#00D4AA" stroke-width="1" opacity="0.4"/>
+          <line x1="32" y1="80" x2="40" y2="80" stroke="#00D4AA" stroke-width="1" opacity="0.4"/>
+        </svg>
+      </div>
+      <h1>BitShares Wallet</h1>
+      <p>A secure browser extension for the BitShares blockchain. Manage assets, sign <strong style="color:var(--primary)">all 75 operation types</strong>, and connect to dApps.</p>
+      <div class="hero-buttons">
+        <a href="https://github.com/pi314x/bitshares-wallet-extension/releases" class="btn btn-primary" target="_blank">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </a>
+        <a href="https://github.com/pi314x/bitshares-wallet-extension" class="btn btn-secondary" target="_blank">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          View Source
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features">
+    <div class="container">
+      <div class="section-title">
+        <h2>Everything you need</h2>
+        <p>A full-featured wallet for the BitShares ecosystem</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#128274;</div>
+          <h3>Wallet Management</h3>
+          <p>Create or import wallets with brainkey, WIF private keys, or account credentials. Your keys are encrypted with AES-256-GCM and never leave your device.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128176;</div>
+          <h3>Asset Management</h3>
+          <p>View all your BitShares assets with real-time balances and USD values. Full transaction history with filtering by type.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128640;</div>
+          <h3>Send &amp; Receive</h3>
+          <p>Send any BitShares asset with account validation, fee calculation, and optional encrypted memos. Share your account via QR code.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128279;</div>
+          <h3>dApp Integration</h3>
+          <p>Connect to BitShares dApps and sign transactions securely. BeetEOS-compatible API with event-based communication.</p>
+        </div>
+        <div class="feature-card feature-card-wide">
+          <div class="feature-icon">&#9997;</div>
+          <h3>Full Operation Signing &mdash; All 75 Types</h3>
+          <p>The only browser extension that signs every BitShares operation: transfers, DEX orders, liquidity pools, HTLC contracts, custom authorities, SameT funds, credit offers, governance votes, and more. Every operation renders a human-readable confirmation dialog with clearly labeled fields before you approve &mdash; no raw hex, no guessing.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screenshots Carousel -->
+  <section class="screenshots">
+    <div class="container">
+      <div class="section-title">
+        <h2>See it in action</h2>
+        <p>Clean, intuitive interface designed for BitShares</p>
+      </div>
+      <div class="carousel-wrapper">
+        <button class="carousel-btn prev" onclick="scrollCarousel(-1)" aria-label="Previous">&#x2039;</button>
+        <button class="carousel-btn next" onclick="scrollCarousel(1)" aria-label="Next">&#x203A;</button>
+        <div class="carousel-track" id="carousel-track">
+
+        <!-- 1. Welcome -->
+        <div class="screenshot-item">
+          <div class="screenshot-frame"><svg viewBox="0 0 360 520" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="s6G" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00D4AA"/><stop offset="50%" stop-color="#00B4D8"/><stop offset="100%" stop-color="#0077B6"/></linearGradient><radialGradient id="s6W" cx="50%" cy="30%" r="50%"><stop offset="0%" stop-color="rgba(0,212,170,0.12)"/><stop offset="100%" stop-color="transparent"/></radialGradient></defs>
+            <rect width="360" height="520" fill="#0a0e17"/><rect width="360" height="300" fill="url(#s6W)"/>
+            <g transform="translate(130,80)"><polygon points="50,5 95,30 95,70 50,95 5,70 5,30" fill="none" stroke="url(#s6G)" stroke-width="3"/><polygon points="50,20 75,35 75,65 50,80 25,65 25,35" fill="url(#s6G)" opacity="0.3"/><text x="50" y="58" text-anchor="middle" fill="url(#s6G)" font-size="24" font-weight="bold" font-family="sans-serif">BTS</text></g>
+            <text x="180" y="210" text-anchor="middle" fill="url(#s6G)" font-size="26" font-weight="700" font-family="sans-serif">BitShares Wallet</text><text x="180" y="236" text-anchor="middle" fill="#94a3b8" font-size="13" font-family="sans-serif">Your gateway to decentralized finance</text>
+            <rect x="40" y="280" width="280" height="50" rx="12" fill="url(#s6G)"/><text x="70" y="311" fill="#0a0e17" font-size="18">+</text><text x="95" y="311" fill="#0a0e17" font-size="15" font-weight="600" font-family="sans-serif">Create New Wallet</text>
+            <rect x="40" y="346" width="280" height="50" rx="12" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><text x="70" y="377" fill="#f1f5f9" font-size="18">&#x2193;</text><text x="95" y="377" fill="#f1f5f9" font-size="15" font-weight="600" font-family="sans-serif">Import Existing Wallet</text>
+            <text x="180" y="450" text-anchor="middle" fill="#64748b" font-size="12" font-family="sans-serif">&#x1F512; Your keys never leave your device</text>
+          </svg></div>
+          <h4>Welcome</h4>
+          <p>Create or import your wallet</p>
+        </div>
+
+        <!-- 2. Dashboard -->
+        <div class="screenshot-item">
+          <div class="screenshot-frame"><svg viewBox="0 0 360 520" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="sG" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00D4AA"/><stop offset="50%" stop-color="#00B4D8"/><stop offset="100%" stop-color="#0077B6"/></linearGradient><linearGradient id="sC" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="rgba(26,34,53,0.9)"/><stop offset="100%" stop-color="rgba(17,24,39,0.95)"/></linearGradient><radialGradient id="sW" cx="80%" cy="20%" r="60%"><stop offset="0%" stop-color="rgba(0,212,170,0.08)"/><stop offset="100%" stop-color="transparent"/></radialGradient></defs>
+            <rect width="360" height="520" fill="#0a0e17"/>
+            <circle cx="32" cy="28" r="4" fill="#10b981"/><text x="42" y="33" fill="#f1f5f9" font-size="12" font-family="sans-serif">BitShares Mainnet</text><text x="300" y="33" fill="#f1f5f9" font-size="15">&#x1F512;</text><text x="328" y="33" fill="#f1f5f9" font-size="15">&#x2699;</text>
+            <rect x="20" y="52" width="320" height="165" rx="16" fill="url(#sC)" stroke="rgba(148,163,184,0.1)" stroke-width="1"/><rect x="20" y="52" width="320" height="165" rx="16" fill="url(#sW)"/>
+            <circle cx="56" cy="88" r="22" fill="url(#sG)" opacity="0.3"/><circle cx="56" cy="88" r="22" fill="none" stroke="url(#sG)" stroke-width="1.5"/><rect x="44" y="78" width="8" height="8" rx="1" fill="#00D4AA" opacity="0.7"/><rect x="54" y="78" width="8" height="8" rx="1" fill="#00B4D8" opacity="0.7"/><rect x="44" y="88" width="8" height="8" rx="1" fill="#0088FF" opacity="0.7"/><rect x="54" y="88" width="8" height="8" rx="1" fill="#00D4AA" opacity="0.5"/>
+            <text x="90" y="86" fill="#f1f5f9" font-size="15" font-weight="600" font-family="sans-serif">my-account</text><text x="90" y="102" fill="#64748b" font-size="11" font-family="monospace">1.2.12345</text>
+            <line x1="40" y1="120" x2="320" y2="120" stroke="rgba(148,163,184,0.1)"/><text x="180" y="139" text-anchor="middle" fill="#64748b" font-size="11" font-family="sans-serif">Total Balance</text><text x="180" y="168" text-anchor="middle" fill="url(#sG)" font-size="26" font-weight="700" font-family="monospace">125,432.50 BTS</text><text x="180" y="190" text-anchor="middle" fill="#94a3b8" font-size="13" font-family="sans-serif">&#x2248; $130.04 USD</text><text x="180" y="208" text-anchor="middle" fill="#64748b" font-size="10" font-family="monospace">1 BTS = $0.00103662</text>
+            <g transform="translate(20,230)"><rect width="74" height="68" rx="12" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><circle cx="37" cy="24" r="16" fill="rgba(0,212,170,0.1)"/><text x="37" y="30" text-anchor="middle" fill="#00D4AA" font-size="16">&#x2191;</text><text x="37" y="56" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">Send</text><rect x="82" width="74" height="68" rx="12" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><circle cx="119" cy="24" r="16" fill="rgba(0,212,170,0.1)"/><text x="119" y="30" text-anchor="middle" fill="#00D4AA" font-size="16">&#x2193;</text><text x="119" y="56" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">Receive</text><rect x="164" width="74" height="68" rx="12" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><circle cx="201" cy="24" r="16" fill="rgba(0,212,170,0.1)"/><text x="201" y="30" text-anchor="middle" fill="#00D4AA" font-size="16">&#x21C4;</text><text x="201" y="56" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">Swap</text><rect x="246" width="74" height="68" rx="12" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><circle cx="283" cy="24" r="16" fill="rgba(0,212,170,0.1)"/><text x="283" y="30" text-anchor="middle" fill="#00D4AA" font-size="14">&#x1F4DC;</text><text x="283" y="56" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="sans-serif">History</text></g>
+            <rect x="20" y="314" width="320" height="190" rx="12" fill="#1a2235"/><text x="36" y="340" fill="#94a3b8" font-size="13" font-weight="600" font-family="sans-serif">Assets</text>
+            <circle cx="48" cy="370" r="16" fill="url(#sG)"/><text x="48" y="375" text-anchor="middle" fill="#0a0e17" font-size="9" font-weight="700" font-family="sans-serif">BTS</text><text x="74" y="366" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">BitShares</text><text x="74" y="380" fill="#64748b" font-size="11">BTS</text><text x="324" y="366" text-anchor="end" fill="#f1f5f9" font-size="13" font-weight="500" font-family="monospace">125,432.50</text><text x="324" y="380" text-anchor="end" fill="#64748b" font-size="11">$130.04</text>
+            <circle cx="48" cy="414" r="16" fill="url(#sG)"/><text x="48" y="418" text-anchor="middle" fill="#0a0e17" font-size="7" font-weight="700" font-family="sans-serif">USD</text><text x="74" y="410" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">HONEST.USD</text><text x="74" y="424" fill="#64748b" font-size="11">USD</text><text x="324" y="410" text-anchor="end" fill="#f1f5f9" font-size="13" font-weight="500" font-family="monospace">1,250.00</text><text x="324" y="424" text-anchor="end" fill="#64748b" font-size="11">$1,250.00</text>
+            <circle cx="48" cy="458" r="16" fill="url(#sG)"/><text x="48" y="462" text-anchor="middle" fill="#0a0e17" font-size="7" font-weight="700" font-family="sans-serif">CNY</text><text x="74" y="454" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">HONEST.CNY</text><text x="74" y="468" fill="#64748b" font-size="11">CNY</text><text x="324" y="454" text-anchor="end" fill="#f1f5f9" font-size="13" font-weight="500" font-family="monospace">8,500.00</text><text x="324" y="468" text-anchor="end" fill="#64748b" font-size="11">$1,180.55</text>
+          </svg></div>
+          <h4>Dashboard</h4>
+          <p>Your assets at a glance</p>
+        </div>
+
+        <!-- 2. Send -->
+        <div class="screenshot-item">
+          <div class="screenshot-frame"><svg viewBox="0 0 360 520" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="s3G" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00D4AA"/><stop offset="50%" stop-color="#00B4D8"/><stop offset="100%" stop-color="#0077B6"/></linearGradient></defs>
+            <rect width="360" height="520" fill="#0a0e17"/>
+            <rect x="20" y="20" width="32" height="32" rx="8" fill="#1a2235"/><text x="36" y="42" text-anchor="middle" fill="#f1f5f9" font-size="16">&#x2190;</text><text x="72" y="43" fill="#f1f5f9" font-size="19" font-weight="600" font-family="sans-serif">Send</text>
+            <text x="24" y="88" fill="#94a3b8" font-size="11" font-weight="500" font-family="sans-serif" letter-spacing="0.5">RECIPIENT</text><rect x="20" y="96" width="278" height="44" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="36" y="123" fill="#f1f5f9" font-size="13" font-family="sans-serif">bob-account</text><rect x="302" y="96" width="42" height="44" rx="8" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><text x="323" y="124" text-anchor="middle" font-size="16">&#x1F4D6;</text><text x="24" y="155" fill="#10b981" font-size="11" font-family="sans-serif">&#x2713; Account found</text>
+            <text x="24" y="184" fill="#94a3b8" font-size="11" font-weight="500" font-family="sans-serif" letter-spacing="0.5">ASSET</text><rect x="20" y="192" width="320" height="44" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="36" y="219" fill="#f1f5f9" font-size="13" font-family="sans-serif">BTS (BitShares)</text><text x="318" y="219" text-anchor="end" fill="#64748b" font-size="13">&#x25BE;</text>
+            <text x="24" y="258" fill="#94a3b8" font-size="11" font-weight="500" font-family="sans-serif" letter-spacing="0.5">AMOUNT</text><rect x="20" y="266" width="320" height="44" rx="8" fill="#0d1321" stroke="#00D4AA"/><text x="36" y="293" fill="#f1f5f9" font-size="13" font-family="monospace">1,000.00000</text><rect x="280" y="278" width="48" height="22" rx="4" fill="rgba(0,212,170,0.2)"/><text x="304" y="293" text-anchor="middle" fill="#00D4AA" font-size="10" font-weight="600" font-family="sans-serif">MAX</text><text x="24" y="325" fill="#64748b" font-size="11" font-family="sans-serif">Available: 125,432.50000</text>
+            <text x="24" y="354" fill="#94a3b8" font-size="11" font-weight="500" font-family="sans-serif" letter-spacing="0.5">MEMO (OPTIONAL)</text><rect x="20" y="362" width="320" height="44" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="36" y="389" fill="#64748b" font-size="13" font-family="sans-serif">Payment for services</text>
+            <rect x="20" y="422" width="320" height="36" rx="8" fill="#1a2235"/><text x="36" y="445" fill="#94a3b8" font-size="12" font-family="sans-serif">Transaction Fee:</text><text x="324" y="445" text-anchor="end" fill="#94a3b8" font-size="12" font-family="sans-serif">~0.86869 BTS</text>
+            <rect x="20" y="474" width="320" height="50" rx="12" fill="url(#s3G)"/><text x="180" y="505" text-anchor="middle" fill="#0a0e17" font-size="15" font-weight="600" font-family="sans-serif">Review Transaction</text>
+          </svg></div>
+          <h4>Send</h4>
+          <p>Transfer assets with ease</p>
+        </div>
+
+        <!-- 3. Swap -->
+        <div class="screenshot-item">
+          <div class="screenshot-frame"><svg viewBox="0 0 360 520" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="s4G" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00D4AA"/><stop offset="50%" stop-color="#00B4D8"/><stop offset="100%" stop-color="#0077B6"/></linearGradient></defs>
+            <rect width="360" height="520" fill="#0a0e17"/>
+            <rect x="20" y="20" width="32" height="32" rx="8" fill="#1a2235"/><text x="36" y="42" text-anchor="middle" fill="#f1f5f9" font-size="16">&#x2190;</text><text x="72" y="43" fill="#f1f5f9" font-size="19" font-weight="600" font-family="sans-serif">Swap</text>
+            <!-- Swap Card -->
+            <rect x="20" y="72" width="320" height="230" rx="12" fill="#1a2235"/>
+            <!-- From -->
+            <text x="36" y="96" fill="#64748b" font-size="12" font-family="sans-serif">From</text>
+            <rect x="32" y="104" width="296" height="36" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="44" y="127" fill="#f1f5f9" font-size="13" font-family="sans-serif">BTS (BitShares)</text><text x="316" y="127" text-anchor="end" fill="#64748b" font-size="13">&#x25BE;</text>
+            <rect x="32" y="148" width="296" height="40" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="44" y="174" fill="#f1f5f9" font-size="18" font-family="monospace">5,000.00</text>
+            <text x="32" y="204" fill="#64748b" font-size="11" font-family="sans-serif">Balance: 125,432.50</text><rect x="282" y="192" width="46" height="20" rx="8" fill="transparent" stroke="#00D4AA"/><text x="305" y="206" text-anchor="middle" fill="#00D4AA" font-size="10" font-weight="600" font-family="sans-serif">MAX</text>
+            <!-- Swap button -->
+            <circle cx="180" cy="187" r="18" fill="#00D4AA" stroke="#0a0e17" stroke-width="3"/><text x="180" y="193" text-anchor="middle" fill="#0a0e17" font-size="14" font-weight="700">&#x21C5;</text>
+            <!-- To -->
+            <text x="36" y="228" fill="#64748b" font-size="12" font-family="sans-serif">To</text>
+            <rect x="32" y="236" width="296" height="36" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="44" y="259" fill="#f1f5f9" font-size="13" font-family="sans-serif">HONEST.USD</text><text x="316" y="259" text-anchor="end" fill="#64748b" font-size="13">&#x25BE;</text>
+            <rect x="32" y="276" width="296" height="40" rx="8" fill="#0d1321" stroke="rgba(148,163,184,0.1)"/><text x="44" y="302" fill="#10b981" font-size="18" font-family="monospace">5.1831</text>
+            <!-- Details -->
+            <rect x="20" y="320" width="320" height="120" rx="12" fill="#1a2235"/>
+            <text x="36" y="346" fill="#64748b" font-size="12" font-family="sans-serif">Rate:</text><text x="324" y="346" text-anchor="end" fill="#f1f5f9" font-size="12" font-family="monospace">1 BTS = 0.00103662 USD</text>
+            <text x="36" y="370" fill="#64748b" font-size="12" font-family="sans-serif">Pool Fee:</text><text x="324" y="370" text-anchor="end" fill="#f1f5f9" font-size="12" font-family="monospace">0.15%</text>
+            <text x="36" y="394" fill="#64748b" font-size="12" font-family="sans-serif">Min. Received:</text><text x="324" y="394" text-anchor="end" fill="#f1f5f9" font-size="12" font-family="monospace">5.1054 USD</text>
+            <text x="36" y="418" fill="#64748b" font-size="12" font-family="sans-serif">Pool Exchange Fee:</text><text x="324" y="418" text-anchor="end" fill="#f1f5f9" font-size="12" font-family="monospace">1.00000 BTS</text>
+            <!-- Button -->
+            <rect x="20" y="458" width="320" height="50" rx="12" fill="url(#s4G)"/><text x="180" y="489" text-anchor="middle" fill="#0a0e17" font-size="15" font-weight="600" font-family="sans-serif">Confirm Swap</text>
+          </svg></div>
+          <h4>Swap</h4>
+          <p>Liquidity pool exchange</p>
+        </div>
+
+        <!-- 4. History -->
+        <div class="screenshot-item">
+          <div class="screenshot-frame"><svg viewBox="0 0 360 520" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="s7G" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00D4AA"/><stop offset="50%" stop-color="#00B4D8"/><stop offset="100%" stop-color="#0077B6"/></linearGradient></defs>
+            <rect width="360" height="520" fill="#0a0e17"/>
+            <rect x="20" y="20" width="32" height="32" rx="8" fill="#1a2235"/><text x="36" y="42" text-anchor="middle" fill="#f1f5f9" font-size="16">&#x2190;</text><text x="72" y="43" fill="#f1f5f9" font-size="19" font-weight="600" font-family="sans-serif">Transaction History</text>
+            <!-- Filter -->
+            <rect x="20" y="68" width="320" height="38" rx="8" fill="#1a2235" stroke="rgba(148,163,184,0.1)"/><text x="36" y="92" fill="#f1f5f9" font-size="13" font-family="sans-serif">All Operations</text><text x="324" y="92" text-anchor="end" fill="#64748b" font-size="13">&#x25BE;</text>
+            <!-- Item 1: Sent -->
+            <rect x="20" y="120" width="320" height="70" rx="12" fill="#1a2235"/>
+            <circle cx="52" cy="155" r="18" fill="rgba(239,68,68,0.1)"/><text x="52" y="161" text-anchor="middle" fill="#ef4444" font-size="16">&#x2191;</text>
+            <text x="80" y="146" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">Transfer to alice</text><text x="80" y="162" fill="#64748b" font-size="11" font-family="sans-serif">Feb 17, 2026 14:32</text><text x="80" y="176" fill="#64748b" font-size="9" font-family="monospace" opacity="0.7">abc1d2e3...</text>
+            <text x="324" y="150" text-anchor="end" fill="#ef4444" font-size="13" font-weight="500" font-family="monospace">-500.00 BTS</text><text x="324" y="166" text-anchor="end" fill="#64748b" font-size="11">$10.00</text>
+            <!-- Item 2: Received -->
+            <rect x="20" y="198" width="320" height="70" rx="12" fill="#1a2235"/>
+            <circle cx="52" cy="233" r="18" fill="rgba(16,185,129,0.1)"/><text x="52" y="239" text-anchor="middle" fill="#10b981" font-size="16">&#x2193;</text>
+            <text x="80" y="224" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">Transfer from bob</text><text x="80" y="240" fill="#64748b" font-size="11" font-family="sans-serif">Feb 16, 2026 09:15</text><text x="80" y="254" fill="#64748b" font-size="9" font-family="monospace" opacity="0.7">f4e5d6c7...</text>
+            <text x="324" y="228" text-anchor="end" fill="#10b981" font-size="13" font-weight="500" font-family="monospace">+2,000.00 BTS</text><text x="324" y="244" text-anchor="end" fill="#64748b" font-size="11">$40.00</text>
+            <!-- Item 3: Swap -->
+            <rect x="20" y="276" width="320" height="70" rx="12" fill="#1a2235"/>
+            <circle cx="52" cy="311" r="18" fill="rgba(0,212,170,0.1)"/><text x="52" y="317" text-anchor="middle" fill="#00D4AA" font-size="16">&#x21C4;</text>
+            <text x="80" y="302" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">Pool Swap</text><text x="80" y="318" fill="#64748b" font-size="11" font-family="sans-serif">Feb 15, 2026 18:44</text><text x="80" y="332" fill="#64748b" font-size="9" font-family="monospace" opacity="0.7">89ab01cd...</text>
+            <text x="324" y="306" text-anchor="end" fill="#00D4AA" font-size="13" font-weight="500" font-family="monospace">BTS &#x2192; USD</text><text x="324" y="322" text-anchor="end" fill="#64748b" font-size="11">1,000 &#x2192; 19.97</text>
+            <!-- Item 4: Limit Order -->
+            <rect x="20" y="354" width="320" height="70" rx="12" fill="#1a2235"/>
+            <circle cx="52" cy="389" r="18" fill="rgba(0,180,216,0.1)"/><text x="52" y="395" text-anchor="middle" fill="#00B4D8" font-size="14">&#x1F4CA;</text>
+            <text x="80" y="380" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">Limit Order Create</text><text x="80" y="396" fill="#64748b" font-size="11" font-family="sans-serif">Feb 14, 2026 11:20</text><text x="80" y="410" fill="#64748b" font-size="9" font-family="monospace" opacity="0.7">2345ef67...</text>
+            <text x="324" y="384" text-anchor="end" fill="#f1f5f9" font-size="13" font-weight="500" font-family="monospace">Buy HONEST.USD</text><text x="324" y="400" text-anchor="end" fill="#64748b" font-size="11">5,000 BTS</text>
+            <!-- Item 5: Received -->
+            <rect x="20" y="432" width="320" height="70" rx="12" fill="#1a2235"/>
+            <circle cx="52" cy="467" r="18" fill="rgba(16,185,129,0.1)"/><text x="52" y="473" text-anchor="middle" fill="#10b981" font-size="16">&#x2193;</text>
+            <text x="80" y="458" fill="#f1f5f9" font-size="13" font-weight="500" font-family="sans-serif">Transfer from charlie</text><text x="80" y="474" fill="#64748b" font-size="11" font-family="sans-serif">Feb 13, 2026 07:50</text><text x="80" y="488" fill="#64748b" font-size="9" font-family="monospace" opacity="0.7">ab12cd34...</text>
+            <text x="324" y="462" text-anchor="end" fill="#10b981" font-size="13" font-weight="500" font-family="monospace">+10,000.00 BTS</text><text x="324" y="478" text-anchor="end" fill="#64748b" font-size="11">$200.00</text>
+          </svg></div>
+          <h4>History</h4>
+          <p>Full transaction log</p>
+        </div>
+
+        <!-- 6. Settings -->
+        <div class="screenshot-item">
+          <div class="screenshot-frame"><svg viewBox="0 0 360 520" xmlns="http://www.w3.org/2000/svg">
+            <rect width="360" height="520" fill="#0a0e17"/>
+            <rect x="20" y="20" width="32" height="32" rx="8" fill="#1a2235"/><text x="36" y="42" text-anchor="middle" fill="#f1f5f9" font-size="16">&#x2190;</text><text x="72" y="43" fill="#f1f5f9" font-size="19" font-weight="600" font-family="sans-serif">Settings</text>
+            <!-- Accounts Group -->
+            <text x="24" y="82" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">ACCOUNTS</text>
+            <rect x="20" y="90" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="117" fill="#f1f5f9" font-size="13" font-family="sans-serif">Manage Accounts</text><text x="324" y="117" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
+            <!-- Security Group -->
+            <text x="24" y="156" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">SECURITY</text>
+            <rect x="20" y="164" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="191" fill="#f1f5f9" font-size="13" font-family="sans-serif">Backup Brainkey</text><text x="324" y="191" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
+            <rect x="20" y="214" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="241" fill="#f1f5f9" font-size="13" font-family="sans-serif">Change Password</text><text x="324" y="241" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
+            <rect x="20" y="264" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="291" fill="#f1f5f9" font-size="13" font-family="sans-serif">Retrieve Private Key</text><text x="324" y="291" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
+            <rect x="20" y="314" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="341" fill="#f1f5f9" font-size="13" font-family="sans-serif">Auto-lock Timer</text><text x="324" y="341" text-anchor="end" fill="#00D4AA" font-size="13" font-family="sans-serif">15 minutes</text>
+            <!-- Network Group -->
+            <text x="24" y="382" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">NETWORK</text>
+            <rect x="20" y="390" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="417" fill="#f1f5f9" font-size="13" font-family="sans-serif">Manage Nodes</text><text x="324" y="417" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
+            <rect x="20" y="440" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="467" fill="#f1f5f9" font-size="13" font-family="sans-serif">Network Fees</text><text x="324" y="467" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
+            <!-- About -->
+            <text x="24" y="506" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">ABOUT</text>
+            <rect x="266" y="494" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="509" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.2.0</text>
+          </svg></div>
+          <h4>Settings</h4>
+          <p>Customize your wallet</p>
+        </div>
+
+        </div>
+        <div class="carousel-dots" id="carousel-dots"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Callout: Why BitShares -->
+  <section class="callout">
+    <div class="container">
+      <div class="callout-box">
+        <div class="callout-icon">&#x26A1;</div>
+        <div class="callout-content">
+          <h3>Why BitShares?</h3>
+          <p>BitShares is one of the <strong>fastest blockchains ever built</strong> &mdash; powered by the Graphene engine with 1.5-second block times and over <strong>3,300 transactions per second</strong>, rivaling Visa and Mastercard combined. Running at industrial scale <strong>since 2015</strong> with no downtime, no congestion, and fees that cost fractions of a cent.</p>
+          <p style="margin-top: 10px;">It features the world's first <strong>on-chain decentralized exchange (DEX)</strong>, <strong>SmartCoins</strong> backed by on-chain collateral, custom token minting, <strong>human-readable account names</strong>, multi-signature permissions, liquidity pools, and recurring payments &mdash; all governed transparently through <strong>Delegated Proof of Stake</strong>.</p>
+          <p style="margin-top: 10px;">This wallet is your gateway to that ecosystem. It's the <strong>only browser extension that covers all 75 BitShares operation types</strong> with human-readable signing confirmations &mdash; install it, connect your dApp through the browser API, and start building on a blockchain that's proven, performant, and truly decentralized.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Browsers -->
+  <section id="browsers" class="browsers">
+    <div class="container">
+      <div class="section-title">
+        <h2>Works in your browser</h2>
+        <p>Available for all major browsers</p>
+      </div>
+      <div class="browser-grid">
+        <div class="browser-item">
+          <div class="browser-icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="#4285F4" stroke-width="1.5"/>
+              <circle cx="12" cy="12" r="4" fill="#4285F4"/>
+              <path d="M12 2a10 10 0 0 1 8.66 5H12" stroke="#EA4335" stroke-width="1.5"/>
+              <path d="M3.34 7L8 14.66" stroke="#FBBC05" stroke-width="1.5"/>
+              <path d="M8 14.66L12 22a10 10 0 0 0 8.66-15H16" stroke="#34A853" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <h4>Chrome</h4>
+          <span>Manifest V3</span>
+        </div>
+        <div class="browser-item">
+          <div class="browser-icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" fill="#FB542B" opacity="0.9"/>
+              <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12V2z" fill="#FB542B"/>
+              <path d="M12 6L7 9v3.5c0 3.33 2.13 6.44 5 7.5V6z" fill="#fff" opacity="0.3"/>
+            </svg>
+          </div>
+          <h4>Brave</h4>
+          <span>Manifest V3</span>
+        </div>
+        <div class="browser-item">
+          <div class="browser-icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" fill="#FF7139" opacity="0.9"/>
+              <path d="M18 8.5c-.5-2-2.5-3.5-5-3.5C9.5 5 7 7.5 7 10.5c0 2 1 3.5 2.5 4.5.5.3 1 .5 1.5.5h4c2 0 3.5-1.5 3.5-3.5 0-1.5-1-2.5-2-3" fill="#fff" opacity="0.4"/>
+              <circle cx="12" cy="12" r="3" fill="#fff" opacity="0.6"/>
+            </svg>
+          </div>
+          <h4>Firefox</h4>
+          <span>Manifest V2</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install Guide -->
+  <section id="install" class="install">
+    <div class="container">
+      <div class="section-title">
+        <h2>How to install</h2>
+        <p>Not yet on the Web Store &mdash; load it manually in under a minute</p>
+      </div>
+      <div class="install-steps">
+        <div class="install-step">
+          <h3>Download</h3>
+          <p>Go to the <a href="https://github.com/pi314x/bitshares-wallet-extension/releases" target="_blank">Releases page</a> and download the latest <code>.zip</code> for your browser (<code>chrome</code> or <code>firefox</code>). Unzip it anywhere on your computer.</p>
+        </div>
+        <div class="install-step">
+          <h3>Open extensions</h3>
+          <p><strong>Chrome / Brave:</strong> navigate to <code>chrome://extensions</code> and enable <strong>Developer mode</strong> in the top-right corner.<br><br><strong>Firefox:</strong> navigate to <code>about:debugging#/runtime/this-firefox</code> and click <strong>Load Temporary Add-on</strong>.</p>
+        </div>
+        <div class="install-step">
+          <h3>Load the extension</h3>
+          <p><strong>Chrome / Brave:</strong> click <strong>Load unpacked</strong> and select the unzipped folder.<br><br><strong>Firefox:</strong> click <strong>Load Temporary Add-on</strong> and select the <code>manifest.json</code> file inside the unzipped folder. The wallet icon will appear in your toolbar.</p>
+        </div>
+      </div>
+      <p class="install-note">Permanent Firefox installation: go to <a href="https://github.com/pi314x/bitshares-wallet-extension" target="_blank">GitHub</a> and follow the build instructions to generate a signed <code>.xpi</code>.</p>
+    </div>
+  </section>
+
+  <!-- Operations -->
+  <section id="operations" class="operations">
+    <div class="container">
+      <div class="section-title">
+        <h2>All 75 operation types</h2>
+        <p>Every BitShares operation is supported with a human-readable confirmation dialog</p>
+      </div>
+      <div class="ops-toggle-bar">
+        <button class="ops-toggle-btn" id="ops-toggle-btn" onclick="toggleOps()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="6 9 12 15 18 9"/></svg>
+          Show all operations
+        </button>
+      </div>
+      <div class="ops-categories" id="ops-categories" style="display:none">
+
+        <div class="ops-category">
+          <h4>&#x21C6; Transfers &amp; Payments <span class="ops-count">3</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">transfer</span>
+            <span class="ops-pill">balance_claim</span>
+            <span class="ops-pill">override_transfer</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F4C8; Trading / DEX <span class="ops-count">4</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">limit_order_create</span>
+            <span class="ops-pill">limit_order_cancel</span>
+            <span class="ops-pill">call_order_update</span>
+            <span class="ops-pill virtual">fill_order*</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F4A7; Liquidity Pools <span class="ops-count">5</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">liquidity_pool_create</span>
+            <span class="ops-pill">liquidity_pool_delete</span>
+            <span class="ops-pill">liquidity_pool_deposit</span>
+            <span class="ops-pill">liquidity_pool_withdraw</span>
+            <span class="ops-pill">liquidity_pool_exchange</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F4B0; Asset Management <span class="ops-count">10</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">asset_create</span>
+            <span class="ops-pill">asset_update</span>
+            <span class="ops-pill">asset_update_bitasset</span>
+            <span class="ops-pill">asset_update_feed_producers</span>
+            <span class="ops-pill">asset_issue</span>
+            <span class="ops-pill">asset_reserve</span>
+            <span class="ops-pill">asset_fund_fee_pool</span>
+            <span class="ops-pill">asset_settle</span>
+            <span class="ops-pill">asset_global_settle</span>
+            <span class="ops-pill">asset_publish_feed</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F4B3; Asset Fees &amp; Collateral <span class="ops-count">7</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill virtual">asset_settle_cancel*</span>
+            <span class="ops-pill">asset_claim_fees</span>
+            <span class="ops-pill virtual">fba_distribute*</span>
+            <span class="ops-pill">bid_collateral</span>
+            <span class="ops-pill virtual">execute_bid*</span>
+            <span class="ops-pill">asset_claim_pool</span>
+            <span class="ops-pill">asset_update_issuer</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F464; Account Management <span class="ops-count">5</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">account_create</span>
+            <span class="ops-pill">account_update</span>
+            <span class="ops-pill">account_whitelist</span>
+            <span class="ops-pill">account_upgrade</span>
+            <span class="ops-pill">account_transfer</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F3DB; Governance <span class="ops-count">12</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">witness_create</span>
+            <span class="ops-pill">witness_update</span>
+            <span class="ops-pill">proposal_create</span>
+            <span class="ops-pill">proposal_update</span>
+            <span class="ops-pill">proposal_delete</span>
+            <span class="ops-pill">withdraw_permission_create</span>
+            <span class="ops-pill">withdraw_permission_update</span>
+            <span class="ops-pill">withdraw_permission_claim</span>
+            <span class="ops-pill">withdraw_permission_delete</span>
+            <span class="ops-pill">committee_member_create</span>
+            <span class="ops-pill">committee_member_update</span>
+            <span class="ops-pill">committee_member_update_global_parameters</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x23F3; Vesting &amp; Workers <span class="ops-count">3</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">vesting_balance_create</span>
+            <span class="ops-pill">vesting_balance_withdraw</span>
+            <span class="ops-pill">worker_create</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F510; HTLC <span class="ops-count">5</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">htlc_create</span>
+            <span class="ops-pill">htlc_redeem</span>
+            <span class="ops-pill virtual">htlc_redeemed*</span>
+            <span class="ops-pill">htlc_extend</span>
+            <span class="ops-pill virtual">htlc_refund*</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F511; Custom Authority <span class="ops-count">3</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">custom_authority_create</span>
+            <span class="ops-pill">custom_authority_update</span>
+            <span class="ops-pill">custom_authority_delete</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F3AB; Tickets <span class="ops-count">2</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">ticket_create</span>
+            <span class="ops-pill">ticket_update</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F3E6; SameT Funds <span class="ops-count">5</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">samet_fund_create</span>
+            <span class="ops-pill">samet_fund_delete</span>
+            <span class="ops-pill">samet_fund_update</span>
+            <span class="ops-pill">samet_fund_borrow</span>
+            <span class="ops-pill">samet_fund_repay</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F4B8; Credit Offers <span class="ops-count">6</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">credit_offer_create</span>
+            <span class="ops-pill">credit_offer_delete</span>
+            <span class="ops-pill">credit_offer_update</span>
+            <span class="ops-pill">credit_offer_accept</span>
+            <span class="ops-pill">credit_deal_repay</span>
+            <span class="ops-pill virtual">credit_deal_expired*</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x1F576; Stealth Transfers <span class="ops-count">3</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">transfer_to_blind</span>
+            <span class="ops-pill">blind_transfer</span>
+            <span class="ops-pill">transfer_from_blind</span>
+          </div>
+        </div>
+
+        <div class="ops-category">
+          <h4>&#x2699; Utilities <span class="ops-count">2</span></h4>
+          <div class="ops-pills">
+            <span class="ops-pill">custom</span>
+            <span class="ops-pill">assert</span>
+          </div>
+        </div>
+
+      </div>
+      <p style="text-align:center;margin-top:20px;font-size:13px;color:var(--text-muted)">* Virtual operations produced by the blockchain; displayed in history but not user-initiated.</p>
+    </div>
+  </section>
+
+  <!-- Security -->
+  <section id="security">
+    <div class="container">
+      <div class="section-title">
+        <h2>Built for security</h2>
+        <p>Your keys, your crypto. Always.</p>
+      </div>
+      <div class="security-grid">
+        <div class="security-item">
+          <div class="security-icon">&#128272;</div>
+          <h4>AES-256-GCM</h4>
+          <p>Military-grade encryption with PBKDF2 key derivation protects your private keys</p>
+        </div>
+        <div class="security-item">
+          <div class="security-icon">&#128187;</div>
+          <h4>Local Only</h4>
+          <p>Keys never leave your device. No servers, no third parties, no tracking</p>
+        </div>
+        <div class="security-item">
+          <div class="security-icon">&#128273;</div>
+          <h4>Auto-Lock</h4>
+          <p>Configurable auto-lock timer protects your wallet when you step away</p>
+        </div>
+        <div class="security-item">
+          <div class="security-icon">&#128064;</div>
+          <h4>Open Source</h4>
+          <p>Fully auditable codebase. Verify every line of code on GitHub</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="faq">
+    <div class="container">
+      <div class="section-title">
+        <h2>FAQ</h2>
+        <p>Common questions before you install</p>
+      </div>
+      <div class="faq-list">
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Is it on the Chrome Web Store?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Not yet — Chrome Web Store review is planned for a future release. For now, download the zip from the <a href="https://github.com/pi314x/bitshares-wallet-extension/releases" target="_blank">Releases page</a> and load it as an unpacked extension. The <a href="#install">install guide above</a> walks through every step in under a minute.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Are my private keys safe?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Yes. Your keys are encrypted with AES-256-GCM and a PBKDF2-derived key and stored only in your browser's local storage. They are never sent to any server, and the extension makes no outbound requests other than to the BitShares node you configure. The codebase is fully open source — you can audit every line on <a href="https://github.com/pi314x/bitshares-wallet-extension" target="_blank">GitHub</a>.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Does it work with BeetEOS / existing BitShares dApps?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Yes. The extension injects a <code>window.bitsharesWallet</code> object that is API-compatible with the BeetEOS browser API. Any dApp that checks for that object can call <code>connect()</code> and <code>signTransaction()</code> without modification. Beet itself is a desktop-only application and does not work as a browser extension.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Which BitShares network does it connect to?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">BitShares Mainnet by default. You can add, remove, and switch nodes from Settings → Manage Nodes. Any Graphene-compatible WebSocket node URL is accepted, so you can also connect to a private or testnet node.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            How do I back up my wallet?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Go to Settings → Backup Brainkey to reveal your brainkey mnemonic. Write it down and store it offline. You can re-import from a brainkey, a WIF private key, or account credentials at any time using the Import Wallet flow.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Why sign 75 operations when only a few are commonly used?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">BitShares is a feature-rich blockchain: it has its own DEX, SmartCoins, liquidity pools, HTLC cross-chain swaps, custom multi-sig authorities, recurring payments, and DeFi credit markets — all expressed as distinct on-chain operations. A wallet that only handles transfers leaves dApp developers unable to build most of what BitShares makes possible. Full operation coverage means any dApp can use this extension as its signing backend.</div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Developer -->
+  <section id="developers" class="developer">
+    <div class="container">
+      <div class="section-title">
+        <h2>For developers</h2>
+        <p>Integrate all 75 BitShares operations into your dApp in minutes &mdash; <a href="https://github.com/pi314x/bitshares-wallet-extension#api-for-dapp-developers" target="_blank">full API reference in the README</a></p>
+      </div>
+      <div class="code-block">
+        <pre><span class="comment">// Detect the wallet</span>
+<span class="keyword">if</span> (window.<span class="property">bitsharesWallet</span>) {
+  <span class="comment">// Connect and get account</span>
+  <span class="keyword">const</span> account = <span class="keyword">await</span> window.<span class="property">bitsharesWallet</span>.<span class="function">connect</span>();
+  console.<span class="function">log</span>(<span class="string">'Connected:'</span>, account.<span class="property">name</span>);
+
+  <span class="comment">// Sign any of the 75 BitShares operation types</span>
+  <span class="comment">// User sees a readable confirmation dialog; has 90 s to approve</span>
+  <span class="keyword">const</span> { success, signedTx } = <span class="keyword">await</span> window.<span class="property">bitsharesWallet</span>.<span class="function">signTransaction</span>({
+    <span class="property">operations</span>: [[<span class="variable">0</span>, {
+      <span class="property">from</span>: account.<span class="property">id</span>,
+      <span class="property">to</span>: <span class="string">'1.2.xxxxx'</span>,
+      <span class="property">amount</span>: { <span class="property">amount</span>: <span class="variable">100000</span>, <span class="property">asset_id</span>: <span class="string">'1.3.0'</span> }
+    }]]
+  });
+  <span class="keyword">if</span> (success) console.<span class="function">log</span>(<span class="string">'Signed:'</span>, signedTx);
+
+  <span class="comment">// Listen for wallet events</span>
+  window.<span class="property">bitsharesWallet</span>.<span class="function">on</span>(<span class="string">'accountChanged'</span>, (acct) => {
+    console.<span class="function">log</span>(<span class="string">'Switched to:'</span>, acct.<span class="property">name</span>);
+  });
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="container">
+      <h2>Get started today</h2>
+      <p>Download the extension and start using BitShares in your browser.</p>
+      <div class="hero-buttons">
+        <a href="https://github.com/pi314x/bitshares-wallet-extension/releases" class="btn btn-primary" target="_blank">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </a>
+        <a href="https://github.com/pi314x/bitshares-wallet-extension" class="btn btn-secondary" target="_blank">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-left">
+          <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="fGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#00D4AA"/>
+                <stop offset="100%" style="stop-color:#0088FF"/>
+              </linearGradient>
+            </defs>
+            <path d="M40 32 L40 96 L72 96 C88 96 96 84 96 72 C96 62 90 54 80 52 C88 50 92 42 92 34 C92 22 84 32 72 32 L40 32 Z M52 44 L68 44 C76 44 80 48 80 54 C80 60 76 64 68 64 L52 64 L52 44 Z M52 72 L72 72 C80 72 84 76 84 82 C84 88 80 84 72 84 L52 84 L52 72 Z" fill="url(#fGrad)"/>
+          </svg>
+          BitShares Wallet v0.2.0 &middot; MIT License
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/pi314x/bitshares-wallet-extension" target="_blank">GitHub</a>
+          <a href="https://t.me/BitSharesDEV" target="_blank">Telegram</a>
+          <a href="https://bitshares.org" target="_blank">BitShares.org</a>
+          <a href="https://bitsharestalk.org" target="_blank">Bitsharestalk.org</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Close mobile nav on link click
+    document.querySelectorAll('.nav-links a').forEach(link => {
+      link.addEventListener('click', () => {
+        document.querySelector('.nav-links').classList.remove('open');
+      });
+    });
+
+    // Carousel
+    (function() {
+      const track = document.getElementById('carousel-track');
+      const dotsContainer = document.getElementById('carousel-dots');
+      const items = track.querySelectorAll('.screenshot-item');
+      const totalItems = items.length;
+      let currentIndex = 0;
+      let autoSlideInterval;
+      let autoSlideDelay = 6000;
+
+      // Build dots
+      for (let i = 0; i < totalItems; i++) {
+        const dot = document.createElement('button');
+        dot.className = 'carousel-dot' + (i === 0 ? ' active' : '');
+        dot.setAttribute('aria-label', 'Slide ' + (i + 1));
+        dot.addEventListener('click', function() { goToSlide(i); });
+        dotsContainer.appendChild(dot);
+      }
+
+      function getScrollTarget(index) {
+        if (index < 0) index = 0;
+        if (index >= totalItems) index = totalItems - 1;
+        const item = items[index];
+        const trackRect = track.getBoundingClientRect();
+        const itemRect = item.getBoundingClientRect();
+        return track.scrollLeft + (itemRect.left - trackRect.left) - (trackRect.width / 2 - itemRect.width / 2);
+      }
+
+      function goToSlide(index) {
+        currentIndex = index;
+        track.scrollTo({ left: getScrollTarget(index), behavior: 'smooth' });
+        updateDots();
+      }
+
+      function updateDots() {
+        dotsContainer.querySelectorAll('.carousel-dot').forEach(function(dot, i) {
+          dot.classList.toggle('active', i === currentIndex);
+        });
+      }
+
+      // Detect which slide is most visible on scroll
+      function detectCurrentSlide() {
+        const trackRect = track.getBoundingClientRect();
+        const center = trackRect.left + trackRect.width / 2;
+        let closest = 0;
+        let closestDist = Infinity;
+        items.forEach(function(item, i) {
+          const rect = item.getBoundingClientRect();
+          const itemCenter = rect.left + rect.width / 2;
+          const dist = Math.abs(center - itemCenter);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closest = i;
+          }
+        });
+        if (closest !== currentIndex) {
+          currentIndex = closest;
+          updateDots();
+        }
+      }
+
+      track.addEventListener('scroll', detectCurrentSlide);
+
+      // scrollCarousel for prev/next buttons
+      window.scrollCarousel = function(dir) {
+        goToSlide(Math.max(0, Math.min(totalItems - 1, currentIndex + dir)));
+        resetAutoSlide();
+      };
+
+      // Auto-slide
+      function startAutoSlide() {
+        autoSlideInterval = setInterval(function() {
+          var next = currentIndex + 1;
+          if (next >= totalItems) next = 0;
+          goToSlide(next);
+        }, autoSlideDelay);
+      }
+
+      function resetAutoSlide() {
+        clearInterval(autoSlideInterval);
+        startAutoSlide();
+      }
+
+      startAutoSlide();
+
+      // Pause auto-slide on hover, resume on leave
+      track.addEventListener('mouseenter', function() { clearInterval(autoSlideInterval); });
+      track.addEventListener('mouseleave', function() { startAutoSlide(); });
+
+      // Touch swipe support
+      let touchStartX = 0;
+      let touchStartScroll = 0;
+      let isTouching = false;
+
+      track.addEventListener('touchstart', function(e) {
+        isTouching = true;
+        touchStartX = e.touches[0].clientX;
+        touchStartScroll = track.scrollLeft;
+        clearInterval(autoSlideInterval);
+      }, { passive: true });
+
+      track.addEventListener('touchmove', function(e) {
+        if (!isTouching) return;
+        var dx = touchStartX - e.touches[0].clientX;
+        track.scrollLeft = touchStartScroll + dx;
+      }, { passive: true });
+
+      track.addEventListener('touchend', function(e) {
+        isTouching = false;
+        detectCurrentSlide();
+        startAutoSlide();
+      });
+
+      // Mouse drag support
+      let mouseDown = false;
+      let mouseStartX = 0;
+      let mouseStartScroll = 0;
+      let mouseDragged = false;
+
+      track.addEventListener('mousedown', function(e) {
+        mouseDown = true;
+        mouseDragged = false;
+        mouseStartX = e.clientX;
+        mouseStartScroll = track.scrollLeft;
+        track.style.cursor = 'grabbing';
+        track.style.scrollBehavior = 'auto';
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!mouseDown) return;
+        var dx = mouseStartX - e.clientX;
+        if (Math.abs(dx) > 5) mouseDragged = true;
+        track.scrollLeft = mouseStartScroll + dx;
+      });
+
+      window.addEventListener('mouseup', function() {
+        if (!mouseDown) return;
+        mouseDown = false;
+        track.style.cursor = '';
+        track.style.scrollBehavior = 'smooth';
+        if (mouseDragged) {
+          detectCurrentSlide();
+          resetAutoSlide();
+        }
+      });
+
+      // Prevent click on links/buttons after drag
+      track.addEventListener('click', function(e) {
+        if (mouseDragged) {
+          e.preventDefault();
+          e.stopPropagation();
+          mouseDragged = false;
+        }
+      }, true);
+
+      // Set grab cursor
+      track.style.cursor = 'grab';
+    })();
+
+    // Operations toggle
+    function toggleOps() {
+      var cats = document.getElementById('ops-categories');
+      var btn = document.getElementById('ops-toggle-btn');
+      var open = cats.style.display !== 'none';
+      cats.style.display = open ? 'none' : 'grid';
+      btn.innerHTML = open
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="6 9 12 15 18 9"/></svg> Show all operations'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="18 15 12 9 6 15"/></svg> Hide operations';
+    }
+
+    // FAQ accordion
+    function toggleFaq(btn) {
+      var item = btn.closest('.faq-item');
+      item.classList.toggle('open');
+    }
+  </script>
+</body>
+</html>

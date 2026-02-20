@@ -1,0 +1,45 @@
+{
+  "name": "bitshares-wallet-extension",
+  "version": "0.2.0",
+  "description": "BitShares Wallet Chrome Extension - A MetaMask-like wallet for the BitShares blockchain",
+  "scripts": {
+    "build": "node scripts/build.js chrome",
+    "build:firefox": "node scripts/build.js firefox",
+    "build:all": "node scripts/build.js all",
+    "clean": "node scripts/clean.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "bitshares",
+    "blockchain",
+    "wallet",
+    "chrome-extension",
+    "cryptocurrency",
+    "dex"
+  ],
+  "author": "BitShares Community",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pi314x/bitshares-wallet-extension"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "@jest/globals": "^29.7.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "babel-jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "transform": {
+      "^.+\\.js$": "babel-jest"
+    },
+    "setupFiles": ["<rootDir>/tests/__mocks__/chrome.js"],
+    "moduleNameMapper": {
+      "^./bitshares-api\\.js$": "<rootDir>/tests/__mocks__/bitshares-api.js"
+    }
+  }
+}

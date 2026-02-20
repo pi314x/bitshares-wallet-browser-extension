@@ -1,0 +1,59 @@
+{
+  "manifest_version": 2,
+  "name": "BitShares Wallet",
+  "version": "0.2.0",
+  "description": "A secure BitShares blockchain wallet extension - Sign transactions, manage keys, and interact with dApps",
+  "author": "BitShares Community",
+  "homepage_url": "https://bitshares.org",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "bitshares-wallet@bitshares.org",
+      "strict_min_version": "109.0"
+    }
+  },
+
+  "icons": {
+    "16": "src/assets/icons/icon16.png",
+    "32": "src/assets/icons/icon32.png",
+    "48": "src/assets/icons/icon48.png",
+    "128": "src/assets/icons/icon128.png"
+  },
+
+  "browser_action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/assets/icons/icon16.png",
+      "32": "src/assets/icons/icon32.png",
+      "48": "src/assets/icons/icon48.png",
+      "128": "src/assets/icons/icon128.png"
+    },
+    "default_title": "BitShares Wallet"
+  },
+
+  "background": {
+    "page": "src/background/background-firefox.html"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/inject.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+
+  "web_accessible_resources": [
+    "src/content/inpage.js"
+  ],
+
+  "permissions": [
+    "storage",
+    "activeTab",
+    "notifications",
+    "alarms"
+  ],
+
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+}

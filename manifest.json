@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "BitShares Wallet",
+  "version": "0.2.0",
+  "description": "A secure BitShares blockchain wallet extension for Chrome - Sign transactions, manage keys, and interact with dApps",
+  "author": "BitShares Community",
+  "homepage_url": "https://bitshares.org",
+  
+  "icons": {
+    "16": "src/assets/icons/icon16.png",
+    "32": "src/assets/icons/icon32.png",
+    "48": "src/assets/icons/icon48.png",
+    "128": "src/assets/icons/icon128.png"
+  },
+  
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/assets/icons/icon16.png",
+      "32": "src/assets/icons/icon32.png",
+      "48": "src/assets/icons/icon48.png",
+      "128": "src/assets/icons/icon128.png"
+    },
+    "default_title": "BitShares Wallet"
+  },
+  
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/inject.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/inpage.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  
+  "permissions": [
+    "storage",
+    "activeTab",
+    "notifications",
+    "alarms"
+  ],
+  
+  "host_permissions": [
+    "wss://*.bitshares.ws/*",
+    "wss://*.bitshares.org/*",
+    "wss://*.bitshares.dev/*",
+    "https://*.bitshares.org/*"
+  ],
+  
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  
+  "minimum_chrome_version": "102"
+}

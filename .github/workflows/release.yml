@@ -1,0 +1,35 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Chrome extension
+        run: node scripts/build.js chrome
+
+      - name: Build Firefox extension
+        run: node scripts/build.js firefox
+
+      - name: Create Chrome zip
+        run: cd dist && zip -r ../bitshares-wallet-chrome.zip .
+
+      - name: Create Firefox zip
+        run: cd dist-firefox && zip -r ../bitshares-wallet-firefox.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bitshares-wallet-chrome.zip
+            bitshares-wallet-firefox.zip
+          generate_release_notes: true
