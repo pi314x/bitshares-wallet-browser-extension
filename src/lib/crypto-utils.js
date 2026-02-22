@@ -226,14 +226,14 @@ async function ripemd160(data) {
 
 export class CryptoUtils {
   /**
-   * Generate a random 16-word brainkey
+   * Generate a random 24-word brainkey
    */
   static generateBrainkey() {
     const words = [];
-    const array = new Uint32Array(16);
+    const array = new Uint32Array(24);
     crypto.getRandomValues(array);
 
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 24; i++) {
       const index = array[i] % WORD_LIST.length;
       words.push(WORD_LIST[index].toUpperCase());
     }
