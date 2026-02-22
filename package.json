@@ -1,6 +1,6 @@
 {
   "name": "bitshares-wallet-extension",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "BitShares Wallet Chrome Extension - A MetaMask-like wallet for the BitShares blockchain",
   "scripts": {
     "build": "node scripts/build.js chrome",
