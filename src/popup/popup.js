@@ -438,12 +438,12 @@ function handleAccountNameInput(e) {
 }
 
 // Generate a strong random password using the base58 alphabet (no 0/O/I/l confusion).
-// Produces a 45-char string: "P" prefix + 44 random base58 characters.
+// Produces a 45-char string: "P5" prefix + 43 random base58 characters.
 function generateStrongPassword() {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  const bytes = new Uint8Array(44);
+  const bytes = new Uint8Array(43);
   crypto.getRandomValues(bytes);
-  return 'P' + Array.from(bytes).map(b => alphabet[b % alphabet.length]).join('');
+  return 'P5' + Array.from(bytes).map(b => alphabet[b % alphabet.length]).join('');
 }
 
 function populateBtsPassword() {
