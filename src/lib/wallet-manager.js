@@ -255,15 +255,27 @@ export class WalletManager {
   }
 
   /**
-   * Create a new wallet with the given parameters
+   * Create a new wallet with the given parameters.
+   * When bitsharesAccountName and bitsharesPassword are provided (password-based
+   * cloud wallet, matching wallet.bitshares.org / ex.xbts.io), keys are derived
+   * from those credentials via generateKeysFromPassword.  The brainkey is stored
+   * as an alternative recovery path.  When only a brainkey is supplied the legacy
+   * SLIP-48 derivation is used instead.
    */
-  async createWallet(name, password, brainkey) {
+  async createWallet(name, password, brainkey, bitsharesAccountName, bitsharesPassword) {
     try {
-      // Normalize brainkey
+      // Normalize brainkey (always generated, kept as backup)
       const normalizedBrainkey = CryptoUtils.normalizeBrainkey(brainkey);
 
-      // Generate keys from brainkey
-      const keys = await CryptoUtils.generateKeysFromBrainkey(normalizedBrainkey);
+      // Determine primary keys:
+      // • password-based (cloud wallet) when BitShares credentials are provided
+      // • brainkey-based (SLIP-48 HD) as fallback
+      let keys;
+      if (bitsharesAccountName && bitsharesPassword) {
+        keys = await CryptoUtils.generateKeysFromPassword(bitsharesAccountName, bitsharesPassword);
+      } else {
+        keys = await CryptoUtils.generateKeysFromBrainkey(normalizedBrainkey);
+      }
 
       // Generate unique salt for this wallet
       const salt = CryptoUtils.generateSalt();
@@ -272,6 +284,8 @@ export class WalletManager {
       const encryptionKey = await CryptoUtils.deriveKey(password, salt);
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: normalizedBrainkey,
+        bitsharesAccountName: bitsharesAccountName || null,
+        bitsharesPassword: bitsharesPassword || null,
         keys: keys,
         accounts: []
       }, encryptionKey);
@@ -298,8 +312,15 @@ export class WalletManager {
       this.decryptedKeys = keys;
       this.isUnlockedState = true;
 
+      // Store password for session
+      await this.storeSessionPassword(password);
+
       // Try to find associated account on chain
-      await this.findAndAddAccount(keys.active.publicKey);
+      if (bitsharesAccountName) {
+        await this.findAndAddAccountByName(bitsharesAccountName);
+      } else {
+        await this.findAndAddAccount(keys.active.publicKey);
+      }
 
       return true;
     } catch (error) {
@@ -447,6 +468,120 @@ export class WalletManager {
       console.error('Find account by name error:', error);
       // Don't throw - account might not exist yet
     }
+  }
+
+  /**
+   * Register a new account on-chain directly using an existing wallet account as registrar.
+   * The fee-paying account must be a lifetime member.
+   *
+   * @param {string} newAccountName - desired BitShares account name
+   * @param {{ owner: {publicKey}, active: {publicKey}, memo: {publicKey} }} newKeys
+   * @param {string} feePayingAccountName - name of the lifetime-member account in this wallet
+   */
+  async createAccountOnChain(newAccountName, newKeys, feePayingAccountName) {
+    await this.ensureUnlocked();
+    this.touch();
+
+    if (!this.api) {
+      this.api = new BitSharesAPI();
+      await this.api.connect();
+    }
+
+    // Resolve the fee-paying (registrar) account
+    const registrar = await this.api.getAccount(feePayingAccountName);
+    if (!registrar) {
+      throw new Error(`Account "${feePayingAccountName}" not found on the blockchain.`);
+    }
+
+    // Get the signing keys for the registrar from this wallet
+    const registrarKeys = await this.getAccountKeys(registrar.id);
+
+    const operation = {
+      fee: { amount: 0, asset_id: '1.3.0' },
+      registrar: registrar.id,
+      referrer: registrar.id,
+      referrer_percent: 0,
+      name: newAccountName,
+      owner: {
+        weight_threshold: 1,
+        account_auths: [],
+        key_auths: [[newKeys.owner.publicKey, 1]],
+        address_auths: []
+      },
+      active: {
+        weight_threshold: 1,
+        account_auths: [],
+        key_auths: [[newKeys.active.publicKey, 1]],
+        address_auths: []
+      },
+      options: {
+        memo_key: newKeys.memo.publicKey,
+        voting_account: '1.2.5',
+        num_witness: 0,
+        num_committee: 0,
+        votes: [],
+        extensions: []
+      }
+    };
+
+    await this.api.broadcastTransaction('account_create', operation, registrarKeys.active.privateKey);
+  }
+
+  /**
+   * Register a new account on the BitShares blockchain via the faucet.
+   *
+   * The faucet pays the account_create fee and broadcasts the transaction.
+   * Throws a descriptive Error if the faucet rejects the request.
+   *
+   * @param {string} accountName  - desired BitShares account name
+   * @param {{ owner: {publicKey}, active: {publicKey}, memo: {publicKey} }} keys
+   * @param {string} [faucetUrl]  - override the default faucet endpoint
+   */
+  async registerAccountViaFaucet(accountName, keys, faucetUrl = 'https://faucet.bitshares.eu/onboarding') {
+    const payload = {
+      account: {
+        name: accountName,
+        owner_key: keys.owner.publicKey,
+        active_key: keys.active.publicKey,
+        memo_key: keys.memo.publicKey,
+        refcode: '',
+        referrer: ''
+      }
+    };
+
+    let response;
+    try {
+      response = await fetch(faucetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (networkError) {
+      throw new Error('Could not reach the faucet. Check your internet connection and try again.');
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error(`Faucet returned status ${response.status}. Please try again later.`);
+    }
+
+    // Faucet can return errors even on 2xx, and can also return 5xx with a JSON body
+    if (data.error) {
+      // Faucet returns errors as { error: { base: ["msg"] } } or { error: "msg" }
+      const msg =
+        (data.error.base && data.error.base[0]) ||
+        (typeof data.error === 'string' ? data.error : null) ||
+        JSON.stringify(data.error);
+      throw new Error(msg);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Faucet returned status ${response.status}. Please try again later.`);
+    }
+
+    return data;
   }
 
   /**
@@ -970,9 +1105,8 @@ export class WalletManager {
    * Get brainkey (requires unlock)
    */
   async getBrainkey() {
-    if (!this.isUnlockedState) {
-      throw new Error('Wallet is locked');
-    }
+    // Restores session if the popup was reopened (service worker may have restarted)
+    await this.ensureUnlocked();
 
     return new Promise((resolve, reject) => {
       chrome.storage.local.get(['wallet'], async (result) => {

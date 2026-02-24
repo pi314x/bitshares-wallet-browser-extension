@@ -5,6 +5,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.1] — 2026-02-24
+
+### Fixed
+- **RIPEMD-160**: Replaced SHA-256 stub with correct pure-JS implementation;
+  fixes BTS public key checksums for all key derivation paths
+- **Faucet registration (status 500)**: Removed non-standard `chain_id` field
+  from the faucet POST payload; account creation on mainnet now succeeds
+- **Brainkey backup**: Settings → Backup Brainkey now restores the session
+  correctly when the popup has been reopened after an auto-lock
+
+### Added
+- **Confirm BitShares Password field**: User must re-enter the auto-generated
+  password before wallet creation proceeds; live `✓ Matches` / `✗ Does not
+  match` indicator with eye-toggle visibility
+- **Pay with account**: Optional field in the create-wallet flow — provide a
+  lifetime-member account already in the wallet to pay the `account_create` fee
+  directly on-chain instead of using the faucet (faucet remains the default)
+
+### Changed
+- **Auto-generated password**: Length increased to 45 characters (`P` + 44
+  base58 chars) for stronger entropy
+- **Transaction details**: Account IDs (e.g. `1.2.1815585`) are resolved to
+  human-readable names; asset amounts now display with correct decimals and
+  symbol (e.g. `0.50000 BTS`) instead of raw integers; fee amounts reflect
+  real on-chain values
+- **Swap screen**: "You Receive" and "Min. Received" fields now include the
+  asset symbol; confirmation modal no longer duplicates the symbol
+
+---
+
 ## [0.2.0] — 2026-02-19
 
 ### Added

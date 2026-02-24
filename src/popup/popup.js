@@ -55,9 +55,19 @@ function setupEventListeners() {
   
   // Create wallet flow
   document.getElementById('btn-generate-wallet')?.addEventListener('click', handleGenerateWallet);
+  document.getElementById('wallet-account-name')?.addEventListener('input', handleAccountNameInput);
   document.getElementById('wallet-password')?.addEventListener('input', handlePasswordInput);
   document.getElementById('wallet-password-confirm')?.addEventListener('input', validatePasswordMatch);
   document.getElementById('agree-terms')?.addEventListener('change', updateGenerateButtonState);
+  document.getElementById('btn-copy-bts-password')?.addEventListener('click', handleCopyBtsPassword);
+  document.getElementById('btn-regen-bts-password')?.addEventListener('click', () => {
+    populateBtsPassword();
+    // Clear confirm field when a new password is generated
+    const confirmEl = document.getElementById('wallet-bts-password-confirm');
+    if (confirmEl) confirmEl.value = '';
+    updateGenerateButtonState();
+  });
+  document.getElementById('wallet-bts-password-confirm')?.addEventListener('input', updateGenerateButtonState);
   
   // Backup brainkey
   document.getElementById('btn-copy-brainkey')?.addEventListener('click', handleCopyBrainkey);
@@ -322,6 +332,17 @@ function showScreen(screenId) {
     if (unlockBtn) unlockBtn.disabled = false;
     if (eyeToggle) eyeToggle.disabled = false;
   }
+
+  // Clear sensitive forms when navigating to welcome screen
+  if (screenId === 'welcome-screen') {
+    clearCreateWalletForm();
+    clearImportWalletForm();
+  }
+
+  // Auto-generate a fresh BitShares password each time the create screen is shown
+  if (screenId === 'create-wallet-screen') {
+    populateBtsPassword();
+  }
 }
 
 // Show modal
@@ -356,26 +377,113 @@ function showToast(message, type = 'info') {
 
 // === Create Wallet Flow ===
 
+// Validate BitShares account name format
+function validateAccountNameFormat(name) {
+  if (!name) return null; // empty, not an error yet
+  if (name.length < 3) return 'Too short (min 3 characters)';
+  if (name.length > 63) return 'Too long (max 63 characters)';
+  if (!/^[a-z]/.test(name)) return 'Must start with a lowercase letter';
+  if (/[^a-z0-9-]/.test(name)) return 'Only lowercase letters, digits and hyphens allowed';
+  if (/--/.test(name)) return 'No consecutive hyphens allowed';
+  if (/-$/.test(name)) return 'Cannot end with a hyphen';
+  return null; // valid
+}
+
+let accountNameCheckTimeout;
+
+function handleAccountNameInput(e) {
+  const name = e.target.value.trim();
+  const statusEl = document.getElementById('wallet-account-name-status');
+
+  clearTimeout(accountNameCheckTimeout);
+
+  if (!name) {
+    statusEl.textContent = '';
+    updateGenerateButtonState();
+    return;
+  }
+
+  const formatError = validateAccountNameFormat(name);
+  if (formatError) {
+    statusEl.textContent = '✗ ' + formatError;
+    statusEl.className = 'input-status invalid';
+    updateGenerateButtonState();
+    return;
+  }
+
+  statusEl.textContent = 'Checking...';
+  statusEl.className = 'input-status';
+
+  accountNameCheckTimeout = setTimeout(async () => {
+    try {
+      if (btsAPI && btsAPI.isConnected) {
+        const account = await btsAPI.getAccount(name);
+        if (account) {
+          statusEl.textContent = '✗ Name already taken';
+          statusEl.className = 'input-status invalid';
+        } else {
+          statusEl.textContent = '✓ Name available';
+          statusEl.className = 'input-status valid';
+        }
+      } else {
+        statusEl.textContent = '✓ Valid format';
+        statusEl.className = 'input-status valid';
+      }
+    } catch (error) {
+      statusEl.textContent = '✓ Valid format';
+      statusEl.className = 'input-status valid';
+    }
+    updateGenerateButtonState();
+  }, 500);
+}
+
+// Generate a strong random password using the base58 alphabet (no 0/O/I/l confusion).
+// Produces a 45-char string: "P" prefix + 44 random base58 characters.
+function generateStrongPassword() {
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const bytes = new Uint8Array(44);
+  crypto.getRandomValues(bytes);
+  return 'P' + Array.from(bytes).map(b => alphabet[b % alphabet.length]).join('');
+}
+
+function populateBtsPassword() {
+  const el = document.getElementById('wallet-bts-password');
+  if (el) el.value = generateStrongPassword();
+}
+
+async function handleCopyBtsPassword() {
+  const password = document.getElementById('wallet-bts-password')?.value;
+  if (!password) return;
+  try {
+    await navigator.clipboard.writeText(password);
+    showToast('BitShares password copied!', 'success');
+  } catch {
+    showToast('Failed to copy password', 'error');
+  }
+}
+
 function handlePasswordInput(e) {
   const password = e.target.value;
   const strengthIndicator = document.getElementById('password-strength');
-  
-  const strength = calculatePasswordStrength(password);
-  strengthIndicator.className = 'password-strength ' + strength;
-  
+
+  if (strengthIndicator) {
+    const strength = calculatePasswordStrength(password);
+    strengthIndicator.className = 'password-strength ' + strength;
+  }
+
   validatePasswordMatch();
 }
 
 function calculatePasswordStrength(password) {
   if (password.length < 8) return 'weak';
-  
+
   let score = 0;
   if (password.length >= 12) score++;
   if (/[A-Z]/.test(password)) score++;
   if (/[a-z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
-  
+
   if (score < 3) return 'weak';
   if (score < 4) return 'medium';
   return 'strong';
@@ -384,45 +492,123 @@ function calculatePasswordStrength(password) {
 function validatePasswordMatch() {
   const password = document.getElementById('wallet-password')?.value;
   const confirm = document.getElementById('wallet-password-confirm')?.value;
-  
+
   if (confirm && password !== confirm) {
     document.getElementById('wallet-password-confirm')?.classList.add('error');
   } else {
     document.getElementById('wallet-password-confirm')?.classList.remove('error');
   }
-  
+
   updateGenerateButtonState();
 }
 
 function updateGenerateButtonState() {
+  const accountName = document.getElementById('wallet-account-name')?.value?.trim();
+  const btsPassword = document.getElementById('wallet-bts-password')?.value;
+  const btsConfirm = document.getElementById('wallet-bts-password-confirm')?.value;
   const password = document.getElementById('wallet-password')?.value;
   const confirm = document.getElementById('wallet-password-confirm')?.value;
   const agreed = document.getElementById('agree-terms')?.checked;
   const btn = document.getElementById('btn-generate-wallet');
-  
-  const isValid = password?.length >= 12 && password === confirm && agreed;
+
+  const accountNameFormatOk = accountName && !validateAccountNameFormat(accountName);
+  const accountNameStatusInvalid = document.getElementById('wallet-account-name-status')?.classList.contains('invalid');
+  const btsPasswordsMatch = btsPassword?.length > 0 && btsPassword === btsConfirm;
+  const localPasswordsMatch = password?.length >= 8 && password === confirm;
+
+  // Update BTS confirm status indicator
+  const btsConfirmStatus = document.getElementById('wallet-bts-confirm-status');
+  if (btsConfirmStatus) {
+    if (!btsConfirm) {
+      btsConfirmStatus.textContent = '';
+      btsConfirmStatus.className = 'input-status';
+    } else if (btsPassword === btsConfirm) {
+      btsConfirmStatus.textContent = '✓ Matches';
+      btsConfirmStatus.className = 'input-status valid';
+    } else {
+      btsConfirmStatus.textContent = '✗ Does not match';
+      btsConfirmStatus.className = 'input-status invalid';
+    }
+  }
+
+  const isValid = accountNameFormatOk && !accountNameStatusInvalid && btsPasswordsMatch && localPasswordsMatch && agreed;
   btn.disabled = !isValid;
 }
 
+function clearCreateWalletForm() {
+  ['wallet-account-name', 'wallet-fee-account', 'wallet-bts-password-confirm',
+   'wallet-password', 'wallet-password-confirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const agreeTerms = document.getElementById('agree-terms');
+  if (agreeTerms) agreeTerms.checked = false;
+  const statusEl = document.getElementById('wallet-account-name-status');
+  if (statusEl) { statusEl.textContent = ''; statusEl.className = 'input-status'; }
+  const btsConfirmStatus = document.getElementById('wallet-bts-confirm-status');
+  if (btsConfirmStatus) { btsConfirmStatus.textContent = ''; btsConfirmStatus.className = 'input-status'; }
+  // Regenerate a fresh BTS password
+  populateBtsPassword();
+  const btn = document.getElementById('btn-generate-wallet');
+  if (btn) btn.disabled = true;
+}
+
 async function handleGenerateWallet() {
-  const walletName = document.getElementById('wallet-name')?.value || 'My BitShares Wallet';
+  const btsAccountName = document.getElementById('wallet-account-name')?.value?.trim();
+  const btsPassword = document.getElementById('wallet-bts-password')?.value;
   const password = document.getElementById('wallet-password')?.value;
-  
+  const feeAccount = document.getElementById('wallet-fee-account')?.value?.trim();
+
+  if (!btsAccountName) {
+    showToast('Please enter a BitShares account name', 'error');
+    return;
+  }
+  const nameError = validateAccountNameFormat(btsAccountName);
+  if (nameError) {
+    showToast('Account name: ' + nameError, 'error');
+    return;
+  }
+  if (!btsPassword) {
+    showToast('BitShares password is missing — please regenerate', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-generate-wallet');
+  const originalText = btn.textContent;
+
   try {
-    // Generate brainkey
+    // Derive the keys that will control the on-chain account
+    const keys = await CryptoUtils.generateKeysFromPassword(btsAccountName, btsPassword);
+
+    // Register account on-chain — via a wallet account if provided, otherwise faucet
+    btn.disabled = true;
+    btn.textContent = 'Registering account…';
+
+    if (feeAccount) {
+      showToast(`Registering account via "${feeAccount}"…`, 'info');
+      await walletManager.createAccountOnChain(btsAccountName, keys, feeAccount);
+    } else {
+      showToast('Registering account via faucet…', 'info');
+      await walletManager.registerAccountViaFaucet(btsAccountName, keys);
+    }
+
+    // Generate brainkey for backup, then store the wallet locally
+    btn.textContent = 'Creating wallet…';
     const brainkey = CryptoUtils.generateBrainkey();
-    
-    // Create wallet
-    await walletManager.createWallet(walletName, password, brainkey);
-    
-    // Display brainkey for backup
+    await walletManager.createWallet('BitShares Wallet', password, brainkey, btsAccountName, btsPassword);
+
+    // Clear the form (also regenerates the displayed BTS password)
+    clearCreateWalletForm();
+
     displayBrainkey(brainkey);
-    
     showScreen('backup-brainkey-screen');
-    showToast('Wallet created successfully!', 'success');
+    showToast('Account registered! Save your brainkey and BitShares password.', 'success');
   } catch (error) {
     console.error('Failed to create wallet:', error);
-    showToast('Failed to create wallet: ' + error.message, 'error');
+    showToast(error.message, 'error');
+    btn.disabled = false;
+    btn.textContent = originalText;
+    updateGenerateButtonState();
   }
 }
 
@@ -492,6 +678,25 @@ function setupImportTabs() {
   });
 }
 
+function clearImportWalletForm() {
+  const fields = [
+    'import-account-name', 'import-account-password',
+    'import-brainkey-input',
+    'import-wallet-password', 'import-wallet-password-confirm'
+  ];
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const statusEl = document.getElementById('import-account-name-status');
+  if (statusEl) { statusEl.textContent = ''; statusEl.className = 'input-status'; }
+  // Reset tabs to default (account tab)
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.import-tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="import-account"]')?.classList.add('active');
+  document.getElementById('import-account')?.classList.add('active');
+}
+
 async function handleImportWallet() {
   const activeTab = document.querySelector('.import-tab-content.active');
   const tabId = activeTab?.id;
@@ -507,31 +712,49 @@ async function handleImportWallet() {
     showToast('Wallet passwords do not match', 'error');
     return;
   }
-  
+
   try {
     let importData = {};
-    
-    switch (tabId) {
-      case 'import-account':
-        importData = {
-          type: 'account',
-          accountName: document.getElementById('import-account-name')?.value,
-          password: document.getElementById('import-account-password')?.value
-        };
-        break;
 
-      case 'import-brainkey':
-        importData = {
-          type: 'brainkey',
-          brainkey: document.getElementById('import-brainkey-input')?.value
-        };
+    switch (tabId) {
+      case 'import-account': {
+        const accountName = document.getElementById('import-account-name')?.value?.trim();
+        const accountPassword = document.getElementById('import-account-password')?.value;
+        if (!accountName) {
+          showToast('Please enter the BitShares account name', 'error');
+          return;
+        }
+        const nameError = validateAccountNameFormat(accountName);
+        if (nameError) {
+          showToast('Account name: ' + nameError, 'error');
+          return;
+        }
+        if (!accountPassword) {
+          showToast('Please enter the BitShares password', 'error');
+          return;
+        }
+        importData = { type: 'account', accountName, password: accountPassword };
         break;
+      }
+
+      case 'import-brainkey': {
+        const brainkey = document.getElementById('import-brainkey-input')?.value?.trim();
+        if (!brainkey) {
+          showToast('Please enter your brainkey', 'error');
+          return;
+        }
+        importData = { type: 'brainkey', brainkey };
+        break;
+      }
     }
-    
+
     await walletManager.importWallet(importData, walletPassword);
     await initializeAPI();
     await loadDashboard();
-    
+
+    // Clear form immediately after successful import
+    clearImportWalletForm();
+
     showScreen('dashboard-screen');
     isLocked = false;
     showToast('Wallet imported successfully!', 'success');
@@ -1956,6 +2179,29 @@ async function formatAmountWithSymbol(amountObj) {
 // === Account Management ===
 
 let addAccountCheckTimeout;
+let importAccountCheckTimeout;
+
+// Helper: check if an account exists on chain and update a status element
+async function checkAccountExists(accountName, statusEl) {
+  if (!btsAPI || !btsAPI.isConnected) {
+    statusEl.textContent = 'Not connected';
+    statusEl.className = 'input-status';
+    return;
+  }
+  try {
+    const account = await btsAPI.getAccount(accountName);
+    if (account) {
+      statusEl.textContent = '✓ Account found';
+      statusEl.className = 'input-status valid';
+    } else {
+      statusEl.textContent = '✗ Account not found';
+      statusEl.className = 'input-status invalid';
+    }
+  } catch (error) {
+    statusEl.textContent = '✗ Account not found';
+    statusEl.className = 'input-status invalid';
+  }
+}
 
 // Validate account name when typing in add account form
 document.getElementById('add-account-name')?.addEventListener('input', (e) => {
@@ -1969,26 +2215,31 @@ document.getElementById('add-account-name')?.addEventListener('input', (e) => {
     return;
   }
 
-  addAccountCheckTimeout = setTimeout(async () => {
-    try {
-      if (!btsAPI || !btsAPI.isConnected) {
-        statusEl.textContent = 'Not connected';
-        statusEl.className = 'input-status';
-        return;
-      }
-      const account = await btsAPI.getAccount(accountName);
-      if (account) {
-        statusEl.textContent = '✓ Valid account';
-        statusEl.className = 'input-status valid';
-      } else {
-        statusEl.textContent = '✗ Account not found';
-        statusEl.className = 'input-status invalid';
-      }
-    } catch (error) {
-      statusEl.textContent = '✗ Account not found';
-      statusEl.className = 'input-status invalid';
-    }
-  }, 500);
+  addAccountCheckTimeout = setTimeout(() => checkAccountExists(accountName, statusEl), 500);
+});
+
+// Validate account name when typing in import wallet form (account tab)
+document.getElementById('import-account-name')?.addEventListener('input', (e) => {
+  const accountName = e.target.value.trim();
+  const statusEl = document.getElementById('import-account-name-status');
+
+  clearTimeout(importAccountCheckTimeout);
+
+  if (!accountName) {
+    statusEl.textContent = '';
+    return;
+  }
+
+  const formatError = validateAccountNameFormat(accountName);
+  if (formatError) {
+    statusEl.textContent = '✗ ' + formatError;
+    statusEl.className = 'input-status invalid';
+    return;
+  }
+
+  statusEl.textContent = 'Checking...';
+  statusEl.className = 'input-status';
+  importAccountCheckTimeout = setTimeout(() => checkAccountExists(accountName, statusEl), 500);
 });
 
 async function handleAccountChange(e) {
@@ -2554,18 +2805,25 @@ async function handleNetworkChange(e) {
 // === Settings ===
 
 async function handleShowBackup() {
-  const brainkey = await walletManager.getBrainkey();
-  if (brainkey) {
-    displayBrainkey(brainkey);
-    showScreen('backup-brainkey-screen');
-  } else {
-    showToast('Unable to retrieve brainkey', 'error');
+  try {
+    const brainkey = await walletManager.getBrainkey();
+    if (brainkey) {
+      displayBrainkey(brainkey);
+      showScreen('backup-brainkey-screen');
+    } else {
+      showToast('No brainkey stored for this wallet (imported via private key?)', 'error');
+    }
+  } catch (error) {
+    console.error('Brainkey backup error:', error);
+    showToast('Unable to retrieve brainkey: ' + error.message, 'error');
   }
 }
 
 async function handleResetWallet() {
   if (confirm('Are you sure you want to reset your wallet? This action cannot be undone. Make sure you have backed up your brainkey!')) {
     await walletManager.resetWallet();
+    clearCreateWalletForm();
+    clearImportWalletForm();
     showScreen('welcome-screen');
     showToast('Wallet has been reset', 'info');
   }
@@ -3415,11 +3673,40 @@ function jsonBlock(data) {
 }
 
 /**
+ * Resolve a BitShares account ID (1.2.x) to its name, falling back to the raw ID.
+ */
+async function resolveAccountName(accountId) {
+  if (!accountId || typeof accountId !== 'string') return accountId ?? '';
+  if (!accountId.startsWith('1.2.')) return accountId;
+  try {
+    if (btsAPI && btsAPI.isConnected) {
+      const account = await btsAPI.getAccount(accountId);
+      return account?.name || accountId;
+    }
+  } catch { /* fall through */ }
+  return accountId;
+}
+
+/**
+ * Format an asset amount object { amount, asset_id } with resolved symbol and decimals.
+ * Falls back to the raw "amount (asset id)" string if the API call fails.
+ */
+async function formatAssetAsync(assetObj) {
+  const fallback = formatAsset(assetObj);
+  if (!assetObj || !assetObj.asset_id) return fallback;
+  try {
+    return await formatAmountWithSymbol(assetObj) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Returns an HTML string with human-readable fields for the given operation type.
  * opType: integer operation index (0-74)
  * opData: the operation data object
  */
-function renderOperationDetails(opType, opData) {
+async function renderOperationDetails(opType, opData) {
   if (!opData) return '<p class="op-detail-empty">No operation data available.</p>';
 
   const rows = [];
@@ -3427,17 +3714,17 @@ function renderOperationDetails(opType, opData) {
   switch (opType) {
     // 0: transfer
     case 0:
-      rows.push(opRow('From', opData.from));
-      rows.push(opRow('To', opData.to));
-      rows.push(opRow('Amount', formatAsset(opData.amount)));
+      rows.push(opRow('From', await resolveAccountName(opData.from)));
+      rows.push(opRow('To', await resolveAccountName(opData.to)));
+      rows.push(opRow('Amount', await formatAssetAsync(opData.amount)));
       if (opData.memo) rows.push(opRow('Memo', typeof opData.memo === 'object' ? '[encrypted]' : opData.memo));
       break;
 
     // 1: limit_order_create
     case 1:
-      rows.push(opRow('Seller', opData.seller));
-      rows.push(opRow('Sell (Amount to Sell)', formatAsset(opData.amount_to_sell)));
-      rows.push(opRow('Buy (Min to Receive)', formatAsset(opData.min_to_receive)));
+      rows.push(opRow('Seller', await resolveAccountName(opData.seller)));
+      rows.push(opRow('Sell (Amount to Sell)', await formatAssetAsync(opData.amount_to_sell)));
+      rows.push(opRow('Buy (Min to Receive)', await formatAssetAsync(opData.min_to_receive)));
       rows.push(opRow('Expiration', opData.expiration));
       rows.push(opRow('Fill or Kill', opData.fill_or_kill ? 'Yes' : 'No'));
       break;
@@ -3457,17 +3744,17 @@ function renderOperationDetails(opType, opData) {
 
     // 4: fill_order (virtual)
     case 4:
-      rows.push(opRow('Account', opData.account_id));
+      rows.push(opRow('Account', await resolveAccountName(opData.account_id)));
       rows.push(opRow('Order ID', opData.order_id));
-      rows.push(opRow('Pays', formatAsset(opData.pays)));
-      rows.push(opRow('Receives', formatAsset(opData.receives)));
+      rows.push(opRow('Pays', await formatAssetAsync(opData.pays)));
+      rows.push(opRow('Receives', await formatAssetAsync(opData.receives)));
       break;
 
     // 5: account_create
     case 5:
       rows.push(opRow('Name', opData.name));
-      rows.push(opRow('Registrar', opData.registrar));
-      rows.push(opRow('Referrer', opData.referrer));
+      rows.push(opRow('Registrar', await resolveAccountName(opData.registrar)));
+      rows.push(opRow('Referrer', await resolveAccountName(opData.referrer)));
       rows.push(opRow('Referrer Percent', opData.referrer_percent !== undefined ? `${opData.referrer_percent / 100}%` : 'N/A'));
       if (opData.owner)  rows.push(opRow('Owner Authority',  JSON.stringify(opData.owner)));
       if (opData.active) rows.push(opRow('Active Authority', JSON.stringify(opData.active)));
@@ -4020,7 +4307,7 @@ function renderOperationDetails(opType, opData) {
 
   // Always append fee if present
   if (opData.fee) {
-    rows.push(opRow('Fee', formatAsset(opData.fee)));
+    rows.push(opRow('Fee', await formatAssetAsync(opData.fee)));
   }
 
   return `<div class="op-detail-rows">${rows.join('')}</div>`;
@@ -4065,7 +4352,7 @@ async function showTransactionSigningModal(requestId, origin, operations) {
       allDetailsHtml += `<div class="op-section-header">Operation ${i + 1}: ${escapeHtml(opName)}</div>`;
     }
 
-    allDetailsHtml += renderOperationDetails(opType, opData);
+    allDetailsHtml += await renderOperationDetails(opType, opData);
   }
 
   if (operations.length > 1) {
@@ -4923,7 +5210,9 @@ async function handleSwapFromAmountChange() {
 
   // Minimum received (with 1% slippage)
   const minReceived = outputAmount * 0.99;
-  document.getElementById('swap-min-received').textContent = minReceived.toFixed(toPrecision);
+  const toSymbolLabel = toAsset?.symbol || '';
+  document.getElementById('swap-min-received').textContent =
+    `${minReceived.toFixed(toPrecision)}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
 }
 
 // Calculate FROM amount based on TO amount (reverse calculation)
@@ -4951,7 +5240,9 @@ async function handleSwapToAmountChange() {
 
   // Minimum received (with 1% slippage) - based on the entered TO amount
   const minReceived = outputAmount * 0.99;
-  document.getElementById('swap-min-received').textContent = minReceived.toFixed(toPrecision);
+  const toSymbolLabel = toAsset?.symbol || '';
+  document.getElementById('swap-min-received').textContent =
+    `${minReceived.toFixed(toPrecision)}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
 }
 
 function handleSwapMax() {
@@ -4997,14 +5288,15 @@ async function handleShowSwapConfirmation() {
   const toSymbol = toSelect.options[toSelect.selectedIndex]?.dataset?.symbol || '';
 
   const outputAmount = document.getElementById('swap-to-amount').value;
-  const minReceived = document.getElementById('swap-min-received').textContent;
+  // swap-min-received already includes the symbol; strip it for re-use below
+  const minReceivedRaw = document.getElementById('swap-min-received').textContent.split(' ')[0];
 
   // Populate confirmation modal
   document.getElementById('swap-confirm-from').textContent = `${amount} ${fromSymbol}`;
   document.getElementById('swap-confirm-to').textContent = `${outputAmount} ${toSymbol}`;
   document.getElementById('swap-confirm-rate').textContent = `1 ${fromSymbol} = ${pool.rate.toFixed(6)} ${toSymbol}`;
   document.getElementById('swap-confirm-pool-fee').textContent = `${pool.feePercent.toFixed(2)}%`;
-  document.getElementById('swap-confirm-min').textContent = `${minReceived} ${toSymbol}`;
+  document.getElementById('swap-confirm-min').textContent = `${minReceivedRaw} ${toSymbol}`;
 
   // Fetch network fee
   const networkFeeEl = document.getElementById('swap-confirm-network-fee');
