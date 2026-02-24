@@ -224,6 +224,63 @@ async function ripemd160(data) {
   return hash.slice(0, 20);
 }
 
+/**
+ * HMAC-SHA512 using Web Crypto API
+ */
+async function hmacSha512(keyBytes, data) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, data);
+  return new Uint8Array(sig);
+}
+
+/**
+ * BIP-39: derive a 512-bit seed from a mnemonic phrase via PBKDF2-HMAC-SHA512.
+ * The mnemonic must be space-separated lowercase words (NFKD-normalised per spec).
+ */
+async function mnemonicToSeed(mnemonic, passphrase = '') {
+  const enc = new TextEncoder();
+  const mnemonicBytes = enc.encode(mnemonic.normalize('NFKD'));
+  const saltBytes     = enc.encode(('mnemonic' + passphrase).normalize('NFKD'));
+  const baseKey = await crypto.subtle.importKey(
+    'raw', mnemonicBytes, 'PBKDF2', false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBytes, iterations: 2048, hash: 'SHA-512' },
+    baseKey, 512
+  );
+  return new Uint8Array(bits);
+}
+
+/**
+ * BIP-32: derive master private key + chain code from a 512-bit seed.
+ */
+async function bip32MasterKey(seed) {
+  const key = new TextEncoder().encode('Bitcoin seed');
+  const I   = await hmacSha512(key, seed);
+  return { key: I.slice(0, 32), chainCode: I.slice(32) };
+}
+
+/**
+ * BIP-32: derive a hardened child key.
+ * `index` is the un-hardened index (e.g. 48 for purpose, 0 for network);
+ * 0x80000000 is added internally to make it hardened.
+ */
+async function bip32ChildKey(parent, index) {
+  const data = new Uint8Array(37);
+  data[0] = 0x00;                                       // pad byte for private key
+  data.set(parent.key, 1);                              // 32-byte parent private key
+  new DataView(data.buffer).setUint32(33, (index | 0x80000000) >>> 0, false); // big-endian hardened index
+  const I = await hmacSha512(parent.chainCode, data);
+  const IL = I.slice(0, 32);
+  const ILn = bytesToBigInt(IL);
+  if (ILn >= SECP256K1.N) throw new Error(`BIP-32 child key derivation invalid at index ${index}`);
+  const childKeyBigInt = mod(ILn + bytesToBigInt(parent.key), SECP256K1.N);
+  if (childKeyBigInt === 0n) throw new Error(`BIP-32 child key is zero at index ${index}`);
+  return { key: bigIntToBytes(childKeyBigInt, 32), chainCode: I.slice(32) };
+}
+
 export class CryptoUtils {
   /**
    * Generate a random 24-word brainkey
@@ -253,20 +310,53 @@ export class CryptoUtils {
   }
 
   /**
-   * Generate keys from brainkey
+   * Generate keys from brainkey using SLIP-48 HD derivation.
+   *
+   * Path: m / 48' / 0' / role' / 0' / 0'  (BitShares network = 0)
+   *   owner  → role 0   (m/48'/0'/0'/0'/0')
+   *   active → role 1   (m/48'/0'/1'/0'/0')
+   *   memo   → role 3   (m/48'/0'/3'/0'/0')
+   *
+   * The brainkey words are lowercased before BIP-39 PBKDF2 seed derivation
+   * so they match the BIP-39 English wordlist casing.
    */
   static async generateKeysFromBrainkey(brainkey) {
     const normalizedBrainkey = this.normalizeBrainkey(brainkey);
 
-    // Generate keys for different roles using sequence numbers
-    const ownerKey = await this.generateKeyFromSeed(normalizedBrainkey + ' 0');
-    const activeKey = await this.generateKeyFromSeed(normalizedBrainkey + ' 1');
-    const memoKey = await this.generateKeyFromSeed(normalizedBrainkey + ' 2');
+    // BIP-39: mnemonic → 512-bit seed (lowercase + NFKD normalised per spec)
+    const seed   = await mnemonicToSeed(normalizedBrainkey.toLowerCase());
+    const master = await bip32MasterKey(seed);
 
+    // SLIP-48 shared prefix: m/48'/0'
+    const purpose = await bip32ChildKey(master, 48);
+    const network = await bip32ChildKey(purpose, 0);  // BitShares network index 0
+
+    const deriveRole = async (roleIndex) => {
+      const roleNode    = await bip32ChildKey(network, roleIndex);
+      const accountNode = await bip32ChildKey(roleNode, 0);   // account-index 0
+      const keyNode     = await bip32ChildKey(accountNode, 0); // key-index 0
+      return this.privateKeyBytesToKeyPair(keyNode.key);
+    };
+
+    const [ownerKey, activeKey, memoKey] = await Promise.all([
+      deriveRole(0), // owner  (SLIP-48 role index 0)
+      deriveRole(1), // active (SLIP-48 role index 1)
+      deriveRole(3), // memo   (SLIP-48 role index 3)
+    ]);
+
+    return { active: activeKey, owner: ownerKey, memo: memoKey };
+  }
+
+  /**
+   * Convert raw 32-byte private key to a WIF + BTS public key pair.
+   */
+  static async privateKeyBytesToKeyPair(privateKeyBytes) {
+    const privateKeyBigInt = bytesToBigInt(privateKeyBytes);
+    const publicPoint      = G.multiply(privateKeyBigInt);
+    const publicKeyBytes   = publicPoint.toCompressed();
     return {
-      active: activeKey,
-      owner: ownerKey,
-      memo: memoKey
+      privateKey: await this.privateKeyToWIF(privateKeyBytes),
+      publicKey:  await this.publicKeyToBTS(publicKeyBytes)
     };
   }
 

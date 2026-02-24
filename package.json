@@ -1,5 +1,5 @@
 {
-  "name": "bitshares-wallet-extension",
+  "name": "bitshares-wallet-browser-extension",
   "version": "0.3.0",
   "description": "BitShares Wallet Chrome Extension - A MetaMask-like wallet for the BitShares blockchain",
   "scripts": {
@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pi314x/bitshares-wallet-extension"
+    "url": "https://github.com/pi314x/bitshares-wallet-browser-extension"
   },
   "devDependencies": {
     "jest": "^29.7.0",

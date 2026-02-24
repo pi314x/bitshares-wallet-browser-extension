@@ -1,4 +1,4 @@
-# BitShares Wallet Extension
+# BitShares Wallet Browser Extension
 
 A secure browser extension for the BitShares blockchain - similar to MetaMask but for BitShares DEX. Supports Chrome, Brave, and Firefox.
 
