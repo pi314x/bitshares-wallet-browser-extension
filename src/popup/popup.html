@@ -73,24 +73,87 @@
         <h2>Create Wallet</h2>
       </div>
       <div class="form-container">
+
+        <div class="form-section-label">BitShares Account</div>
         <div class="form-group">
-          <label for="wallet-name">Wallet Name</label>
-          <input type="text" id="wallet-name" placeholder="My BitShares Wallet" maxlength="32">
+          <label for="wallet-account-name">Account Name</label>
+          <input type="text" id="wallet-account-name" placeholder="e.g., my-bitshares-name" maxlength="63" autocomplete="off" autocapitalize="none">
+          <span id="wallet-account-name-status" class="input-status"></span>
         </div>
         <div class="form-group">
-          <label for="wallet-password">Password</label>
-          <input type="password" id="wallet-password" placeholder="Enter a strong password">
-          <div class="password-strength" id="password-strength"></div>
+          <label for="wallet-bts-password">BitShares Password (auto-generated)</label>
+          <div class="generated-password-wrapper">
+            <input type="text" id="wallet-bts-password" class="generated-password" readonly autocomplete="off" spellcheck="false">
+            <button type="button" id="btn-copy-bts-password" class="btn-gen-action" title="Copy password">📋</button>
+            <button type="button" id="btn-regen-bts-password" class="btn-gen-action" title="Generate new password">↻</button>
+          </div>
         </div>
         <div class="form-group">
-          <label for="wallet-password-confirm">Confirm Password</label>
-          <input type="password" id="wallet-password-confirm" placeholder="Confirm your password">
+          <label for="wallet-bts-password-confirm">Confirm BitShares Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="wallet-bts-password-confirm" placeholder="Re-enter the generated password" autocomplete="off">
+            <button type="button" class="password-toggle" data-target="wallet-bts-password-confirm">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+          <span id="wallet-bts-confirm-status" class="input-status"></span>
+        </div>
+        <div class="warning-box">
+          <span class="warning-icon">⚠️</span>
+          <p><strong>Save this password!</strong> It controls your on-chain account keys and cannot be recovered if lost.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="wallet-fee-account">Pay with account <span class="label-optional">(optional)</span></label>
+          <input type="text" id="wallet-fee-account" placeholder="Lifetime member account name" autocomplete="off" autocapitalize="none">
+          <span class="form-hint">A lifetime member account already in your wallet that pays the registration fee. Leave empty to use the faucet (mainnet only).</span>
+        </div>
+
+        <div class="form-section-label">Local Encryption</div>
+        <div class="form-group">
+          <label for="wallet-password">Wallet Password (to encrypt locally)</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="wallet-password" placeholder="Please enter a wallet password (min 8 characters)" autocomplete="new-password">
+            <button type="button" class="password-toggle" data-target="wallet-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="wallet-password-confirm">Confirm Wallet Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="wallet-password-confirm" placeholder="Repeat wallet password" autocomplete="new-password">
+            <button type="button" class="password-toggle" data-target="wallet-password-confirm">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="checkbox-group">
           <input type="checkbox" id="agree-terms">
-          <label for="agree-terms">I understand that I am responsible for keeping my password safe</label>
+          <label for="agree-terms">I have saved my BitShares password and understand it cannot be recovered</label>
         </div>
-        <button id="btn-generate-wallet" class="btn btn-primary" disabled>Generate Wallet</button>
+        <button id="btn-generate-wallet" class="btn btn-primary" disabled>Create Account</button>
       </div>
     </div>
 
@@ -131,7 +194,8 @@
         <div id="import-account" class="import-tab-content active">
           <div class="form-group">
             <label for="import-account-name">BitShares Account Name</label>
-            <input type="text" id="import-account-name" placeholder="e.g., my-account">
+            <input type="text" id="import-account-name" placeholder="e.g., my-account" autocomplete="off" autocapitalize="none">
+            <span id="import-account-name-status" class="input-status"></span>
           </div>
           <div class="form-group">
             <label for="import-account-password">BitShares Password</label>

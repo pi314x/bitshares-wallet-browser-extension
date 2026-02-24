@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BitShares Wallet",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A secure BitShares blockchain wallet extension for Chrome - Sign transactions, manage keys, and interact with dApps",
   "author": "BitShares Community",
   "homepage_url": "https://bitshares.org",
@@ -58,7 +58,8 @@
     "wss://*.bitshares.ws/*",
     "wss://*.bitshares.org/*",
     "wss://*.bitshares.dev/*",
-    "https://*.bitshares.org/*"
+    "https://*.bitshares.org/*",
+    "https://faucet.bitshares.eu/*"
   ],
   
   "content_security_policy": {
