@@ -329,6 +329,14 @@ class BackgroundService {
   }
 
   async handleConnectionRequest(origin, params, messageId, tabId, port) {
+    // Validate chain_id if the site specified one
+    const activeChainId = await this.api.getChainId();
+    if (params && params.chain_id && params.chain_id !== activeChainId) {
+      throw new Error(
+        `Chain ID mismatch: site expects ${params.chain_id} but the extension is connected to ${activeChainId}. Switch your network in the extension and try again.`
+      );
+    }
+
     // Check if CURRENT account is already connected to this site
     const account = await this.walletManager.getCurrentAccount();
     if (account && account.id) {
@@ -343,6 +351,7 @@ class BackgroundService {
         }
         return {
           connected: true,
+          chainId: activeChainId,
           account: {
             name: account.name,
             id: account.id
@@ -709,12 +718,17 @@ class BackgroundService {
       }
     });
 
-    // Set badge to alert user to click the extension icon
+    // Set badge as fallback indicator
     await chrome.action.setBadgeText({ text: '1' });
     await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
 
-    // User needs to click the extension icon to see approval in popup.html
-    console.log('Pending approval stored, waiting for user to click extension icon');
+    // Open the popup automatically so the user sees the approval request immediately
+    try {
+      await chrome.action.openPopup();
+    } catch {
+      // openPopup() can fail if no browser window is focused; badge remains as fallback
+      console.log('Could not open popup automatically, waiting for user to click extension icon');
+    }
   }
 
   capitalizeType(type) {
@@ -776,6 +790,7 @@ class BackgroundService {
 
       const response = {
         connected: true,
+        chainId: await this.api.getChainId(),
         account: account ? { name: account.name, id: account.id } : null,
         balances
       };
