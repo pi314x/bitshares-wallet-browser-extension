@@ -115,6 +115,23 @@
 
   connectToBackground();
 
+  // Keep the MV3 service worker alive by sending a ping every 15 seconds.
+  // 15 s gives a comfortable margin below Chrome's ~30 s idle cutoff.
+  // Without this the service worker terminates after ~30 s of inactivity and
+  // every subsequent port open triggers the "Background connection lost" cycle.
+  setInterval(() => {
+    if (port && chrome.runtime?.id) {
+      try {
+        port.postMessage({ method: 'keepalive', params: {}, id: ++messageId });
+      } catch (_) {
+        // Port may have just disconnected; acknowledge lastError so Chrome
+        // does not log "Unchecked runtime.lastError" in the console.
+        void chrome.runtime.lastError;
+        // The onDisconnect handler will reconnect automatically.
+      }
+    }
+  }, 15000);
+
   // Listen for messages from page script
   window.addEventListener('message', async (event) => {
     // Only accept messages from same window

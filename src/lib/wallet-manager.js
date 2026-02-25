@@ -1234,12 +1234,19 @@ export class WalletManager {
       const currentAccount = await this.getCurrentAccount();
       const keys = await this.getAccountKeys(currentAccount.id);
 
-      const signedTx = await this.api.signTransaction(
-        transaction,
-        keys.active.privateKey
-      );
+      // Normalise: accept either a full tx object or a raw operations array
+      let tx;
+      if (transaction && Array.isArray(transaction.operations)) {
+        tx = transaction;
+      } else if (Array.isArray(transaction)) {
+        tx = { operations: transaction, extensions: [] };
+      } else {
+        throw new Error('Invalid transaction format: expected { operations: [...] } or [[opType, opData], ...]');
+      }
 
-      return { success: true, signedTx };
+      // Sign the transaction AND broadcast it (fills fees, refreshes headers, signs, broadcasts)
+      const result = await this.api.signAndBroadcast(tx, keys.active.privateKey);
+      return { success: true, result };
     } catch (error) {
       console.error('Sign transaction error:', error);
       return { success: false, error: error.message };
@@ -1275,38 +1282,40 @@ export class WalletManager {
   }
 
   async storeSessionPassword(password) {
-    // Generate a random session encryption key
-    this._sessionEncryptionKey = CryptoUtils.randomBytes(32);
+    // Generate a new key locally — do NOT assign to this._sessionEncryptionKey yet.
+    // Updating the in-memory key before the storage write completes causes a race:
+    // concurrent callers find the new key in memory but old-key-encrypted data in
+    // storage, producing "Failed to decrypt session data".
+    const newKey = CryptoUtils.randomBytes(32);
 
-    // Encrypt the password with the session key before storing
-    const encryptedPassword = await this._encryptForSession(password);
+    const encryptedPassword = await this._encryptForSession(password, newKey);
 
     return new Promise((resolve) => {
       const storage = chrome.storage.session || chrome.storage.local;
-      // Always persist session key to session storage
-      // This allows session to survive popup closes and service worker restarts
-      // Security: chrome.storage.session is cleared when browser closes
-      // Auto-lock is enforced by timestamp check, not by losing the key
       const sessionData = {
         encryptedSessionData: encryptedPassword,
         unlockTimestamp: Date.now(),
         autoLockDuration: this.autoLockDuration,
-        persistedSessionKey: btoa(String.fromCharCode(...this._sessionEncryptionKey))
+        persistedSessionKey: btoa(String.fromCharCode(...newKey))
       };
 
-      storage.set(sessionData, () => resolve());
+      storage.set(sessionData, () => {
+        // Commit new key to memory only after the storage write is confirmed.
+        this._sessionEncryptionKey = newKey;
+        resolve();
+      });
     });
   }
 
-  async _encryptForSession(data) {
-    if (!this._sessionEncryptionKey) {
+  async _encryptForSession(data, rawKey = this._sessionEncryptionKey) {
+    if (!rawKey) {
       throw new Error('No session encryption key');
     }
-    // Use AES-GCM with the session key
+    // Use AES-GCM with the provided key
     const iv = CryptoUtils.randomBytes(12);
     const key = await crypto.subtle.importKey(
       'raw',
-      this._sessionEncryptionKey,
+      rawKey,
       { name: 'AES-GCM' },
       false,
       ['encrypt']
@@ -1349,23 +1358,29 @@ export class WalletManager {
   }
 
   async getStoredPassword() {
-    // Session key must be in memory - if not, session is truly expired
-    if (!this._sessionEncryptionKey) {
-      throw new Error('Session expired - please unlock again');
-    }
-
-    return new Promise(async (resolve, reject) => {
+    // Always read persistedSessionKey fresh from storage.
+    // The popup and the service worker are separate JS contexts, each with their own
+    // WalletManager instance and their own this._sessionEncryptionKey in memory.
+    // When the popup re-unlocks it writes a NEW key to storage; the service worker's
+    // in-memory copy is now stale. Reading the key from storage on every call
+    // guarantees both contexts always decrypt with the correct, current key.
+    return new Promise((resolve, reject) => {
       const storage = chrome.storage.session || chrome.storage.local;
-      storage.get(['encryptedSessionData'], async (result) => {
-        if (result?.encryptedSessionData) {
-          try {
-            const password = await this._decryptFromSession(result.encryptedSessionData);
-            resolve(password);
-          } catch (e) {
-            reject(new Error('Failed to decrypt session data'));
-          }
-        } else {
+      storage.get(['encryptedSessionData', 'persistedSessionKey'], async (result) => {
+        if (!result?.encryptedSessionData || !result?.persistedSessionKey) {
           reject(new Error('Session expired'));
+          return;
+        }
+        try {
+          // Restore the current key from storage and sync in-memory copy
+          const currentKey = new Uint8Array(
+            atob(result.persistedSessionKey).split('').map(c => c.charCodeAt(0))
+          );
+          this._sessionEncryptionKey = currentKey;
+          const password = await this._decryptFromSession(result.encryptedSessionData);
+          resolve(password);
+        } catch (e) {
+          reject(new Error('Failed to decrypt session data: ' + e.message));
         }
       });
     });
