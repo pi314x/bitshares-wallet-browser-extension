@@ -381,11 +381,19 @@ function showToast(message, type = 'info') {
 function validateAccountNameFormat(name) {
   if (!name) return null; // empty, not an error yet
   if (name.length < 3) return 'Too short (min 3 characters)';
-  if (name.length > 63) return 'Too long (max 63 characters)';
+  if (name.length > 41) return 'Too long (max 41 characters)';
   if (!/^[a-z]/.test(name)) return 'Must start with a lowercase letter';
   if (/[^a-z0-9-]/.test(name)) return 'Only lowercase letters, digits and hyphens allowed';
   if (/--/.test(name)) return 'No consecutive hyphens allowed';
   if (/-$/.test(name)) return 'Cannot end with a hyphen';
+  // Free (faucet) registration requires a hyphen, a digit, or no vowels.
+  // Pure letter names with vowels are "premium" names that require a paid fee.
+  const hasHyphen = name.includes('-');
+  const hasDigit = /[0-9]/.test(name);
+  const hasVowel = /[aeiou]/.test(name);
+  if (!hasHyphen && !hasDigit && hasVowel) {
+    return 'Premium name — must contain a hyphen or digit (e.g., my-name or name1) for free registration';
+  }
   return null; // valid
 }
 
