@@ -3412,19 +3412,45 @@ async function showTransferApprovalModal(requestId, origin, params) {
     memoRow.style.display = 'none';
   }
 
-  // Fetch and display transfer fee
+  // Fetch and display the real transfer fee from the on-chain fee schedule.
+  // Using get_required_fees with placeholder operation data returns 0 because the
+  // node cannot serialise placeholder public keys. Reading the fee schedule directly
+  // and adding price_per_kbyte × memo_size is both reliable and accurate.
   const feeEl = document.getElementById('transfer-fee');
   if (feeEl) {
     feeEl.textContent = 'Loading...';
     try {
       if (btsAPI && btsAPI.isConnected) {
-        const fee = await btsAPI.getOperationFee('transfer');
-        feeEl.textContent = fee?.formatted || '~0.01 BTS';
+        const feeSchedule = await btsAPI.getFeeSchedule();
+        const opId = btsAPI.getOperationId('transfer');
+        const opFeeEntry = feeSchedule?.parameters?.find(([id]) => id === opId);
+
+        if (opFeeEntry) {
+          const fp = opFeeEntry[1];
+          let totalFee = fp.fee ?? fp.basic_fee ?? 0;
+
+          // Add memo fee when a memo is present.
+          // BitShares charges: floor(serialised_memo_bytes * price_per_kbyte / 1024)
+          // Serialised memo = 33B (from key) + 33B (to key) + 8B (nonce) + AES-padded text.
+          if (transferParams.memo && fp.price_per_kbyte) {
+            const textBytes = new TextEncoder().encode(transferParams.memo).length;
+            const encryptedBytes = Math.ceil((textBytes + 16) / 16) * 16; // AES-CBC block padding
+            const memoSerialised = 33 + 33 + 8 + encryptedBytes;
+            totalFee += Math.floor(memoSerialised * fp.price_per_kbyte / 1024);
+          }
+
+          const btsAsset = await btsAPI.getAsset('1.3.0');
+          const precision = Math.pow(10, btsAsset.precision);
+          feeEl.textContent = `${(totalFee / precision).toFixed(btsAsset.precision)} ${btsAsset.symbol}`;
+        } else {
+          feeEl.textContent = '?';
+        }
       } else {
-        feeEl.textContent = '~0.01 BTS';
+        feeEl.textContent = 'Not connected';
       }
     } catch (e) {
-      feeEl.textContent = '~0.01 BTS';
+      console.error('Fee estimation error:', e);
+      feeEl.textContent = '?';
     }
   }
 
@@ -3530,16 +3556,20 @@ async function handleTransferReject() {
 async function handleTransferApprove() {
   if (pendingDappRequest) {
     try {
-      await chrome.runtime.sendMessage({
+      const result = await chrome.runtime.sendMessage({
         type: 'DAPP_APPROVE_TRANSFER',
         data: { requestId: pendingDappRequest.id, approved: true }
       });
-      showToast('Transfer approved!', 'success');
-      // Refresh balances after successful transfer
-      await loadDashboard();
+      if (result?.success === false) {
+        showToast('Transfer failed: ' + (result.error || 'Unknown error'), 'error');
+      } else {
+        showToast('Transfer sent!', 'success');
+        // Refresh balances after successful transfer
+        await loadDashboard();
+      }
     } catch (e) {
       console.error('Failed to approve transfer:', e);
-      showToast('Failed to approve: ' + e.message, 'error');
+      showToast('Transfer failed: ' + e.message, 'error');
     }
     await chrome.storage.local.remove(['pendingApproval']);
   }
@@ -4313,9 +4343,42 @@ async function renderOperationDetails(opType, opData) {
     </div>`;
   }
 
-  // Always append fee if present
-  if (opData.fee) {
-    rows.push(opRow('Fee', await formatAssetAsync(opData.fee)));
+  // Append fee row using the on-chain fee schedule instead of the placeholder
+  // opData.fee (which is always {amount:0, asset_id:'1.3.0'} before broadcast).
+  {
+    let feeStr = null;
+    try {
+      if (btsAPI && btsAPI.isConnected) {
+        const feeSchedule = await btsAPI.getFeeSchedule();
+        // feeSchedule.parameters is an array of [opId, feeParams] pairs
+        const opFeeEntry = feeSchedule?.parameters?.find(([id]) => id === opType);
+        if (opFeeEntry) {
+          const fp = opFeeEntry[1];
+          let totalFee = fp.fee ?? fp.basic_fee ?? 0;
+          // For transfer ops with an encrypted memo, add the per-kbyte component.
+          // The encrypted memo is stored as a hex string in opData.memo.message;
+          // its length / 2 gives the ciphertext byte count.
+          if (opType === 0 && opData.memo && fp.price_per_kbyte) {
+            const cipherBytes = typeof opData.memo.message === 'string'
+              ? opData.memo.message.length / 2
+              : 0;
+            const memoSerialised = 33 + 33 + 8 + cipherBytes; // from-key + to-key + nonce + ciphertext
+            totalFee += Math.floor(memoSerialised * fp.price_per_kbyte / 1024);
+          }
+          const feeAssetId = opData.fee?.asset_id || '1.3.0';
+          const feeAsset = await btsAPI.getAsset(feeAssetId);
+          const precision = Math.pow(10, feeAsset.precision);
+          feeStr = `${(totalFee / precision).toFixed(feeAsset.precision)} ${feeAsset.symbol}`;
+        }
+      }
+    } catch (e) {
+      console.error('Fee schedule lookup error in renderOperationDetails:', e);
+    }
+    if (!feeStr) {
+      // Fall back to whatever is in opData.fee (may still show 0, but is better than crashing)
+      feeStr = opData.fee ? await formatAssetAsync(opData.fee) : '?';
+    }
+    rows.push(opRow('Fee', feeStr));
   }
 
   return `<div class="op-detail-rows">${rows.join('')}</div>`;
@@ -4394,14 +4457,19 @@ async function handleTransactionSignReject() {
 async function handleTransactionSignApprove() {
   if (pendingDappRequest) {
     try {
-      await chrome.runtime.sendMessage({
+      const result = await chrome.runtime.sendMessage({
         type: 'DAPP_APPROVE_TRANSACTION',
         data: { requestId: pendingDappRequest.id, approved: true }
       });
-      showToast('Transaction approved!', 'success');
+      if (result?.success === false) {
+        showToast('Transaction failed: ' + (result.error || 'Unknown error'), 'error');
+      } else {
+        showToast('Transaction signed!', 'success');
+        await loadDashboard();
+      }
     } catch (e) {
       console.error('Failed to approve transaction signing:', e);
-      showToast('Failed to approve: ' + e.message, 'error');
+      showToast('Transaction failed: ' + e.message, 'error');
     }
     await chrome.storage.local.remove(['pendingApproval']);
     await chrome.action.setBadgeText({ text: '' });
@@ -5065,8 +5133,7 @@ async function handleSwapToAssetChange(e) {
 
   swapState.toAsset = toAssetId;
 
-  // Clear amount fields when asset changes
-  document.getElementById('swap-from-amount').value = '';
+  // Clear only the output field; keep the amount the user already typed
   document.getElementById('swap-to-amount').value = '';
   document.getElementById('swap-min-received').textContent = '-';
 
@@ -5156,6 +5223,7 @@ function displaySwapPools(pools) {
   // Select first pool (best rate)
   swapState.selectedPool = pools[0];
   updateSwapDetails();
+  handleSwapFromAmountChange(); // recalculate output from any existing input amount
 
   // Add click handlers
   poolsList.querySelectorAll('.pool-item').forEach(item => {

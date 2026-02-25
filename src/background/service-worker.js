@@ -323,6 +323,9 @@ class BackgroundService {
       case 'createLimitOrder':
         return await this.handleLimitOrderRequest(origin, params, id, tabId);
 
+      case 'keepalive':
+        return { alive: true };
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
@@ -851,6 +854,10 @@ class BackgroundService {
           const port = this.contentPorts.get(request.tabId);
           port.postMessage({ id: request.messageId, ...result });
         }
+        this.pendingRequests.delete(requestId);
+        await chrome.storage.local.remove(['pendingApproval']);
+        await chrome.action.setBadgeText({ text: '' });
+        return result; // propagate success/failure back to popup
       } catch (error) {
         if (request.reject) {
           request.reject(error);
@@ -858,6 +865,10 @@ class BackgroundService {
           const port = this.contentPorts.get(request.tabId);
           port.postMessage({ id: request.messageId, error: error.message });
         }
+        this.pendingRequests.delete(requestId);
+        await chrome.storage.local.remove(['pendingApproval']);
+        await chrome.action.setBadgeText({ text: '' });
+        return { success: false, error: error.message };
       }
     } else {
       if (request.reject) {
@@ -920,6 +931,11 @@ class BackgroundService {
           const port = this.contentPorts.get(request.tabId);
           port.postMessage({ id: request.messageId, ...result });
         }
+
+        this.pendingRequests.delete(requestId);
+        await chrome.storage.local.remove(['pendingApproval']);
+        await chrome.action.setBadgeText({ text: '' });
+        return result; // propagate success/failure back to popup
       } catch (error) {
         if (request.reject) {
           request.reject(error);
@@ -927,6 +943,10 @@ class BackgroundService {
           const port = this.contentPorts.get(request.tabId);
           port.postMessage({ id: request.messageId, error: error.message });
         }
+        this.pendingRequests.delete(requestId);
+        await chrome.storage.local.remove(['pendingApproval']);
+        await chrome.action.setBadgeText({ text: '' });
+        return { success: false, error: error.message };
       }
     } else {
       if (request.reject) {

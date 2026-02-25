@@ -756,6 +756,151 @@ export class BitSharesAPI {
   }
 
   /**
+   * Return true when a string already looks like a BitShares object ID (X.Y.Z).
+   */
+  _isObjectId(str) {
+    return typeof str === 'string' && str.includes('.');
+  }
+
+  /**
+   * Resolve account names and asset symbols inside operation data to proper
+   * numeric object IDs (X.Y.Z) in-place.  Only fields that are already strings
+   * without dots are touched; numeric IDs are left as-is.
+   *
+   * Coverage: transfer (0), limit_order_create (1), liquidity_pool_exchange (63),
+   * plus any operation that has a top-level `account` field.  All operations share
+   * `fee.asset_id` handling.
+   */
+  async _resolveOperationIds(operations) {
+    for (const op of operations) {
+      const opType = Array.isArray(op) ? op[0] : op.type;
+      const d = Array.isArray(op) ? op[1] : (op.data || op.op || op);
+      if (!d || typeof d !== 'object') continue;
+
+      // Helper: resolve a single account name → "1.2.N" ID in-place on obj[key]
+      const resolveAccount = async (obj, key) => {
+        const v = obj[key];
+        if (typeof v === 'string' && !this._isObjectId(v)) {
+          try {
+            const acc = await this.getAccount(v);
+            if (acc?.id) obj[key] = acc.id;
+          } catch (_) { /* leave as-is */ }
+        }
+      };
+
+      // Helper: resolve an asset symbol → "1.3.N" ID in-place on assetObj.asset_id
+      const resolveAssetId = async (assetObj) => {
+        if (!assetObj || typeof assetObj !== 'object') return;
+        const v = assetObj.asset_id;
+        if (typeof v === 'string' && !this._isObjectId(v)) {
+          try {
+            const [asset] = await this.call(this.apiIds.database, 'get_assets', [[v]]);
+            if (asset?.id) assetObj.asset_id = asset.id;
+          } catch (_) { /* leave as-is */ }
+        }
+      };
+
+      // All operations: normalise fee asset_id
+      await resolveAssetId(d.fee);
+
+      switch (opType) {
+        case 0: // transfer
+          await resolveAccount(d, 'from');
+          await resolveAccount(d, 'to');
+          await resolveAssetId(d.amount);
+          break;
+        case 1: // limit_order_create
+          await resolveAccount(d, 'seller');
+          await resolveAssetId(d.amount_to_sell);
+          await resolveAssetId(d.min_to_receive);
+          break;
+        case 2: // limit_order_cancel
+          await resolveAccount(d, 'fee_paying_account');
+          break;
+        case 63: // liquidity_pool_exchange
+          await resolveAccount(d, 'account');
+          await resolveAssetId(d.amount_to_sell);
+          await resolveAssetId(d.min_to_receive);
+          break;
+        default:
+          // For any unknown op: resolve a top-level "account" field if present
+          if (d.account) await resolveAccount(d, 'account');
+          break;
+      }
+    }
+  }
+
+  /**
+   * Sign a complete transaction (with operations already set) and broadcast it.
+   * - Fills in required fees via get_required_fees
+   * - Refreshes block reference headers so the tx doesn't expire
+   * - Signs with the given private key
+   * - Broadcasts via broadcast_transaction_with_callback
+   */
+  async signAndBroadcast(tx, privateKeyWIF) {
+    // 0. Resolve any account names / asset symbols to proper object IDs.
+    //    Some dApps send names like "alice" or symbols like "BTS" instead of
+    //    numeric IDs like "1.2.xxx" / "1.3.0".  The BitShares node always
+    //    rejects non-dotted strings with "Missing the first dot".
+    await this._resolveOperationIds(tx.operations);
+
+    // 1. Fill required fees for every operation
+    try {
+      const feeAsset = await this.getAsset('1.3.0');
+      const requiredFees = await this.call(
+        this.apiIds.database,
+        'get_required_fees',
+        [tx.operations, feeAsset.id]
+      );
+      if (requiredFees && requiredFees.length === tx.operations.length) {
+        for (let i = 0; i < tx.operations.length; i++) {
+          tx.operations[i][1].fee = requiredFees[i];
+        }
+      }
+    } catch (feeErr) {
+      console.warn('get_required_fees failed, proceeding with existing fees:', feeErr);
+    }
+
+    // 2. Refresh block reference headers (avoids stale ref / expiry issues)
+    this.dynamicGlobalProperties = await this.call(
+      this.apiIds.database,
+      'get_dynamic_global_properties',
+      []
+    );
+    const refBlockNum = this.dynamicGlobalProperties.head_block_number & 0xFFFF;
+    const headBlockId = this.dynamicGlobalProperties.head_block_id;
+    const hexBytes = headBlockId.substring(8, 16);
+    const byte0 = parseInt(hexBytes.substring(0, 2), 16);
+    const byte1 = parseInt(hexBytes.substring(2, 4), 16);
+    const byte2 = parseInt(hexBytes.substring(4, 6), 16);
+    const byte3 = parseInt(hexBytes.substring(6, 8), 16);
+    const refBlockPrefix = ((byte0 | (byte1 << 8) | (byte2 << 16) | (byte3 << 24)) >>> 0);
+    const expiration = new Date(
+      new Date(this.dynamicGlobalProperties.time + 'Z').getTime() + 30000
+    ).toISOString().slice(0, -5);
+
+    const freshTx = {
+      ref_block_num: refBlockNum,
+      ref_block_prefix: refBlockPrefix,
+      expiration,
+      operations: tx.operations,
+      extensions: tx.extensions || [],
+      signatures: []
+    };
+
+    // 3. Sign
+    const signedTx = await this.signTransaction(freshTx, privateKeyWIF);
+
+    // 4. Broadcast
+    const result = await this.call(
+      this.apiIds.network,
+      'broadcast_transaction_with_callback',
+      [this.callId, signedTx]
+    );
+    return result;
+  }
+
+  /**
    * Sign a transaction using ECDSA with secp256k1
    */
   async signTransaction(transaction, privateKeyWIF) {
@@ -2811,6 +2956,8 @@ serializeOperationData(opType, opData) {
 
   /**
    * Serialize asset amount {amount, asset_id}
+   */
+  serializeAssetAmount(assetAmount) {
     const buffers = [];
 
     // amount (int64)
