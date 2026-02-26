@@ -20,7 +20,7 @@
     "name": "BitShares Wallet Extension",
     "operatingSystem": "Chrome, Brave, Firefox",
     "applicationCategory": "FinanceApplication",
-    "softwareVersion": "0.3.1",
+    "softwareVersion": "0.3.4",
     "description": "A secure browser extension for the BitShares blockchain. Sign all 75 operation types with human-readable confirmations. Free, open source, and non-custodial.",
     "url": "https://pi314x.github.io/bitshares-wallet-browser-extension/",
     "downloadUrl": "https://github.com/pi314x/bitshares-wallet-browser-extension/releases",
@@ -1216,7 +1216,7 @@
             <rect x="20" y="440" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="467" fill="#f1f5f9" font-size="13" font-family="sans-serif">Network Fees</text><text x="324" y="467" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
             <!-- About -->
             <text x="24" y="506" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">ABOUT</text>
-            <rect x="266" y="494" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="509" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.3.1</text>
+            <rect x="266" y="494" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="509" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.3.4</text>
           </svg></div>
           <h4>Settings</h4>
           <p>Customize your wallet</p>
@@ -1603,20 +1603,20 @@
       <div class="code-block">
         <pre><span class="comment">// Detect the wallet</span>
 <span class="keyword">if</span> (window.<span class="property">bitsharesWallet</span>) {
-  <span class="comment">// Connect and get account</span>
-  <span class="keyword">const</span> account = <span class="keyword">await</span> window.<span class="property">bitsharesWallet</span>.<span class="function">connect</span>();
-  console.<span class="function">log</span>(<span class="string">'Connected:'</span>, account.<span class="property">name</span>);
+  <span class="comment">// Connect — returns account + balances</span>
+  <span class="keyword">const</span> { account, balances } = <span class="keyword">await</span> window.<span class="property">bitsharesWallet</span>.<span class="function">connect</span>();
+  console.<span class="function">log</span>(<span class="string">'Connected:'</span>, account.<span class="property">name</span>, balances);
 
-  <span class="comment">// Sign any of the 75 BitShares operation types</span>
-  <span class="comment">// User sees a readable confirmation dialog; has 90 s to approve</span>
-  <span class="keyword">const</span> { success, signedTx } = <span class="keyword">await</span> window.<span class="property">bitsharesWallet</span>.<span class="function">signTransaction</span>({
+  <span class="comment">// Sign &amp; broadcast any of the 75 BitShares operation types</span>
+  <span class="comment">// Fees filled automatically; user sees a readable confirmation dialog</span>
+  <span class="keyword">const</span> { success, result } = <span class="keyword">await</span> window.<span class="property">bitsharesWallet</span>.<span class="function">signTransaction</span>({
     <span class="property">operations</span>: [[<span class="variable">0</span>, {
       <span class="property">from</span>: account.<span class="property">id</span>,
       <span class="property">to</span>: <span class="string">'1.2.xxxxx'</span>,
       <span class="property">amount</span>: { <span class="property">amount</span>: <span class="variable">100000</span>, <span class="property">asset_id</span>: <span class="string">'1.3.0'</span> }
     }]]
   });
-  <span class="keyword">if</span> (success) console.<span class="function">log</span>(<span class="string">'Signed:'</span>, signedTx);
+  <span class="keyword">if</span> (success) console.<span class="function">log</span>(<span class="string">'Broadcast OK'</span>, result);
 
   <span class="comment">// Listen for wallet events</span>
   window.<span class="property">bitsharesWallet</span>.<span class="function">on</span>(<span class="string">'accountChanged'</span>, (acct) => {
@@ -1659,7 +1659,7 @@
             </defs>
             <path d="M40 32 L40 96 L72 96 C88 96 96 84 96 72 C96 62 90 54 80 52 C88 50 92 42 92 34 C92 22 84 32 72 32 L40 32 Z M52 44 L68 44 C76 44 80 48 80 54 C80 60 76 64 68 64 L52 64 L52 44 Z M52 72 L72 72 C80 72 84 76 84 82 C84 88 80 84 72 84 L52 84 L52 72 Z" fill="url(#fGrad)"/>
           </svg>
-          BitShares Wallet v0.3.1 &middot; MIT License
+          BitShares Wallet v0.3.4 &middot; MIT License
         </div>
         <div class="footer-links">
           <a href="https://github.com/pi314x/bitshares-wallet-browser-extension" target="_blank">GitHub</a>
