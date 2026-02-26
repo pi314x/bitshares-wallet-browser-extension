@@ -3006,25 +3006,35 @@ serializeOperationData(opType, opData) {
   serializeMemo(memo) {
     const buffers = [];
 
-    if (memo.from && memo.to && memo.nonce) {
-      // Encrypted memo
-      // from public key
+    // Always serialize the full memo_data structure (from, to, nonce, message).
+    // The node's FC deserializer fills missing JSON fields with defaults
+    // (null pubkey / zero nonce), so our serializer must match.
+
+    // from public key (33 bytes — null key if absent)
+    if (memo.from) {
       buffers.push(this.serializePublicKey(memo.from));
-      // to public key
+    } else {
+      buffers.push(new Uint8Array(33));
+    }
+
+    // to public key (33 bytes — null key if absent)
+    if (memo.to) {
       buffers.push(this.serializePublicKey(memo.to));
-      // nonce (uint64)
-      buffers.push(this.writeInt64LE(memo.nonce));
-      // message (bytes with length prefix)
-      // memo.message is a hex string in the canonical BitShares format;
-      // use hexToBytes so the signing hash matches what the node computes.
+    } else {
+      buffers.push(new Uint8Array(33));
+    }
+
+    // nonce (uint64 LE — 0 if absent)
+    buffers.push(this.writeInt64LE(memo.nonce || '0'));
+
+    // message (hex-encoded bytes with varint length prefix)
+    // After _resolveOperationIds, memo.message is always lowercase hex.
+    if (memo.message) {
       const msgBytes = hexToBytes(memo.message);
       buffers.push(this.encodeVarint(msgBytes.length));
       buffers.push(msgBytes);
-    } else if (memo.message) {
-      // Plain text memo (not recommended but supported)
-      const msgBytes = new TextEncoder().encode(memo.message);
-      buffers.push(this.encodeVarint(msgBytes.length));
-      buffers.push(msgBytes);
+    } else {
+      buffers.push(this.encodeVarint(0));
     }
 
     return this.concatBytes(buffers);
