@@ -137,7 +137,7 @@ Tests for `src/lib/wallet-manager.js`:
 
 ### From Release
 
-1. Download the latest release zip for your browser from [Releases](https://github.com/pi314x/bitshares-wallet-extension/releases)
+1. Download the latest release zip for your browser from [Releases](https://github.com/pi314x/bitshares-wallet-browser-extension/releases)
 2. Follow the browser-specific instructions below
 
 ### Chrome / Brave
@@ -156,8 +156,8 @@ Tests for `src/lib/wallet-manager.js`:
 ### Build from Source
 
 ```bash
-git clone https://github.com/pi314x/bitshares-wallet-extension.git
-cd bitshares-wallet-extension
+git clone https://github.com/pi314x/bitshares-wallet-browser-extension.git
+cd bitshares-wallet-browser-extension
 ```
 
 ```bash
@@ -176,7 +176,7 @@ Output goes to `dist/` (Chrome/Brave) and `dist-firefox/` (Firefox).
 ## Project Structure
 
 ```
-bitshares-wallet-extension/
+bitshares-wallet-browser-extension/
 ├── manifest.json              # Chrome/Brave manifest (MV3)
 ├── manifest.firefox.json      # Firefox manifest (MV2)
 ├── package.json
@@ -259,6 +259,24 @@ if (connected) {
 }
 ```
 
+#### Verifying the Chain ID
+
+Always verify the chain ID before submitting transactions to make sure
+the wallet is connected to the expected network:
+
+```javascript
+const chainId = await window.bitsharesWallet.getChainId();
+
+// BitShares Mainnet
+const BTS_MAINNET = '4018d7844c78f6a6c41c6a552b898022310fc5dec06da467ee7905a8dad512c8';
+// BitShares Testnet
+const BTS_TESTNET = '39f5e2ede1f8bc1a3a54a7914414e3779e33193f1f5693510e73cb7a87617447';
+
+if (chainId !== BTS_MAINNET) {
+  throw new Error('Please switch to BitShares Mainnet');
+}
+```
+
 #### Disconnecting
 
 ```javascript
@@ -272,9 +290,6 @@ await window.bitsharesWallet.disconnect();
 const account = await window.bitsharesWallet.getAccount();
 console.log('Account name:', account.name);
 console.log('Account ID:', account.id);
-
-const chainId = await window.bitsharesWallet.getChainId();
-console.log('Chain ID:', chainId);
 ```
 
 ### Signing & Broadcasting Transactions
@@ -440,15 +455,15 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 The project website is hosted on GitHub Pages from the `docs/` folder:
 
-**[https://pi314x.github.io/bitshares-wallet-extension](https://pi314x.github.io/bitshares-wallet-extension)**
+**[https://pi314x.github.io/bitshares-wallet-browser-extension](https://pi314x.github.io/bitshares-wallet-browser-extension)**
 
 To deploy changes, push to the `main` branch. GitHub Pages serves from `Settings > Pages > Source: main branch, /docs folder`.
 
 ## Support
 
-- **Website**: [pi314x.github.io/bitshares-wallet-extension](https://pi314x.github.io/bitshares-wallet-extension)
+- **Website**: [pi314x.github.io/bitshares-wallet-browser-extension](https://pi314x.github.io/bitshares-wallet-browser-extension)
 - **Telegram**: [BitShares DEV](https://t.me/BitSharesDEV)
-- **GitHub Issues**: [Report bugs](https://github.com/pi314x/bitshares-wallet-extension/issues)
+- **GitHub Issues**: [Report bugs](https://github.com/pi314x/bitshares-wallet-browser-extension/issues)
 - **BitShares Forum**: [bitsharestalk.org](https://bitsharestalk.org)
 
 ---
