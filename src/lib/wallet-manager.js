@@ -103,6 +103,18 @@ export class WalletManager {
   }
 
   /**
+   * Ensure the BitSharesAPI instance exists and its WebSocket is connected.
+   * Re-creates and reconnects whenever the instance is missing or the socket
+   * has dropped (e.g. after service-worker idle, network hiccup, etc.).
+   */
+  async ensureApiConnected() {
+    if (!this.api || !this.api.isConnected) {
+      this.api = new BitSharesAPI();
+      await this.api.connect();
+    }
+  }
+
+  /**
    * Restore unlock state from session storage
    * Used when service worker restarts but session is still valid
    *
@@ -420,10 +432,7 @@ export class WalletManager {
    */
   async findAndAddAccount(publicKey) {
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       const accounts = await this.api.getAccountsByKey(publicKey);
       
@@ -449,10 +458,7 @@ export class WalletManager {
    */
   async findAndAddAccountByName(accountName) {
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       const accountInfo = await this.api.getAccount(accountName);
 
@@ -482,10 +488,7 @@ export class WalletManager {
     await this.ensureUnlocked();
     this.touch();
 
-    if (!this.api) {
-      this.api = new BitSharesAPI();
-      await this.api.connect();
-    }
+    await this.ensureApiConnected();
 
     // Resolve the fee-paying (registrar) account
     const registrar = await this.api.getAccount(feePayingAccountName);
@@ -803,10 +806,7 @@ export class WalletManager {
     }
 
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       // Check if account exists on chain
       const accountInfo = await this.api.getAccount(accountName);
@@ -920,10 +920,7 @@ export class WalletManager {
    */
   async addWatchOnlyAccount(accountName) {
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       // Check if account exists on chain
       const accountInfo = await this.api.getAccount(accountName);
@@ -1139,10 +1136,7 @@ export class WalletManager {
     this.touch();
 
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       const fromAccount = await this.getCurrentAccount();
 
@@ -1225,10 +1219,7 @@ export class WalletManager {
     this.touch();
 
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       // Get keys for the current account
       const currentAccount = await this.getCurrentAccount();
@@ -1712,10 +1703,7 @@ export class WalletManager {
     this.touch();
 
     try {
-      if (!this.api) {
-        this.api = new BitSharesAPI();
-        await this.api.connect();
-      }
+      await this.ensureApiConnected();
 
       // Get keys for the current account
       const currentAccount = await this.getCurrentAccount();
