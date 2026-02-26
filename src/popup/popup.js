@@ -2514,10 +2514,37 @@ async function handleRecipientInput(e) {
   }, 500);
 }
 
-function handleMaxAmount() {
+async function handleMaxAmount() {
   const availableBalance = document.getElementById('available-balance')?.textContent || '0';
-  const amount = parseFloat(availableBalance) || 0;
-  document.getElementById('send-amount').value = amount > 0 ? availableBalance : '';
+  let amount = parseFloat(availableBalance) || 0;
+  if (amount <= 0) {
+    document.getElementById('send-amount').value = '';
+    return;
+  }
+
+  // When the send asset is the same as the fee asset (BTS), subtract the fee
+  const assetId = document.getElementById('send-asset')?.value || '1.3.0';
+  if (assetId === '1.3.0') {
+    try {
+      const fee = btsAPI && btsAPI.isConnected
+        ? await btsAPI.getOperationFee('transfer')
+        : null;
+      const feeAmount = fee ? fee.amount / Math.pow(10, fee.precision) : 0.01;
+      amount = Math.max(0, amount - feeAmount);
+      if (amount <= 0) {
+        document.getElementById('send-amount').value = '';
+        showToast('Balance too low to cover the network fee', 'error');
+        return;
+      }
+      showToast(`Network fee (${feeAmount} BTS) reserved from max amount`, 'info');
+    } catch (_) {
+      // If fee lookup fails, deduct a safe default
+      amount = Math.max(0, amount - 0.01);
+    }
+  }
+
+  // Use up to 5 decimal places, trim trailing zeros
+  document.getElementById('send-amount').value = parseFloat(amount.toFixed(5));
 }
 
 async function handleSendReview() {
