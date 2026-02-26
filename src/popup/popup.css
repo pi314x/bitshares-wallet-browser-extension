@@ -2202,21 +2202,26 @@ body {
 /* Recipient Input with Address Book */
 .recipient-input-wrapper {
   display: flex;
+  align-items: stretch;
   gap: var(--spacing-xs);
 }
 
 .recipient-input-wrapper input {
   flex: 1;
+  min-width: 0;
 }
 
 .btn-address-book {
-  width: 42px;
-  height: 42px;
+  flex-shrink: 0;
+  width: 48px;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   border-radius: var(--border-radius-sm);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-fast);
 }
 
