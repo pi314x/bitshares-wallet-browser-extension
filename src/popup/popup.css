@@ -2213,16 +2213,17 @@ body {
 
 .btn-address-book {
   flex-shrink: 0;
-  width: 48px;
+  width: 36px;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   border-radius: var(--border-radius-sm);
   cursor: pointer;
-  font-size: 20px;
+  font-size: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all var(--transition-fast);
+  padding: 0;
 }
 
 .btn-address-book:hover {
