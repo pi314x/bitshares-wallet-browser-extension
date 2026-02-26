@@ -808,6 +808,19 @@ export class BitSharesAPI {
           await resolveAccount(d, 'from');
           await resolveAccount(d, 'to');
           await resolveAssetId(d.amount);
+          // Ensure memo.message is hex — some dApps encode it as base64.
+          // The node always expects lowercase hex for the `bytes` type.
+          if (d.memo && typeof d.memo.message === 'string') {
+            if (!/^[0-9a-fA-F]*$/.test(d.memo.message)) {
+              try {
+                const raw = Uint8Array.from(atob(d.memo.message), c => c.charCodeAt(0));
+                d.memo.message = bytesToHex(raw);
+              } catch (_) { /* leave as-is and let the node reject it with a clear error */ }
+            } else {
+              // Normalise to lowercase hex
+              d.memo.message = d.memo.message.toLowerCase();
+            }
+          }
           break;
         case 1: // limit_order_create
           await resolveAccount(d, 'seller');
@@ -2994,7 +3007,9 @@ serializeOperationData(opType, opData) {
       // nonce (uint64)
       buffers.push(this.writeInt64LE(memo.nonce));
       // message (bytes with length prefix)
-      const msgBytes = Uint8Array.from(atob(memo.message), c => c.charCodeAt(0));
+      // memo.message is a hex string in the canonical BitShares format;
+      // use hexToBytes so the signing hash matches what the node computes.
+      const msgBytes = hexToBytes(memo.message);
       buffers.push(this.encodeVarint(msgBytes.length));
       buffers.push(msgBytes);
     } else if (memo.message) {
