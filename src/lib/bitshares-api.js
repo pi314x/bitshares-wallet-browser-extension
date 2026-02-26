@@ -808,14 +808,22 @@ export class BitSharesAPI {
           await resolveAccount(d, 'from');
           await resolveAccount(d, 'to');
           await resolveAssetId(d.amount);
-          // Ensure memo.message is hex — some dApps encode it as base64.
+          // Ensure memo.message is hex — dApps may send base64 or plain text.
           // The node always expects lowercase hex for the `bytes` type.
           if (d.memo && typeof d.memo.message === 'string') {
             if (!/^[0-9a-fA-F]*$/.test(d.memo.message)) {
+              let converted = false;
               try {
                 const raw = Uint8Array.from(atob(d.memo.message), c => c.charCodeAt(0));
                 d.memo.message = bytesToHex(raw);
-              } catch (_) { /* leave as-is and let the node reject it with a clear error */ }
+                converted = true;
+              } catch (_) { /* not valid base64 */ }
+              if (!converted) {
+                // Plain text — encode as UTF-8 hex
+                const enc = new TextEncoder();
+                d.memo.message = Array.from(enc.encode(d.memo.message))
+                  .map(b => b.toString(16).padStart(2, '0')).join('');
+              }
             } else {
               // Normalise to lowercase hex
               d.memo.message = d.memo.message.toLowerCase();
