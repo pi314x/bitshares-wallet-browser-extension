@@ -236,14 +236,34 @@ if (window.bitsharesWallet) {
 ### Connecting to the Wallet
 
 ```javascript
-// Connect and get account
-const account = await window.bitsharesWallet.connect();
+// Connect — prompts the user to approve your site.
+// Returns the active account and its balances.
+const { account, balances } = await window.bitsharesWallet.connect();
 console.log('Connected:', account.name, account.id);
+console.log('Balances:', balances);
+// balances: [{ asset_id: '1.3.0', amount: 123456, symbol: 'BTS', precision: 5 }, ...]
+```
 
-// Check connection status
-if (window.bitsharesWallet.isConnected) {
-  // Already connected
+#### Checking / Restoring an Existing Connection
+
+If the user already approved your site in a previous session, you can
+silently restore the connection without showing a popup:
+
+```javascript
+const { connected, account } = await window.bitsharesWallet.checkConnection();
+if (connected) {
+  console.log('Already connected as', account.name);
+} else {
+  // Not yet approved — call connect() to prompt the user
+  const { account, balances } = await window.bitsharesWallet.connect();
 }
+```
+
+#### Disconnecting
+
+```javascript
+await window.bitsharesWallet.disconnect();
+// window.bitsharesWallet.isConnected is now false
 ```
 
 ### Getting Account Information
@@ -252,49 +272,74 @@ if (window.bitsharesWallet.isConnected) {
 const account = await window.bitsharesWallet.getAccount();
 console.log('Account name:', account.name);
 console.log('Account ID:', account.id);
+
+const chainId = await window.bitsharesWallet.getChainId();
+console.log('Chain ID:', chainId);
 ```
 
-### Signing Transactions
+### Signing & Broadcasting Transactions
 
-The wallet supports signing any of the 75 BitShares operation types. Each operation triggers a human-readable confirmation dialog in the extension popup. The user has **90 seconds** to approve or reject before the request times out.
+`signTransaction` signs **and** broadcasts the transaction in one call.
+The wallet fills required fees, resolves account names / asset symbols
+to object IDs, refreshes block headers, signs with the user's active
+key, and broadcasts to the network.
+
+Each operation triggers a human-readable confirmation dialog in the
+extension popup. The user has **2 minutes** to approve or reject before
+the request times out.
 
 ```javascript
 // Transfer (operation type 0)
-const transferTx = {
+const result = await window.bitsharesWallet.signTransaction({
   operations: [
     [0, {
       fee: { amount: 0, asset_id: '1.3.0' },
-      from: '1.2.xxxxx',
-      to: '1.2.yyyyy',
-      amount: { amount: 100000, asset_id: '1.3.0' }
+      from: account.id,         // or account name, e.g. 'my-account'
+      to: '1.2.yyyyy',          // or account name
+      amount: { amount: 100000, asset_id: '1.3.0' },
+      memo: { message: 'hello' } // optional — plain text, hex, or full memo_data
     }]
   ]
-};
-const result = await window.bitsharesWallet.signTransaction(transferTx);
-// result: { success: true, signedTx: { ...signed transaction object } }
-// or on rejection/error: { success: false, error: 'User rejected transaction' }
+});
+// result: { success: true, result: <broadcast callback result> }
+// or:     { success: false, error: 'User rejected transaction' }
+```
 
+```javascript
 // Limit Order (operation type 1)
-const limitOrderTx = {
+const orderResult = await window.bitsharesWallet.signTransaction({
   operations: [
     [1, {
       fee: { amount: 0, asset_id: '1.3.0' },
-      seller: '1.2.xxxxx',
+      seller: account.id,
       amount_to_sell: { amount: 500000, asset_id: '1.3.0' },
       min_to_receive: { amount: 1000, asset_id: '1.3.861' },
       expiration: '2026-12-31T00:00:00'
     }]
   ]
-};
-const orderResult = await window.bitsharesWallet.signTransaction(limitOrderTx);
+});
 ```
 
-Multi-operation transactions are supported — each operation is shown as a separate labeled section in the confirmation dialog.
+> **Notes**
+> - `fee` can be `{ amount: 0, asset_id: '1.3.0' }` — the wallet fills the real fee.
+> - Account fields (`from`, `to`, `seller`, …) accept either object IDs (`1.2.xxxxx`) or account names (`my-account`).
+> - Asset fields accept either object IDs (`1.3.0`) or symbols (`BTS`).
+> - Multi-operation transactions are supported — each operation is shown as a separate labeled section in the confirmation dialog.
+
+### Transfers (Convenience Method)
+
+```javascript
+const result = await window.bitsharesWallet.transfer({
+  to: 'recipient-name',
+  amount: { amount: 100000, asset_id: '1.3.0' },
+  memo: 'Thanks!'
+});
+```
 
 ### Event Listeners
 
 ```javascript
-// Listen for account changes
+// Listen for account changes (user switches active account)
 window.bitsharesWallet.on('accountChanged', (account) => {
   console.log('Account changed to:', account.name);
 });
@@ -308,11 +353,18 @@ window.bitsharesWallet.on('locked', () => {
 window.bitsharesWallet.on('unlocked', () => {
   console.log('Wallet was unlocked');
 });
+
+// Remove a specific listener
+window.bitsharesWallet.off('accountChanged', myHandler);
+
+// Remove all listeners for an event
+window.bitsharesWallet.removeAllListeners('accountChanged');
 ```
 
 ### BeetEOS Compatibility
 
-The wallet also provides BeetEOS-compatible API:
+The wallet also exposes `window.beet` and `window.scatter` for
+compatibility with existing BeetEOS / Scatter dApps:
 
 ```javascript
 // Using Beet-style API
@@ -323,6 +375,9 @@ console.log('Account:', identity.accounts[0].name);
 const result = await window.beet.requestSignature({
   transaction: myTransaction
 });
+
+// Disconnect
+await window.beet.forgetIdentity();
 ```
 
 ## Security
