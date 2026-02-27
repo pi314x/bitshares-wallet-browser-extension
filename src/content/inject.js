@@ -60,25 +60,25 @@
             type: 'BITSHARES_WALLET_EVENT',
             event: 'accountChanged',
             data: message.data
-          }, '*');
+          }, window.location.origin);
         } else if (message.type === 'WALLET_LOCKED') {
           // Forward lock event to page
           window.postMessage({
             type: 'BITSHARES_WALLET_EVENT',
             event: 'locked'
-          }, '*');
+          }, window.location.origin);
         } else if (message.type === 'WALLET_UNLOCKED') {
           // Forward unlock event to page
           window.postMessage({
             type: 'BITSHARES_WALLET_EVENT',
             event: 'unlocked'
-          }, '*');
+          }, window.location.origin);
         } else {
           // Forward other responses to page
           window.postMessage({
             type: 'BITSHARES_WALLET_RESPONSE',
             data: message
-          }, '*');
+          }, window.location.origin);
         }
       });
 
@@ -151,13 +151,13 @@
         type: 'BITSHARES_WALLET_RESPONSE',
         id,
         data: response
-      }, '*');
+      }, window.location.origin);
     } catch (error) {
       window.postMessage({
         type: 'BITSHARES_WALLET_RESPONSE',
         id,
         error: error.message
-      }, '*');
+      }, window.location.origin);
     }
   });
 
@@ -189,18 +189,18 @@
       window.postMessage({
         type: 'BITSHARES_WALLET_EVENT',
         event: 'locked'
-      }, '*');
+      }, window.location.origin);
     } else if (message.type === 'WALLET_UNLOCKED') {
       window.postMessage({
         type: 'BITSHARES_WALLET_EVENT',
         event: 'unlocked'
-      }, '*');
+      }, window.location.origin);
     } else if (message.type === 'ACCOUNT_CHANGED') {
       window.postMessage({
         type: 'BITSHARES_WALLET_EVENT',
         event: 'accountChanged',
         data: message.data
-      }, '*');
+      }, window.location.origin);
     }
     return true;
   });

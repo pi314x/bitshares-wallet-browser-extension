@@ -284,7 +284,7 @@ export class BitSharesAPI {
       return null;
     } catch (error) {
       console.error('Get account error:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -369,7 +369,7 @@ export class BitSharesAPI {
       return null;
     } catch (error) {
       console.error('Get asset error:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -490,7 +490,7 @@ export class BitSharesAPI {
       return null;
     } catch (error) {
       console.error('Get fee schedule error:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -541,7 +541,7 @@ export class BitSharesAPI {
       };
     } catch (error) {
       console.error('Get operation fee error:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -632,7 +632,7 @@ export class BitSharesAPI {
       return null;
     } catch (error) {
       console.error('Get required fee error:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -3218,7 +3218,7 @@ serializeOperationData(opType, opData) {
       return ticker;
     } catch (error) {
       console.error('Get ticker error:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -3235,7 +3235,7 @@ serializeOperationData(opType, opData) {
       return volume;
     } catch (error) {
       console.error('Get 24h volume error:', error);
-      return null;
+      throw error;
     }
   }
 

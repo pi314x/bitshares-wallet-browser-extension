@@ -449,9 +449,20 @@ function handleAccountNameInput(e) {
 // Produces a 45-char string: "P5" prefix + 43 random base58 characters.
 function generateStrongPassword() {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  const bytes = new Uint8Array(43);
-  crypto.getRandomValues(bytes);
-  return 'P5' + Array.from(bytes).map(b => alphabet[b % alphabet.length]).join('');
+  const len = alphabet.length; // 58
+  // Rejection sampling to eliminate modulo bias
+  const limit = 256 - (256 % len); // 232 — largest multiple of 58 ≤ 256
+  const result = [];
+  while (result.length < 43) {
+    const bytes = new Uint8Array(64); // over-sample to reduce loops
+    crypto.getRandomValues(bytes);
+    for (let i = 0; i < bytes.length && result.length < 43; i++) {
+      if (bytes[i] < limit) {
+        result.push(alphabet[bytes[i] % len]);
+      }
+    }
+  }
+  return 'P5' + result.join('');
 }
 
 function populateBtsPassword() {

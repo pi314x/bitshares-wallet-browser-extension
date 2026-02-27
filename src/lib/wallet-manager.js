@@ -3,7 +3,7 @@
  * Handles wallet creation, encryption, storage, and key management
  */
 
-import { CryptoUtils } from './crypto-utils.js';
+import { CryptoUtils, bytesToBase64, base64ToBytes } from './crypto-utils.js';
 import { BitSharesAPI } from './bitshares-api.js';
 
 export class WalletManager {
@@ -16,6 +16,9 @@ export class WalletManager {
     // Auto-lock timer
     this.autoLockTimer = null;
     this.autoLockDuration = 15 * 60 * 1000; // Default: 15 minutes
+
+    // Mutex to prevent concurrent lock/unlock race conditions
+    this._lockMutex = Promise.resolve();
   }
 
   /**
@@ -64,7 +67,7 @@ export class WalletManager {
         if (!this._sessionEncryptionKey && result.persistedSessionKey) {
           try {
             this._sessionEncryptionKey = new Uint8Array(
-              atob(result.persistedSessionKey).split('').map(c => c.charCodeAt(0))
+              base64ToBytes(result.persistedSessionKey)
             );
           } catch (e) {
             resolve(false);
@@ -89,17 +92,26 @@ export class WalletManager {
    * Call this before operations that require decrypted keys
    */
   async ensureUnlocked() {
-    // If already unlocked in memory with keys, we're good
-    if (this.isUnlockedState && this.decryptedKeys !== null) {
-      return true;
-    }
+    // Serialize lock/unlock to prevent race conditions
+    const prev = this._lockMutex;
+    let release;
+    this._lockMutex = new Promise(r => { release = r; });
+    await prev;
+    try {
+      // If already unlocked in memory with keys, we're good
+      if (this.isUnlockedState && this.decryptedKeys !== null) {
+        return true;
+      }
 
-    // Try to restore from session
-    const restored = await this.restoreFromSession();
-    if (!restored) {
-      throw new Error('Wallet is locked');
+      // Try to restore from session
+      const restored = await this.restoreFromSession();
+      if (!restored) {
+        throw new Error('Wallet is locked');
+      }
+      return true;
+    } finally {
+      release();
     }
-    return true;
   }
 
   /**
@@ -146,7 +158,7 @@ export class WalletManager {
         if (!this._sessionEncryptionKey && result.persistedSessionKey) {
           try {
             this._sessionEncryptionKey = new Uint8Array(
-              atob(result.persistedSessionKey).split('').map(c => c.charCodeAt(0))
+              base64ToBytes(result.persistedSessionKey)
             );
           } catch (e) {
             // Failed to restore key
@@ -297,7 +309,7 @@ export class WalletManager {
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: normalizedBrainkey,
         bitsharesAccountName: bitsharesAccountName || null,
-        bitsharesPassword: bitsharesPassword || null,
+        // Note: bitsharesPassword is intentionally NOT stored — only derived keys are kept.
         keys: keys,
         accounts: []
       }, encryptionKey);
@@ -348,7 +360,6 @@ export class WalletManager {
       let keys;
       let brainkey = null;
 
-      let bitsharesPassword = null;
       let bitsharesAccountName = null;
 
       switch (importData.type) {
@@ -358,8 +369,6 @@ export class WalletManager {
             importData.accountName,
             importData.password
           );
-          // Store BitShares credentials for later retrieval
-          bitsharesPassword = importData.password;
           bitsharesAccountName = importData.accountName;
           break;
 
@@ -379,8 +388,8 @@ export class WalletManager {
       const encryptionKey = await CryptoUtils.deriveKey(password, salt);
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: brainkey,
-        bitsharesPassword: bitsharesPassword,
         bitsharesAccountName: bitsharesAccountName,
+        // Note: bitsharesPassword is intentionally NOT stored — only derived keys are kept.
         keys: keys,
         accounts: []
       }, encryptionKey);
@@ -691,15 +700,24 @@ export class WalletManager {
    * Lock the wallet
    */
   async lock() {
-    // Clear auto-lock timer
-    if (this.autoLockTimer) {
-      clearTimeout(this.autoLockTimer);
-      this.autoLockTimer = null;
-    }
+    // Serialize lock/unlock to prevent race conditions
+    const prev = this._lockMutex;
+    let release;
+    this._lockMutex = new Promise(r => { release = r; });
+    await prev;
+    try {
+      // Clear auto-lock timer
+      if (this.autoLockTimer) {
+        clearTimeout(this.autoLockTimer);
+        this.autoLockTimer = null;
+      }
 
-    this.isUnlockedState = false;
-    this.decryptedKeys = null;
-    await this.clearSessionPassword();
+      this.isUnlockedState = false;
+      this.decryptedKeys = null;
+      await this.clearSessionPassword();
+    } finally {
+      release();
+    }
 
     // Notify background script
     chrome.runtime.sendMessage({ type: 'WALLET_LOCKED' });
@@ -847,11 +865,8 @@ export class WalletManager {
 
         if (!activeMatches && !ownerMatches && !memoMatches) {
           // Provide more helpful error message
-          const expectedKey = accountActiveKeys[0] || 'none found';
           throw new Error(
-            `Password does not match this account. ` +
-            `Expected key starting with: ${expectedKey.substring(0, 15)}... ` +
-            `Generated key: ${generatedActiveKey?.substring(0, 15)}...`
+            'Password does not match this account. None of the generated keys match the on-chain active, owner, or memo authority.'
           );
         }
       }
@@ -872,10 +887,9 @@ export class WalletManager {
             // Get encryption key from wallet password
             const encryptionKey = await CryptoUtils.deriveKey(walletPassword, salt);
 
-            // Encrypt the account's keys
+            // Encrypt the account's keys (password intentionally not stored)
             const encryptedAccountData = await CryptoUtils.encrypt({
-              keys: keys,
-              bitsharesPassword: bitsharesPassword
+              keys: keys
             }, encryptionKey);
 
             // Add to accounts list
@@ -1282,12 +1296,17 @@ export class WalletManager {
     const encryptedPassword = await this._encryptForSession(password, newKey);
 
     return new Promise((resolve) => {
+      // Prefer session storage (cleared on browser close) over local storage.
+      // Firefox MV2 lacks chrome.storage.session — fall back with a warning.
       const storage = chrome.storage.session || chrome.storage.local;
+      if (!chrome.storage.session) {
+        console.warn('chrome.storage.session unavailable; session key stored in local storage (Firefox MV2 fallback)');
+      }
       const sessionData = {
         encryptedSessionData: encryptedPassword,
         unlockTimestamp: Date.now(),
         autoLockDuration: this.autoLockDuration,
-        persistedSessionKey: btoa(String.fromCharCode(...newKey))
+        persistedSessionKey: bytesToBase64(newKey)
       };
 
       storage.set(sessionData, () => {
@@ -1321,16 +1340,14 @@ export class WalletManager {
     const combined = new Uint8Array(iv.length + encrypted.byteLength);
     combined.set(iv);
     combined.set(new Uint8Array(encrypted), iv.length);
-    return btoa(String.fromCharCode(...combined));
+    return bytesToBase64(combined);
   }
 
   async _decryptFromSession(encryptedData) {
     if (!this._sessionEncryptionKey) {
       throw new Error('No session encryption key - session expired');
     }
-    const combined = new Uint8Array(
-      atob(encryptedData).split('').map(c => c.charCodeAt(0))
-    );
+    const combined = base64ToBytes(encryptedData);
     const iv = combined.slice(0, 12);
     const ciphertext = combined.slice(12);
     const key = await crypto.subtle.importKey(
@@ -1365,7 +1382,7 @@ export class WalletManager {
         try {
           // Restore the current key from storage and sync in-memory copy
           const currentKey = new Uint8Array(
-            atob(result.persistedSessionKey).split('').map(c => c.charCodeAt(0))
+            base64ToBytes(result.persistedSessionKey)
           );
           this._sessionEncryptionKey = currentKey;
           const password = await this._decryptFromSession(result.encryptedSessionData);

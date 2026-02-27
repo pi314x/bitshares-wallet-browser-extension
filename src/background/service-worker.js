@@ -12,7 +12,6 @@ class BackgroundService {
     this.api = new BitSharesAPI();
     this.pendingRequests = new Map();
     this.contentPorts = new Map(); // Store ports by tabId for responding after approval
-    this.autoLockTimer = null;
     this.autoLockMinutes = 5;
 
     this.init();
@@ -278,6 +277,11 @@ class BackgroundService {
   }
 
   async handleDAppMessage(message, sender, port = null) {
+    // Validate that the sender is our own content script (same extension ID)
+    if (sender?.id && sender.id !== chrome.runtime.id) {
+      throw new Error('Unauthorized sender');
+    }
+
     const origin = sender?.origin || sender?.url;
     const tabId = sender?.tab?.id;
     const { method, params, id } = message;
@@ -418,6 +422,13 @@ class BackgroundService {
   }
 
   async handleSignRequest(origin, params, messageId, tabId) {
+    // Rate-limit: reject if there's already a pending request from this origin
+    for (const [, req] of this.pendingRequests) {
+      if (req.origin === origin && (req.type === 'transaction' || req.type === 'transfer')) {
+        throw new Error('A request from this site is already pending approval');
+      }
+    }
+
     // Verify connection
     const isConnected = await this.walletManager.isSiteConnected(origin);
     if (!isConnected) {
@@ -463,6 +474,13 @@ class BackgroundService {
   }
 
   async handleTransferRequest(origin, params, messageId, tabId) {
+    // Rate-limit: reject if there's already a pending request from this origin
+    for (const [, req] of this.pendingRequests) {
+      if (req.origin === origin && (req.type === 'transaction' || req.type === 'transfer')) {
+        throw new Error('A request from this site is already pending approval');
+      }
+    }
+
     // Verify connection
     const isConnected = await this.walletManager.isSiteConnected(origin);
     if (!isConnected) {
@@ -473,6 +491,19 @@ class BackgroundService {
     const { to, amount, asset, memo } = params;
     if (!to || !amount) {
       throw new Error('Missing required parameters: to, amount');
+    }
+    if (typeof to !== 'string' || to.length < 1 || to.length > 63) {
+      throw new Error('Invalid "to" parameter');
+    }
+    if (typeof amount !== 'number' && typeof amount !== 'string') {
+      throw new Error('Invalid "amount" parameter');
+    }
+    const numAmount = Number(amount);
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
+      throw new Error('Amount must be a positive number');
+    }
+    if (memo !== undefined && memo !== null && typeof memo !== 'string') {
+      throw new Error('Memo must be a string');
     }
 
     // Create pending request for user approval

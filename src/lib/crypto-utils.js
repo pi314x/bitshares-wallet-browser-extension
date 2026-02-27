@@ -198,6 +198,41 @@ function bytesToHex(bytes) {
 }
 
 /**
+ * Chunk-safe Base64 encode / decode for Uint8Array.
+ * Avoids the stack-overflow risk of `String.fromCharCode(...largeArray)`.
+ */
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Constant-time comparison of two Uint8Arrays (or equal-length strings).
+ * Returns true only when every byte matches.
+ */
+function constantTimeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= (typeof a === 'string' ? a.charCodeAt(i) : a[i]) ^
+            (typeof b === 'string' ? b.charCodeAt(i) : b[i]);
+  }
+  return diff === 0;
+}
+
+/**
  * SHA-256 implementation using Web Crypto API
  */
 async function sha256(data) {
@@ -847,38 +882,84 @@ export class CryptoUtils {
       const expectedPubPoint = G.multiply(privateKey);
       const expectedPubKey = expectedPubPoint.toCompressed();
 
-      return bytesToHex(recoveredPubKey) === bytesToHex(expectedPubKey);
+      return constantTimeEqual(recoveredPubKey, expectedPubKey);
     } catch (error) {
       return false;
     }
   }
 
   /**
-   * Generate deterministic k using RFC 6979
+   * Generate deterministic k using RFC 6979 (HMAC-SHA256 based).
+   * The `extraEntropy` counter is mixed in as additional data per the
+   * RFC 6979 §3.6 "additional data" mechanism, used when the canonical
+   * signature check requires retrying with a different k.
    */
-static async generateK(hash, privateKeyBytes, nonce = 0) {
+  static async generateK(hash, privateKeyBytes, extraEntropy = 0) {
     const { N } = SECP256K1;
 
-    // We need a buffer that holds: PrivateKey (32) + Hash (32) + Nonce (4)
-    // Total 68 bytes
-    const combined = new Uint8Array(32 + 32 + 4);
-    
-    combined.set(privateKeyBytes, 0); // 0-31: Private Key
-    combined.set(hash, 32);           // 32-63: Message Hash
-    
-    // 64-67: Nonce (32-bit integer, Big Endian)
-    const nonceView = new DataView(combined.buffer);
-    nonceView.setUint32(64, nonce, false); 
+    // --- RFC 6979 §3.2 steps a–f ---
+    // Build the initial seed: privateKey || hash || extra counter
+    const x = privateKeyBytes;            // 32 bytes
+    const h1 = hash;                      // 32 bytes (already hashed)
 
-    // Hash the combined data to get a deterministic random number
-    const kHash = await sha256(combined);
-    
-    let kBigInt = bytesToBigInt(kHash);
-    
-    // Ensure k is within range [1, N-1]
-    kBigInt = mod(kBigInt, N - 1n) + 1n;
+    // Extra entropy for retry (§3.6 additional_data)
+    const extra = new Uint8Array(4);
+    new DataView(extra.buffer).setUint32(0, extraEntropy, false);
 
-    return kBigInt;
+    // b. V = 0x01 * 32
+    let V = new Uint8Array(32).fill(0x01);
+    // c. K = 0x00 * 32
+    let K = new Uint8Array(32).fill(0x00);
+
+    // d. K = HMAC_K(V || 0x00 || x || h1 || extra)
+    const d_data = new Uint8Array(V.length + 1 + x.length + h1.length + extra.length);
+    d_data.set(V, 0);
+    d_data[V.length] = 0x00;
+    d_data.set(x, V.length + 1);
+    d_data.set(h1, V.length + 1 + x.length);
+    d_data.set(extra, V.length + 1 + x.length + h1.length);
+    K = new Uint8Array(await this._hmacSHA256(K, d_data));
+
+    // e. V = HMAC_K(V)
+    V = new Uint8Array(await this._hmacSHA256(K, V));
+
+    // f. K = HMAC_K(V || 0x01 || x || h1 || extra)
+    const f_data = new Uint8Array(V.length + 1 + x.length + h1.length + extra.length);
+    f_data.set(V, 0);
+    f_data[V.length] = 0x01;
+    f_data.set(x, V.length + 1);
+    f_data.set(h1, V.length + 1 + x.length);
+    f_data.set(extra, V.length + 1 + x.length + h1.length);
+    K = new Uint8Array(await this._hmacSHA256(K, f_data));
+
+    // g. V = HMAC_K(V)
+    V = new Uint8Array(await this._hmacSHA256(K, V));
+
+    // h. Loop until valid k found
+    for (let attempts = 0; attempts < 100; attempts++) {
+      V = new Uint8Array(await this._hmacSHA256(K, V));
+      const kBigInt = bytesToBigInt(V);
+      if (kBigInt >= 1n && kBigInt < N) {
+        return kBigInt;
+      }
+      // Retry: K = HMAC_K(V || 0x00), V = HMAC_K(V)
+      const retry = new Uint8Array(V.length + 1);
+      retry.set(V, 0);
+      retry[V.length] = 0x00;
+      K = new Uint8Array(await this._hmacSHA256(K, retry));
+      V = new Uint8Array(await this._hmacSHA256(K, V));
+    }
+    throw new Error('RFC 6979: unable to generate valid k after 100 attempts');
+  }
+
+  /**
+   * HMAC-SHA256 using Web Crypto API
+   */
+  static async _hmacSHA256(key, data) {
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    );
+    return await crypto.subtle.sign('HMAC', cryptoKey, data);
   }
 
   /**
@@ -955,7 +1036,7 @@ static async generateK(hash, privateKeyBytes, nonce = 0) {
    */
   static generateSalt() {
     const salt = crypto.getRandomValues(new Uint8Array(32));
-    return btoa(String.fromCharCode(...salt));
+    return bytesToBase64(salt);
   }
 
   /**
@@ -969,7 +1050,7 @@ static async generateK(hash, privateKeyBytes, nonce = 0) {
     // Use provided salt or fall back to legacy fixed salt for backwards compatibility
     let salt;
     if (saltBase64) {
-      salt = new Uint8Array(atob(saltBase64).split('').map(c => c.charCodeAt(0)));
+      salt = base64ToBytes(saltBase64);
     } else {
       // Legacy fallback - will be removed in future versions
       salt = encoder.encode('bitshares-wallet-salt');
@@ -1014,16 +1095,14 @@ static async generateK(hash, privateKeyBytes, nonce = 0) {
     combined.set(iv);
     combined.set(new Uint8Array(encrypted), iv.length);
 
-    return btoa(String.fromCharCode(...combined));
+    return bytesToBase64(combined);
   }
 
   /**
    * Decrypt data with AES-GCM
    */
   static async decrypt(encryptedData, key) {
-    const combined = new Uint8Array(
-      atob(encryptedData).split('').map(c => c.charCodeAt(0))
-    );
+    const combined = base64ToBytes(encryptedData);
 
     const iv = combined.slice(0, 12);
     const data = combined.slice(12);
@@ -1046,7 +1125,7 @@ static async generateK(hash, privateKeyBytes, nonce = 0) {
     const data = encoder.encode(password + 'session-salt');
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = new Uint8Array(hashBuffer);
-    return btoa(String.fromCharCode(...hashArray));
+    return bytesToBase64(hashArray);
   }
 
   /**
@@ -1071,10 +1150,14 @@ static async generateK(hash, privateKeyBytes, nonce = 0) {
     const toPublicKeyBytes = await this.btsToPublicKeyBytes(toPublicKeyBTS);
     const toPublicPoint = ECPoint.fromCompressed(toPublicKeyBytes);
 
-    // Generate nonce if not provided (unique identifier for this memo)
+    // Generate nonce if not provided.
+    // Use timestamp (ms) in the upper 48 bits + 16 random bits to minimise
+    // collision risk while keeping the 64-bit nonce space.
     if (nonce === null) {
-      const nonceBytes = crypto.getRandomValues(new Uint8Array(8));
-      nonce = bytesToBigInt(nonceBytes);
+      const ts = BigInt(Date.now());
+      const randBytes = crypto.getRandomValues(new Uint8Array(2));
+      const rand = BigInt(randBytes[0]) << 8n | BigInt(randBytes[1]);
+      nonce = (ts << 16n) | rand;
     }
 
     // Compute shared secret: S = fromPrivateKey * toPublicKey
@@ -1372,4 +1455,4 @@ export async function runSelfTests() {
 }
 
 // Export helper functions for use in other modules
-export { sha256, doubleSha256, hexToBytes, bytesToHex, bigIntToBytes, bytesToBigInt, G, SECP256K1, ECPoint, mod, modInverse };
+export { sha256, doubleSha256, hexToBytes, bytesToHex, bigIntToBytes, bytesToBigInt, bytesToBase64, base64ToBytes, constantTimeEqual, G, SECP256K1, ECPoint, mod, modInverse };
