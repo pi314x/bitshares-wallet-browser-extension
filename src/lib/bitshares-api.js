@@ -391,6 +391,12 @@ export class BitSharesAPI {
    */
   async getBTSPrice() {
     try {
+      // No price feed on testnet — core asset is TEST, not traded on external markets
+      const coreAsset = await this.getAsset('1.3.0');
+      if (coreAsset && coreAsset.symbol !== 'BTS') {
+        return { price: 0, source: null };
+      }
+
       // First get the XBTSX.USDT asset to ensure it exists and get its ID
       const usdtAsset = await this.getAsset('XBTSX.USDT');
       const btsAsset = await this.getAsset('BTS');
@@ -577,6 +583,7 @@ export class BitSharesAPI {
       const feeSchedule = await this.getFeeSchedule();
       const btsAsset = await this.getAsset('1.3.0');
       const precision = Math.pow(10, btsAsset.precision);
+      const coreSymbol = btsAsset.symbol || 'BTS';
 
       if (feeSchedule && feeSchedule.parameters) {
         for (const opType of operations) {
@@ -593,7 +600,7 @@ export class BitSharesAPI {
               if (feeParams.price_per_kbyte) {
                 fees[opType + '_per_kb'] = {
                   amount: feeParams.price_per_kbyte,
-                  formatted: `${(feeParams.price_per_kbyte / precision).toFixed(btsAsset.precision)} BTS/KB`
+                  formatted: `${(feeParams.price_per_kbyte / precision).toFixed(btsAsset.precision)} ${coreSymbol}/KB`
                 };
               }
             } else {
@@ -602,7 +609,7 @@ export class BitSharesAPI {
 
             fees[opType] = {
               amount: feeAmount,
-              formatted: `${(feeAmount / precision).toFixed(btsAsset.precision)} BTS`
+              formatted: `${(feeAmount / precision).toFixed(btsAsset.precision)} ${coreSymbol}`
             };
           }
         }
@@ -2979,9 +2986,12 @@ serializeOperationData(opType, opData) {
    * Serialize public key
    */
   serializePublicKey(publicKey) {
-    // Remove 'BTS' prefix and decode
-    if (publicKey.startsWith('BTS')) {
-      publicKey = publicKey.substring(3);
+    // Remove known network prefix (BTS/TEST/GPH) and decode
+    for (const prefix of ['TEST', 'BTS', 'GPH']) {
+      if (publicKey.startsWith(prefix)) {
+        publicKey = publicKey.substring(prefix.length);
+        break;
+      }
     }
     // Base58 decode and return 33 bytes
     const decoded = this.base58Decode(publicKey);

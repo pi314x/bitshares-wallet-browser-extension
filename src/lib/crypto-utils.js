@@ -516,13 +516,13 @@ export class CryptoUtils {
   /**
    * Generate keys from account name and password (cloud wallet style)
    */
-  static async generateKeysFromPassword(accountName, password) {
+  static async generateKeysFromPassword(accountName, password, prefix = 'BTS') {
     const keys = {};
     const roles = ['active', 'owner', 'memo'];
 
     for (const role of roles) {
       const seed = accountName + role + password;
-      keys[role] = await this.generateKeyFromSeed(seed);
+      keys[role] = await this.generateKeyFromSeed(seed, prefix);
     }
 
     return keys;
@@ -531,7 +531,7 @@ export class CryptoUtils {
   /**
    * Generate a key pair from seed
    */
-  static async generateKeyFromSeed(seed) {
+  static async generateKeyFromSeed(seed, prefix = 'BTS') {
     // Hash the seed to get 32 bytes for private key
     const seedHash = await sha256(seed);
 
@@ -546,7 +546,7 @@ export class CryptoUtils {
 
     // Convert to WIF and BTS format
     const privateKeyWIF = await this.privateKeyToWIF(privateKeyBytes);
-    const publicKeyBTS = await this.publicKeyToBTS(publicKeyBytes);
+    const publicKeyBTS = await this.publicKeyToBTS(publicKeyBytes, prefix);
 
     return {
       privateKey: privateKeyWIF,
@@ -622,9 +622,11 @@ export class CryptoUtils {
   }
 
   /**
-   * Convert public key bytes to BTS format
+   * Convert public key bytes to BTS/TEST/GPH format
+   * @param {Uint8Array} publicKeyBytes - raw 33-byte compressed public key
+   * @param {string} prefix - key prefix ('BTS' for mainnet, 'TEST' for testnet)
    */
-  static async publicKeyToBTS(publicKeyBytes) {
+  static async publicKeyToBTS(publicKeyBytes, prefix = 'BTS') {
     // BitShares uses RIPEMD160(public key) for checksum
     const checksum = ripemd160(publicKeyBytes);
 
@@ -633,7 +635,7 @@ export class CryptoUtils {
     withChecksum.set(publicKeyBytes);
     withChecksum.set(checksum.slice(0, 4), 33);
 
-    return 'BTS' + this.base58Encode(withChecksum);
+    return prefix + this.base58Encode(withChecksum);
   }
 
   /**
@@ -1142,9 +1144,13 @@ export class CryptoUtils {
     const fromPrivateKeyBytes = await this.wifToPrivateKey(fromPrivateKeyWIF);
     const fromPrivateKey = bytesToBigInt(fromPrivateKeyBytes);
 
-    // Get sender's public key
+    // Get sender's public key — infer prefix from recipient's key
     const fromPublicPoint = G.multiply(fromPrivateKey);
-    const fromPublicKeyBTS = await this.publicKeyToBTS(fromPublicPoint.toCompressed());
+    let memoPrefix = 'BTS';
+    for (const p of ['BTS', 'TEST', 'GPH']) {
+      if (toPublicKeyBTS.startsWith(p)) { memoPrefix = p; break; }
+    }
+    const fromPublicKeyBTS = await this.publicKeyToBTS(fromPublicPoint.toCompressed(), memoPrefix);
 
     // Parse recipient's public key
     const toPublicKeyBytes = await this.btsToPublicKeyBytes(toPublicKeyBTS);
@@ -1208,9 +1214,13 @@ export class CryptoUtils {
     const privateKeyBytes = await this.wifToPrivateKey(privateKeyWIF);
     const privateKey = bytesToBigInt(privateKeyBytes);
 
-    // Determine if we are sender or recipient
+    // Determine if we are sender or recipient — infer prefix from memo's from key
     const myPublicPoint = G.multiply(privateKey);
-    const myPublicKeyBTS = await this.publicKeyToBTS(myPublicPoint.toCompressed());
+    let memoPrefix = 'BTS';
+    for (const p of ['BTS', 'TEST', 'GPH']) {
+      if (from.startsWith(p)) { memoPrefix = p; break; }
+    }
+    const myPublicKeyBTS = await this.publicKeyToBTS(myPublicPoint.toCompressed(), memoPrefix);
 
     let otherPublicKeyBTS;
     if (myPublicKeyBTS === from) {
@@ -1264,18 +1274,25 @@ export class CryptoUtils {
   }
 
   /**
-   * Parse BTS public key format to raw bytes
+   * Parse BTS/TEST/GPH public key format to raw bytes
    */
   static async btsToPublicKeyBytes(publicKeyBTS) {
-    if (!publicKeyBTS.startsWith('BTS')) {
-      throw new Error('Invalid BTS public key format');
+    let prefix = '';
+    for (const p of ['BTS', 'TEST', 'GPH']) {
+      if (publicKeyBTS.startsWith(p)) {
+        prefix = p;
+        break;
+      }
+    }
+    if (!prefix) {
+      throw new Error('Invalid public key format — expected BTS, TEST, or GPH prefix');
     }
 
-    const decoded = this.base58Decode(publicKeyBTS.slice(3));
+    const decoded = this.base58Decode(publicKeyBTS.slice(prefix.length));
 
     // Remove checksum (last 4 bytes)
     if (decoded.length !== 37) {
-      throw new Error('Invalid BTS public key length');
+      throw new Error('Invalid public key length');
     }
 
     const publicKeyBytes = decoded.slice(0, 33);
@@ -1285,7 +1302,7 @@ export class CryptoUtils {
     const calculatedChecksum = ripemd160(publicKeyBytes);
     for (let i = 0; i < 4; i++) {
       if (checksum[i] !== calculatedChecksum[i]) {
-        throw new Error('Invalid BTS public key checksum');
+        throw new Error('Invalid public key checksum');
       }
     }
 

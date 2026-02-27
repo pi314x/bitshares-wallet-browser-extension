@@ -113,7 +113,7 @@
         <div class="form-group">
           <label for="wallet-fee-account">Pay with account <span class="label-optional">(optional)</span></label>
           <input type="text" id="wallet-fee-account" placeholder="Lifetime member account name" autocomplete="off" autocapitalize="none">
-          <span class="form-hint">A lifetime member account already in your wallet that pays the registration fee. Leave empty to use the faucet (mainnet only).</span>
+          <span class="form-hint">A lifetime member account already in your wallet that pays the registration fee. Leave empty to use the faucet.</span>
         </div>
 
         <div class="form-section-label">Local Encryption</div>
@@ -778,6 +778,7 @@
         <h2>Manage Nodes</h2>
       </div>
       <div class="nodes-container">
+        <div id="nodes-network-label" class="nodes-network-label">Mainnet Nodes</div>
         <div class="current-node-info">
           <label>Current Node</label>
           <div class="current-node" id="current-node-display">Connecting...</div>
@@ -1205,8 +1206,55 @@ window.addEventListener(
           <!-- Accounts will be populated here -->
         </div>
         <button id="btn-add-account-settings" class="btn btn-secondary">
-          <span class="btn-icon">+</span> Add Account
+          <span class="btn-icon">+</span> Add Existing Account
         </button>
+        <button id="btn-create-account-settings" class="btn btn-primary">
+          <span class="btn-icon">+</span> Create New Account
+        </button>
+      </div>
+    </div>
+
+    <!-- Create Account (from Manage Accounts) Screen -->
+    <div id="create-account-settings-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="accounts-screen">←</button>
+        <h2>Create New Account</h2>
+      </div>
+      <div class="form-container">
+        <div class="form-group">
+          <label for="create-account-settings-name">Account Name</label>
+          <input type="text" id="create-account-settings-name" placeholder="e.g., my-account-1" maxlength="41" autocomplete="off" autocapitalize="none">
+          <span id="create-account-settings-name-status" class="input-status"></span>
+        </div>
+        <div class="form-group">
+          <label for="create-account-settings-bts-password">BitShares Password <span class="label-optional">(auto-generated)</span></label>
+          <div class="generated-password-wrapper">
+            <input type="text" id="create-account-settings-bts-password" class="generated-password" readonly autocomplete="off" spellcheck="false">
+            <button type="button" id="btn-copy-create-account-settings-password" class="btn-gen-action" title="Copy password">📋</button>
+            <button type="button" id="btn-create-account-settings-regen" class="btn-gen-action" title="Generate new password">↻</button>
+          </div>
+        </div>
+        <div class="warning-box">
+          <span class="warning-icon">⚠️</span>
+          <p><strong>Save this password!</strong> It controls your on-chain account keys. Nobody can help you recover it if lost — not us, not BitShares.</p>
+        </div>
+        <div class="form-group">
+          <label for="create-account-settings-wallet-password">Wallet Password</label>
+          <div class="password-input-wrapper">
+            <input type="password" id="create-account-settings-wallet-password" placeholder="Your wallet unlock password">
+            <button type="button" class="password-toggle" data-target="create-account-settings-wallet-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button id="btn-create-account-settings-submit" class="btn btn-primary">Register Account</button>
       </div>
     </div>
 

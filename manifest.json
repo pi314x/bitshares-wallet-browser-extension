@@ -59,11 +59,12 @@
     "wss://*.bitshares.org/*",
     "wss://*.bitshares.dev/*",
     "https://*.bitshares.org/*",
-    "https://faucet.bitshares.eu/*"
+    "https://faucet.xbts.io/*",
+    "https://testnet-faucet.xbts.io/*"
   ],
   
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self'; frame-src 'none'"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-src 'none'"
   },
   
   "minimum_chrome_version": "102"

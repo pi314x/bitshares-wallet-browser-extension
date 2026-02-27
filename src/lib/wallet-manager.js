@@ -118,13 +118,25 @@ export class WalletManager {
   }
 
   /**
+   * Share the popup's already-connected API instance with the wallet manager.
+   * Called from popup.js after initializeAPI() so that account operations use
+   * the same network (mainnet/testnet) the user selected.
+   */
+  setApi(api) {
+    this.api = api;
+    // Remember the nodes so reconnection uses the same network
+    this._apiNodes = api && api.nodes ? [...api.nodes] : null;
+  }
+
+  /**
    * Ensure the BitSharesAPI instance exists and its WebSocket is connected.
    * Re-creates and reconnects whenever the instance is missing or the socket
    * has dropped (e.g. after service-worker idle, network hiccup, etc.).
+   * Uses the nodes saved via setApi() so reconnection stays on the correct network.
    */
   async ensureApiConnected() {
     if (!this.api || !this.api.isConnected) {
-      this.api = new BitSharesAPI();
+      this.api = new BitSharesAPI(this._apiNodes || null);
       await this.api.connect();
     }
   }
@@ -285,7 +297,7 @@ export class WalletManager {
    * as an alternative recovery path.  When only a brainkey is supplied the legacy
    * SLIP-48 derivation is used instead.
    */
-  async createWallet(name, password, brainkey, bitsharesAccountName, bitsharesPassword) {
+  async createWallet(name, password, brainkey, bitsharesAccountName, bitsharesPassword, network = 'mainnet') {
     try {
       // Normalize brainkey (always generated, kept as backup)
       const normalizedBrainkey = CryptoUtils.normalizeBrainkey(brainkey);
@@ -346,9 +358,9 @@ export class WalletManager {
 
       // Try to find associated account on chain
       if (bitsharesAccountName) {
-        await this.findAndAddAccountByName(bitsharesAccountName);
+        await this.findAndAddAccountByName(bitsharesAccountName, network);
       } else {
-        await this.findAndAddAccount(keys.active.publicKey);
+        await this.findAndAddAccount(keys.active.publicKey, network);
       }
 
       return true;
@@ -360,7 +372,7 @@ export class WalletManager {
   /**
    * Import an existing wallet
    */
-  async importWallet(importData, password) {
+  async importWallet(importData, password, network = 'mainnet') {
     try {
       let keys;
       let brainkey = null;
@@ -428,10 +440,10 @@ export class WalletManager {
       // Find and add account
       if (importData.type === 'account' && importData.accountName) {
         // For account import, look up the account directly by name
-        await this.findAndAddAccountByName(importData.accountName);
+        await this.findAndAddAccountByName(importData.accountName, network);
       } else {
         // For other types, try to find by public key
-        await this.findAndAddAccount(keys.active.publicKey);
+        await this.findAndAddAccount(keys.active.publicKey, network);
       }
 
       return true;
@@ -444,20 +456,21 @@ export class WalletManager {
   /**
    * Find account by public key and add to wallet
    */
-  async findAndAddAccount(publicKey) {
+  async findAndAddAccount(publicKey, network = 'mainnet') {
     try {
       await this.ensureApiConnected();
 
       const accounts = await this.api.getAccountsByKey(publicKey);
-      
+
       if (accounts && accounts.length > 0) {
         const accountName = accounts[0];
         const accountInfo = await this.api.getAccount(accountName);
-        
+
         if (accountInfo) {
           await this.addAccount({
             name: accountName,
-            id: accountInfo.id
+            id: accountInfo.id,
+            network
           });
         }
       }
@@ -470,7 +483,7 @@ export class WalletManager {
   /**
    * Find account by name and add to wallet
    */
-  async findAndAddAccountByName(accountName) {
+  async findAndAddAccountByName(accountName, network = 'mainnet') {
     try {
       await this.ensureApiConnected();
 
@@ -479,7 +492,8 @@ export class WalletManager {
       if (accountInfo) {
         await this.addAccount({
           name: accountInfo.name,
-          id: accountInfo.id
+          id: accountInfo.id,
+          network
         });
       } else {
         console.warn('Account not found on chain:', accountName);
@@ -554,7 +568,7 @@ export class WalletManager {
    * @param {{ owner: {publicKey}, active: {publicKey}, memo: {publicKey} }} keys
    * @param {string} [faucetUrl]  - override the default faucet endpoint
    */
-  async registerAccountViaFaucet(accountName, keys, faucetUrl = 'https://faucet.bitshares.eu/onboarding') {
+  async registerAccountViaFaucet(accountName, keys, faucetUrl = 'https://faucet.xbts.io/api/v1/accounts') {
     const payload = {
       account: {
         name: accountName,
@@ -638,12 +652,13 @@ export class WalletManager {
             accounts.push({
               name: account.name,
               id: account.id,
+              network: account.network || 'mainnet',
               addedAt: Date.now()
             });
           }
 
           // Update wallet account list (unencrypted for quick access)
-          wallet.accounts = accounts.map(a => ({ name: a.name, id: a.id }));
+          wallet.accounts = accounts.map(a => ({ name: a.name, id: a.id, network: a.network || 'mainnet' }));
           
           await this.saveWallet(wallet);
           this.currentWallet = wallet;
@@ -789,7 +804,7 @@ export class WalletManager {
   /**
    * Get all accounts in the wallet
    */
-  async getAllAccounts() {
+  async getAllAccounts(network = null) {
     return new Promise((resolve) => {
       chrome.storage.local.get(['wallet', 'activeAccount'], (result) => {
         if (!result.wallet || !result.wallet.accounts) {
@@ -798,10 +813,17 @@ export class WalletManager {
         }
 
         const activeAccountId = result.activeAccount;
-        const accounts = result.wallet.accounts.map(a => ({
+        let accounts = result.wallet.accounts.map(a => ({
           ...a,
+          // Legacy accounts without network field default to mainnet
+          network: a.network || 'mainnet',
           isActive: a.id === activeAccountId || (!activeAccountId && result.wallet.accounts.indexOf(a) === 0)
         }));
+
+        // Filter by network if specified
+        if (network) {
+          accounts = accounts.filter(a => a.network === network);
+        }
 
         resolve(accounts);
       });
@@ -841,13 +863,40 @@ export class WalletManager {
   }
 
   /**
+   * Update the network assignment for an account
+   * @param {string} accountId - Account ID
+   * @param {string} network - 'mainnet' | 'testnet'
+   */
+  async updateAccountNetwork(accountId, network) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.get(['wallet'], (result) => {
+        if (!result.wallet || !result.wallet.accounts) {
+          reject(new Error('No wallet found'));
+          return;
+        }
+        const wallet = result.wallet;
+        const account = wallet.accounts.find(a => a.id === accountId);
+        if (!account) {
+          reject(new Error('Account not found'));
+          return;
+        }
+        account.network = network;
+        this.saveWallet(wallet).then(() => {
+          this.currentWallet = wallet;
+          resolve(true);
+        }).catch(reject);
+      });
+    });
+  }
+
+  /**
    * Add a new account by credentials (account name + BitShares password)
    * @param {string} accountName - BitShares account name
    * @param {string} bitsharesPassword - BitShares password for key derivation
    * @param {string} walletPassword - Wallet password for encryption
    * @param {boolean} skipVerify - Skip key verification (for accounts with custom keys)
    */
-  async addAccountByCredentials(accountName, bitsharesPassword, walletPassword, skipVerify = false) {
+  async addAccountByCredentials(accountName, bitsharesPassword, walletPassword, skipVerify = false, keyPrefix = 'BTS', network = 'mainnet') {
     // Verify wallet password first
     const passwordValid = await this.verifyPassword(walletPassword);
     if (!passwordValid) {
@@ -863,8 +912,8 @@ export class WalletManager {
         throw new Error('Account not found on BitShares network');
       }
 
-      // Generate keys from credentials
-      const keys = await CryptoUtils.generateKeysFromPassword(accountName, bitsharesPassword);
+      // Generate keys from credentials using the correct prefix for this network
+      const keys = await CryptoUtils.generateKeysFromPassword(accountName, bitsharesPassword, keyPrefix);
 
       // Verify keys match unless skipVerify is true
       if (!skipVerify) {
@@ -936,6 +985,7 @@ export class WalletManager {
               name: accountInfo.name,
               id: accountInfo.id,
               hasOwnKeys: true,
+              network,
               addedAt: Date.now()
             });
 
@@ -963,7 +1013,7 @@ export class WalletManager {
    * Add a watch-only account (no private keys, view only)
    * @param {string} accountName - BitShares account name
    */
-  async addWatchOnlyAccount(accountName) {
+  async addWatchOnlyAccount(accountName, network = 'mainnet') {
     try {
       await this.ensureApiConnected();
 
@@ -993,6 +1043,7 @@ export class WalletManager {
               name: accountInfo.name,
               id: accountInfo.id,
               watchOnly: true,
+              network,
               addedAt: Date.now()
             });
 
@@ -1444,12 +1495,16 @@ export class WalletManager {
    * Get all connected sites
    * @param {string} accountId - Optional filter by account ID
    */
-  async getConnectedSites(accountId = null) {
+  async getConnectedSites(accountId = null, network = null) {
     return new Promise((resolve) => {
       chrome.storage.local.get(['connectedSites'], (result) => {
         let sites = result.connectedSites || [];
         if (accountId) {
           sites = sites.filter(s => s.accountId === accountId);
+        }
+        if (network) {
+          // Legacy sites without network field are treated as mainnet
+          sites = sites.filter(s => (s.network || 'mainnet') === network);
         }
         resolve(sites);
       });
@@ -1463,10 +1518,10 @@ export class WalletManager {
    * @param {string} accountName - Account name for display
    * @param {Array} permissions - Permissions granted
    */
-  async addConnectedSite(origin, accountId, accountName, permissions = []) {
+  async addConnectedSite(origin, accountId, accountName, permissions = [], network = 'mainnet') {
     const sites = await this.getConnectedSites();
-    // Check if this origin+account combination already exists
-    const existingIndex = sites.findIndex(s => s.origin === origin && s.accountId === accountId);
+    // Check if this origin+account+network combination already exists
+    const existingIndex = sites.findIndex(s => s.origin === origin && s.accountId === accountId && (s.network || 'mainnet') === network);
 
     if (existingIndex >= 0) {
       sites[existingIndex].permissions = permissions;
@@ -1477,6 +1532,7 @@ export class WalletManager {
         accountId,
         accountName,
         permissions,
+        network,
         connectedAt: Date.now(),
         lastConnected: Date.now()
       });
@@ -1513,12 +1569,14 @@ export class WalletManager {
    * @param {string} origin - Site origin URL
    * @param {string} accountId - Optional specific account ID to check
    */
-  async isSiteConnected(origin, accountId = null) {
+  async isSiteConnected(origin, accountId = null, network = null) {
     const sites = await this.getConnectedSites();
-    if (accountId) {
-      return sites.some(s => s.origin === origin && s.accountId === accountId);
-    }
-    return sites.some(s => s.origin === origin);
+    return sites.some(s => {
+      if (s.origin !== origin) return false;
+      if (accountId && s.accountId !== accountId) return false;
+      if (network && (s.network || 'mainnet') !== network) return false;
+      return true;
+    });
   }
 
   /**
@@ -1526,9 +1584,9 @@ export class WalletManager {
    * @param {string} origin - Site origin URL
    * @returns {Object|null} Account info or null
    */
-  async getConnectedAccountForSite(origin) {
+  async getConnectedAccountForSite(origin, network = null) {
     const sites = await this.getConnectedSites();
-    const connection = sites.find(s => s.origin === origin);
+    const connection = sites.find(s => s.origin === origin && (!network || (s.network || 'mainnet') === network));
     if (connection) {
       return {
         accountId: connection.accountId,

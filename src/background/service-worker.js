@@ -6,6 +6,22 @@
 import { WalletManager } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 
+// Default nodes per network (mirrors popup.js DEFAULT_NODES)
+const DEFAULT_NODES = {
+  mainnet: [
+    'wss://node.xbts.io/ws',
+    'wss://cloud.xbts.io/ws',
+    'wss://public.xbts.io/ws',
+    'wss://btsws.roelandp.nl/ws',
+    'wss://dex.iobanker.com/ws',
+    'wss://api.bitshares.dev/ws'
+  ],
+  testnet: [
+    'wss://testnet.xbts.io/ws',
+    'wss://testnet.dex.trading/'
+  ]
+};
+
 class BackgroundService {
   constructor() {
     this.walletManager = new WalletManager();
@@ -46,6 +62,12 @@ class BackgroundService {
 
   async connectToBlockchain() {
     try {
+      // Use the same network the user selected in the popup
+      const result = await chrome.storage.local.get(['selectedNetwork']);
+      const network = result.selectedNetwork || 'mainnet';
+      const nodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+      this.api = new BitSharesAPI(nodes);
+
       await this.api.connect();
       console.log('Connected to BitShares blockchain via:', this.api.currentNode);
       
@@ -399,8 +421,14 @@ class BackgroundService {
     });
   }
 
+  async getCurrentNetwork() {
+    const result = await chrome.storage.local.get(['selectedNetwork']);
+    return result.selectedNetwork || 'mainnet';
+  }
+
   async handleGetAccount(origin) {
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -425,8 +453,9 @@ class BackgroundService {
       }
     }
 
-    // Verify connection
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    // Verify connection for current network
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -477,8 +506,9 @@ class BackgroundService {
       }
     }
 
-    // Verify connection
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    // Verify connection for current network
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -741,11 +771,13 @@ class BackgroundService {
     const request = this.pendingRequests.get(requestId);
 
     // Store pending request info for popup to retrieve when user clicks extension icon
+    const pendingNetwork = await this.getCurrentNetwork();
     await chrome.storage.local.set({
       pendingApproval: {
         requestId,
         type,
         origin,
+        network: pendingNetwork,
         params: request?.params || {},
         messageId: request?.messageId,
         tabId: request?.tabId
@@ -814,12 +846,14 @@ class BackgroundService {
         console.error('Could not get account for approval response:', e);
       }
 
-      // Store connection with account info
+      // Store connection with account info and current network
+      const connNetwork = await this.getCurrentNetwork();
       await this.walletManager.addConnectedSite(
         request.origin,
         account?.id || accountId,
         account?.name || accountName,
-        ['getAccount', 'signTransaction', 'transfer']
+        ['getAccount', 'signTransaction', 'transfer'],
+        connNetwork
       );
 
       const response = {

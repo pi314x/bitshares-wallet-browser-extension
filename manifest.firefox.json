@@ -53,8 +53,9 @@
     "activeTab",
     "notifications",
     "alarms",
-    "https://faucet.bitshares.eu/*"
+    "https://faucet.xbts.io/*",
+    "https://testnet-faucet.xbts.io/*"
   ],
 
-  "content_security_policy": "script-src 'self'; object-src 'self'; style-src 'self'; frame-src 'none'"
+  "content_security_policy": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-src 'none'"
 }

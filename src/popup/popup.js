@@ -124,6 +124,11 @@ function setupEventListeners() {
   document.getElementById('setting-connections')?.addEventListener('click', handleShowConnections);
   document.getElementById('setting-accounts')?.addEventListener('click', handleShowAccounts);
   document.getElementById('btn-add-account-settings')?.addEventListener('click', () => showScreen('add-account-screen'));
+  document.getElementById('btn-create-account-settings')?.addEventListener('click', handleShowCreateAccountSettings);
+  document.getElementById('btn-create-account-settings-regen')?.addEventListener('click', generateCreateAccountSettingsPassword);
+  document.getElementById('btn-copy-create-account-settings-password')?.addEventListener('click', handleCopyCreateAccountSettingsPassword);
+  document.getElementById('create-account-settings-name')?.addEventListener('input', handleCreateAccountSettingsNameInput);
+  document.getElementById('btn-create-account-settings-submit')?.addEventListener('click', handleCreateAccountSettings);
   document.getElementById('add-account-watch-only')?.addEventListener('change', handleWatchOnlyToggle);
   document.getElementById('setting-fees')?.addEventListener('click', handleShowFees);
   document.getElementById('btn-refresh-fees')?.addEventListener('click', loadNetworkFees);
@@ -196,6 +201,12 @@ async function initializeApp() {
     // Initialize wallet manager
     walletManager = new WalletManager();
 
+    // Restore saved network selection before any API calls
+    const savedNetworkResult = await chrome.storage.local.get(['selectedNetwork']);
+    const savedNetwork = savedNetworkResult.selectedNetwork || 'mainnet';
+    const networkSelect = document.getElementById('network-select');
+    if (networkSelect) networkSelect.value = savedNetwork;
+
     // Check if wallet exists
     const hasWallet = await walletManager.hasWallet();
 
@@ -223,6 +234,14 @@ async function initializeApp() {
 
     // Test all nodes in background (don't await - runs asynchronously)
     testAllNodesInBackground();
+
+    // If popup is already open (unlocked), show approval modal the moment a new
+    // dApp request arrives — no need to close and reopen the popup.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.pendingApproval?.newValue && !isLocked) {
+        checkPendingApproval();
+      }
+    });
   } catch (error) {
     console.error('Initialization error:', error);
     showToast('Failed to initialize wallet', 'error');
@@ -237,8 +256,10 @@ async function initializeApp() {
  */
 async function testAllNodesInBackground() {
   try {
-    const savedNodes = await getSavedNodes();
-    const allNodes = [...new Set([...DEFAULT_NODES, ...savedNodes])];
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const defaultNodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+    const savedNodes = await getSavedNodesForNetwork(network);
+    const allNodes = [...new Set([...defaultNodes, ...savedNodes])];
 
     // Test all nodes in parallel
     await Promise.all(allNodes.map(node => testNode(node)));
@@ -286,29 +307,40 @@ async function initializeAPI() {
   }
 
   const network = document.getElementById('network-select')?.value || 'mainnet';
-  const nodes = getNetworkNodes(network);
+  const nodes = await getNetworkNodes(network);
 
   btsAPI = new BitSharesAPI(nodes);
   await btsAPI.connect();
+
+  // Share the connected API with walletManager so account operations
+  // (add, verify keys, etc.) use the same network the user selected.
+  if (walletManager) {
+    walletManager.setApi(btsAPI);
+  }
 }
 
-// Get network nodes based on selected network
-function getNetworkNodes(network) {
-  // Use centralized reliable node list (January 2026)
-  const nodes = {
-    mainnet: [
-      'wss://node.xbts.io/ws',       // xbtsio-wallet, Germany/Falkenstein, 142.6ms
-      'wss://cloud.xbts.io/ws',      // xbtsio-wallet, USA/Ashburn, 209.8ms
-      'wss://public.xbts.io/ws',     // xbtsio-wallet, Germany/Nuremberg, 245.7ms
-      'wss://btsws.roelandp.nl/ws',  // roelandp, Finland/Helsinki, 284.1ms
-      'wss://dex.iobanker.com/ws',   // iobanker-core, Germany/Frankfurt, 427.1ms
-      'wss://api.bitshares.dev/ws'   // in.abit, USA/Virginia, 543.5ms
-    ],
-    testnet: [
-      'wss://testnet.dex.trading/'
-    ]
-  };
-  return nodes[network] || nodes.mainnet;
+// Get network nodes based on selected network (defaults + custom)
+async function getNetworkNodes(network) {
+  const defaults = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+  const customNodes = await getSavedNodesForNetwork(network);
+  return [...new Set([...defaults, ...customNodes])];
+}
+
+// Get faucet URL for a given network
+function getFaucetUrl(network) {
+  return network === 'testnet'
+    ? 'https://testnet-faucet.xbts.io/api/v1/accounts'
+    : 'https://faucet.xbts.io/api/v1/accounts';
+}
+
+// Get key prefix for a given network
+function getKeyPrefix(network) {
+  return network === 'testnet' ? 'TEST' : 'BTS';
+}
+
+// Get core currency symbol for a given network
+function getCoreSymbol(network) {
+  return network === 'testnet' ? 'TEST' : 'BTS';
 }
 
 // Screen navigation
@@ -596,8 +628,11 @@ async function handleGenerateWallet() {
   const originalText = btn.textContent;
 
   try {
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const keyPrefix = getKeyPrefix(network);
+
     // Derive the keys that will control the on-chain account
-    const keys = await CryptoUtils.generateKeysFromPassword(btsAccountName, btsPassword);
+    const keys = await CryptoUtils.generateKeysFromPassword(btsAccountName, btsPassword, keyPrefix);
 
     // Register account on-chain — via a wallet account if provided, otherwise faucet
     btn.disabled = true;
@@ -608,13 +643,13 @@ async function handleGenerateWallet() {
       await walletManager.createAccountOnChain(btsAccountName, keys, feeAccount);
     } else {
       showToast('Registering account via faucet…', 'info');
-      await walletManager.registerAccountViaFaucet(btsAccountName, keys);
+      await walletManager.registerAccountViaFaucet(btsAccountName, keys, getFaucetUrl(network));
     }
 
     // Generate brainkey for backup, then store the wallet locally
     btn.textContent = 'Creating wallet…';
     const brainkey = CryptoUtils.generateBrainkey();
-    await walletManager.createWallet('BitShares Wallet', password, brainkey, btsAccountName, btsPassword);
+    await walletManager.createWallet('BitShares Wallet', password, brainkey, btsAccountName, btsPassword, network);
 
     // Clear the form (also regenerates the displayed BTS password)
     clearCreateWalletForm();
@@ -767,7 +802,8 @@ async function handleImportWallet() {
       }
     }
 
-    await walletManager.importWallet(importData, walletPassword);
+    const importNetwork = document.getElementById('network-select')?.value || 'mainnet';
+    await walletManager.importWallet(importData, walletPassword, importNetwork);
     await initializeAPI();
     await loadDashboard();
 
@@ -854,9 +890,30 @@ async function loadDashboard(forceReconnect = false) {
       await initializeAPI();
     }
 
-    const account = await walletManager.getCurrentAccount();
-    const allAccounts = await walletManager.getAllAccounts();
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const allAccounts = await walletManager.getAllAccounts(network);
 
+    // If no accounts exist for this network, show empty state
+    if (allAccounts.length === 0) {
+      const accountSelector = document.getElementById('account-selector');
+      if (accountSelector) accountSelector.innerHTML = '<option value="">No accounts on this network</option>';
+      const accountNameEl = document.getElementById('account-name');
+      if (accountNameEl) accountNameEl.textContent = 'No account';
+      const accountIdEl = document.getElementById('account-id');
+      if (accountIdEl) accountIdEl.textContent = '';
+      const assetsList = document.getElementById('assets-list');
+      if (assetsList) assetsList.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><p>No accounts on ${network}</p><p class="hint">Add or create an account for this network</p></div>`;
+      document.getElementById('balance-bts').textContent = `0 ${getCoreSymbol(network)}`;
+      document.getElementById('balance-usd').textContent = '';
+      return;
+    }
+
+    // Ensure active account is on the current network; if not, switch to first on this network
+    let account = await walletManager.getCurrentAccount();
+    if (!account || !allAccounts.find(a => a.id === account.id)) {
+      account = allAccounts[0];
+      await walletManager.setActiveAccount(account.id);
+    }
 
     // Populate account selector
     const accountSelector = document.getElementById('account-selector');
@@ -907,8 +964,11 @@ async function loadDashboard(forceReconnect = false) {
 async function loadBalances(accountId) {
   try {
     // Check if account exists on chain
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const coreSymbol = getCoreSymbol(network);
+
     if (!accountId || accountId === '1.2.0') {
-      document.getElementById('balance-bts').textContent = '0 BTS';
+      document.getElementById('balance-bts').textContent = `0 ${coreSymbol}`;
       document.getElementById('balance-usd').textContent = '≈ $0.00 USD';
       const assetsList = document.getElementById('assets-list');
       assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No account on chain yet</p><p class="hint">Import an existing account to see balances</p></div>';
@@ -922,37 +982,52 @@ async function loadBalances(accountId) {
 
     const balances = await btsAPI.getAccountBalances(accountId);
 
-    // Update BTS balance using asset precision
+    // Update core asset balance using asset precision
     const btsAsset = await btsAPI.getAsset('1.3.0');
     const btsPrecision = btsAsset?.precision || 5;
     const btsBalance = balances.find(b => b.asset_id === '1.3.0') || { amount: 0 };
     const btsDivisor = Math.pow(10, btsPrecision);
     const btsAmount = (parseInt(btsBalance.amount) / btsDivisor).toFixed(btsPrecision);
-    document.getElementById('balance-bts').textContent = `${btsAmount} BTS`;
+    document.getElementById('balance-bts').textContent = `${btsAmount} ${coreSymbol}`;
 
-    // Get BTS price and calculate USD value
-    const btsPriceData = await btsAPI.getBTSPrice();
-    const btsPrice = btsPriceData.price || 0;
-    const usdValue = (parseFloat(btsAmount) * btsPrice).toFixed(2);
-    document.getElementById('balance-usd').textContent = `≈ $${usdValue} USD`;
-
-    // Update BTS price display if element exists
+    // Price feed only available on mainnet
     const priceDisplay = document.getElementById('bts-price-display');
-    if (priceDisplay && btsPrice > 0) {
-      priceDisplay.textContent = `1 BTS = $${btsPrice.toFixed(6)} (${btsPriceData.source || 'N/A'})`;
-    } else if (priceDisplay) {
-      priceDisplay.textContent = 'Price unavailable';
+    if (network === 'testnet') {
+      document.getElementById('balance-usd').textContent = '';
+      if (priceDisplay) priceDisplay.textContent = 'Testnet — no price feed';
+    } else {
+      const btsPriceData = await btsAPI.getBTSPrice();
+      const btsPrice = btsPriceData.price || 0;
+      const usdValue = (parseFloat(btsAmount) * btsPrice).toFixed(2);
+      document.getElementById('balance-usd').textContent = `≈ $${usdValue} USD`;
+      if (priceDisplay && btsPrice > 0) {
+        priceDisplay.textContent = `1 BTS = $${btsPrice.toFixed(6)} (${btsPriceData.source || 'N/A'})`;
+      } else if (priceDisplay) {
+        priceDisplay.textContent = 'Price unavailable';
+      }
     }
 
     // Update assets list
     await updateAssetsList(balances);
   } catch (error) {
     console.error('Failed to load balances:', error);
-    document.getElementById('balance-bts').textContent = '0 BTS';
-    document.getElementById('balance-usd').textContent = '≈ $0.00 USD';
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const networkLabel = network === 'testnet' ? 'testnet' : 'mainnet';
+    document.getElementById('balance-bts').textContent = `0 ${getCoreSymbol(network)}`;
+    document.getElementById('balance-usd').textContent = '';
     const assetsList = document.getElementById('assets-list');
     if (assetsList) {
-      assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Failed to load balances</p></div>';
+      // Distinguish "account doesn't exist on this network" from a real connection error
+      const isWrongNetwork = error.message && (
+        error.message.includes('account_ptr') ||
+        error.message.includes('no such account') ||
+        error.message.includes('Assert Exception')
+      );
+      if (isWrongNetwork) {
+        assetsList.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🌐</div><p>This account is not on ${networkLabel}</p><p class="hint">Switch network or add your ${networkLabel} account</p></div>`;
+      } else {
+        assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Failed to load balances</p></div>';
+      }
     }
   }
 }
@@ -2296,16 +2371,17 @@ async function checkSiteConnectionForCurrentTab(accountId) {
     if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) return;
 
     const origin = new URL(tab.url).origin;
+    const network = document.getElementById('network-select')?.value || 'mainnet';
 
-    // Check if this site has any connection (to any account)
-    const sites = await walletManager.getConnectedSites();
+    // Check if this site has any connection on the current network
+    const sites = await walletManager.getConnectedSites(null, network);
     const siteHasAnyConnection = sites.some(s => s.origin === origin);
 
-    // If site has no connections at all, don't prompt (user hasn't tried to connect)
+    // If site has no connections on this network, don't prompt
     if (!siteHasAnyConnection) return;
 
-    // Check if THIS account is connected to the site
-    const isConnected = await walletManager.isSiteConnected(origin, accountId);
+    // Check if THIS account is connected to the site on this network
+    const isConnected = await walletManager.isSiteConnected(origin, accountId, network);
 
     // If not connected, show connection approval modal
     if (!isConnected) {
@@ -2322,8 +2398,8 @@ async function checkSiteConnectionForCurrentTab(accountId) {
         dappIcon.alt = hostname;
       }
 
-      // Populate account selector with current account pre-selected (exclude watch-only)
-      const accounts = await walletManager.getAllAccounts();
+      // Populate account selector: only accounts on current network, exclude watch-only
+      const accounts = await walletManager.getAllAccounts(network);
       const signableAccounts = accounts.filter(acc => !acc.watchOnly);
       const selector = document.getElementById('dapp-connect-account');
       if (selector && signableAccounts.length > 0) {
@@ -2382,10 +2458,12 @@ async function handleAddAccount() {
   try {
     showToast('Verifying account...', 'info');
 
+    const network = document.getElementById('network-select')?.value || 'mainnet';
     if (watchOnly) {
-      await walletManager.addWatchOnlyAccount(accountName);
+      await walletManager.addWatchOnlyAccount(accountName, network);
     } else {
-      await walletManager.addAccountByCredentials(accountName, btsPassword, walletPassword, skipVerify);
+      const keyPrefix = getKeyPrefix(network);
+      await walletManager.addAccountByCredentials(accountName, btsPassword, walletPassword, skipVerify, keyPrefix, network);
     }
 
     // Clear form
@@ -2422,7 +2500,9 @@ async function handleShowAccounts() {
 
 async function loadAccountsList() {
   const accountsList = document.getElementById('accounts-list');
+  // Show ALL accounts (not filtered by network) so user can see and remove accounts from other networks
   const accounts = await walletManager.getAllAccounts();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
 
   if (accounts.length === 0) {
     accountsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👤</div><p>No accounts</p></div>';
@@ -2432,22 +2512,36 @@ async function loadAccountsList() {
   accountsList.innerHTML = '';
 
   for (const account of accounts) {
+    const accountNetwork = account.network || 'mainnet';
+    const isCurrentNetwork = accountNetwork === network;
     const item = document.createElement('div');
-    item.className = `account-item${account.isActive ? ' active' : ''}${account.watchOnly ? ' watch-only' : ''}`;
+    item.className = `account-item${account.isActive && isCurrentNetwork ? ' active' : ''}${account.watchOnly ? ' watch-only' : ''}${!isCurrentNetwork ? ' other-network' : ''}`;
     item.innerHTML = `
       <div class="account-item-info">
         <div class="account-item-name">${escapeHtml(account.name)}</div>
         <div class="account-item-id">${escapeHtml(account.id)}</div>
-        ${account.isActive ? '<span class="account-badge">Active</span>' : ''}
-        ${account.watchOnly ? '<span class="account-badge watch-only">Watch Only</span>' : ''}
+        <div class="account-item-chips">
+          <button class="account-net-chip ${accountNetwork === 'testnet' ? 'testnet' : 'mainnet'}" data-id="${escapeHtml(account.id)}" data-network="${escapeHtml(accountNetwork)}" title="Move to ${accountNetwork === 'mainnet' ? 'Testnet' : 'Mainnet'}">${accountNetwork === 'testnet' ? 'Testnet' : 'Mainnet'}</button>${account.isActive && isCurrentNetwork ? '<span class="account-badge">Active</span>' : ''}${account.watchOnly ? '<span class="account-badge watch-only">Watch Only</span>' : ''}
+        </div>
       </div>
       <div class="account-item-actions">
-        ${!account.isActive ? `<button class="account-btn set-active" data-id="${escapeHtml(account.id)}" title="Set as active">✓</button>` : ''}
-        ${!account.isActive && accounts.length > 1 ? `<button class="account-btn remove" data-id="${escapeHtml(account.id)}" title="Remove account">✕</button>` : ''}
+        ${!account.isActive || !isCurrentNetwork ? `<button class="account-btn set-active" data-id="${escapeHtml(account.id)}" title="Set as active">✓</button>` : ''}
+        ${accounts.length > 1 ? `<button class="account-btn remove" data-id="${escapeHtml(account.id)}" title="Remove account">✕</button>` : ''}
       </div>
     `;
     accountsList.appendChild(item);
   }
+
+  // Network chip: click to move account between mainnet and testnet
+  accountsList.querySelectorAll('.account-net-chip').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newNetwork = btn.dataset.network === 'mainnet' ? 'testnet' : 'mainnet';
+      await walletManager.updateAccountNetwork(btn.dataset.id, newNetwork);
+      await loadAccountsList();
+      await loadDashboard();
+      showToast(`Account moved to ${newNetwork}`, 'success');
+    });
+  });
 
   // Add event listeners for set active
   accountsList.querySelectorAll('.account-btn.set-active').forEach(btn => {
@@ -2476,6 +2570,125 @@ async function loadAccountsList() {
       }
     });
   });
+}
+
+// === Create New Account from Manage Accounts ===
+
+function generateCreateAccountSettingsPassword() {
+  const password = generateStrongPassword();
+  const el = document.getElementById('create-account-settings-bts-password');
+  if (el) el.value = password;
+}
+
+async function handleCopyCreateAccountSettingsPassword() {
+  const password = document.getElementById('create-account-settings-bts-password')?.value;
+  if (!password) return;
+  try {
+    await navigator.clipboard.writeText(password);
+    showToast('BitShares password copied!', 'success');
+  } catch {
+    showToast('Failed to copy password', 'error');
+  }
+}
+
+function handleShowCreateAccountSettings() {
+  document.getElementById('create-account-settings-name').value = '';
+  document.getElementById('create-account-settings-name-status').textContent = '';
+  document.getElementById('create-account-settings-wallet-password').value = '';
+  document.getElementById('btn-create-account-settings-submit').disabled = true;
+  generateCreateAccountSettingsPassword();
+  showScreen('create-account-settings-screen');
+}
+
+async function handleCreateAccountSettingsNameInput(e) {
+  const name = e.target.value.trim();
+  const statusEl = document.getElementById('create-account-settings-name-status');
+  const submitBtn = document.getElementById('btn-create-account-settings-submit');
+
+  const formatError = validateAccountNameFormat(name);
+  if (formatError) {
+    statusEl.textContent = '✗ ' + formatError;
+    statusEl.className = 'input-status invalid';
+    submitBtn.disabled = true;
+    return;
+  }
+
+  statusEl.textContent = 'Checking availability…';
+  statusEl.className = 'input-status';
+  submitBtn.disabled = true;
+
+  try {
+    const exists = await btsAPI.getAccount(name);
+    if (exists) {
+      statusEl.textContent = '✗ Name already taken';
+      statusEl.className = 'input-status invalid';
+    } else {
+      statusEl.textContent = '✓ Available';
+      statusEl.className = 'input-status valid';
+      submitBtn.disabled = false;
+    }
+  } catch (_) {
+    statusEl.textContent = '✓ Available';
+    statusEl.className = 'input-status valid';
+    submitBtn.disabled = false;
+  }
+}
+
+async function handleCreateAccountSettings() {
+  const accountName = document.getElementById('create-account-settings-name')?.value?.trim();
+  const walletPassword = document.getElementById('create-account-settings-wallet-password')?.value;
+  const btsPassword = document.getElementById('create-account-settings-bts-password')?.value;
+
+  if (!accountName) { showToast('Please enter an account name', 'error'); return; }
+  if (!btsPassword) { showToast('Please generate a BitShares password first', 'error'); return; }
+  if (!walletPassword) { showToast('Please enter your wallet password', 'error'); return; }
+
+  const formatError = validateAccountNameFormat(accountName);
+  if (formatError) { showToast(formatError, 'error'); return; }
+
+  const btn = document.getElementById('btn-create-account-settings-submit');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+
+  try {
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const keyPrefix = getKeyPrefix(network);
+    const faucetUrl = getFaucetUrl(network);
+
+    btn.textContent = 'Registering…';
+    showToast('Registering account via faucet…', 'info');
+
+    const keys = await CryptoUtils.generateKeysFromPassword(accountName, btsPassword, keyPrefix);
+    await walletManager.registerAccountViaFaucet(accountName, keys, faucetUrl);
+
+    btn.textContent = 'Waiting for confirmation…';
+    showToast('Waiting for block confirmation…', 'info');
+
+    // Poll until account is visible on chain (up to ~12 s)
+    let added = false;
+    for (let i = 0; i < 6 && !added; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        await walletManager.addAccountByCredentials(accountName, btsPassword, walletPassword, true, keyPrefix, network);
+        added = true;
+      } catch (e) {
+        if (!e.message.includes('not found') && !e.message.includes('not found on BitShares')) throw e;
+      }
+    }
+
+    if (!added) {
+      throw new Error('Account registered but not yet confirmed. Use "Add Existing Account" to import it manually in a few seconds.');
+    }
+
+    showToast(`Account "${accountName}" created and added!`, 'success');
+    await loadDashboard();
+    showScreen('dashboard-screen');
+  } catch (error) {
+    console.error('Create account (settings) error:', error);
+    showToast(error.message, 'error');
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 // === Watch-Only Accounts ===
@@ -2543,7 +2756,8 @@ async function handleMaxAmount() {
         showToast('Balance too low to cover the network fee', 'error');
         return;
       }
-      showToast(`Network fee (${feeAmount} BTS) reserved from max amount`, 'info');
+      const _feeNetwork = document.getElementById('network-select')?.value || 'mainnet';
+      showToast(`Network fee (${feeAmount} ${getCoreSymbol(_feeNetwork)}) reserved from max amount`, 'info');
     } catch (_) {
       // If fee lookup fails, deduct a safe default
       amount = Math.max(0, amount - 0.01);
@@ -2685,12 +2899,14 @@ async function loadSendAssets() {
     const assetSelect = document.getElementById('send-asset');
     assetSelect.innerHTML = '';
 
-    // Always add BTS first even if balance is 0
+    // Always add core asset first even if balance is 0
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const coreSymbol = getCoreSymbol(network);
     const btsBalance = balances.find(b => b.asset_id === '1.3.0') || { amount: 0, asset_id: '1.3.0' };
     const btsAsset = await btsAPI.getAsset('1.3.0');
     const btsPrecision = Math.pow(10, btsAsset.precision);
     const btsAmount = (parseInt(btsBalance.amount) / btsPrecision).toFixed(btsAsset.precision);
-    assetSelect.innerHTML += `<option value="1.3.0" data-precision="${btsAsset.precision}" data-amount="${btsBalance.amount}">BTS (${btsAmount})</option>`;
+    assetSelect.innerHTML += `<option value="1.3.0" data-precision="${btsAsset.precision}" data-amount="${btsBalance.amount}">${coreSymbol} (${btsAmount})</option>`;
 
     // Add other assets with balance > 0
     for (const balance of balances) {
@@ -2824,19 +3040,22 @@ async function handleReceiveAccountChange() {
 
 async function handleNetworkChange(e) {
   const network = e.target.value;
-  
+
+  // Persist network selection
+  chrome.storage.local.set({ selectedNetwork: network });
+
   try {
     showToast(`Switching to ${network}...`, 'info');
-    
+
     // Disconnect current connection
     if (btsAPI) {
       await btsAPI.disconnect();
     }
-    
+
     // Connect to new network
     await initializeAPI();
     await loadDashboard();
-    
+
     showToast(`Connected to ${network}`, 'success');
   } catch (error) {
     console.error('Network switch error:', error);
@@ -2900,14 +3119,20 @@ async function handleAutolockChange(e) {
 // === Node Management ===
 
 // Default nodes list
-const DEFAULT_NODES = [
-  'wss://node.xbts.io/ws',
-  'wss://cloud.xbts.io/ws',
-  'wss://public.xbts.io/ws',
-  'wss://btsws.roelandp.nl/ws',
-  'wss://dex.iobanker.com/ws',
-  'wss://api.bitshares.dev/ws'
-];
+const DEFAULT_NODES = {
+  mainnet: [
+    'wss://node.xbts.io/ws',
+    'wss://cloud.xbts.io/ws',
+    'wss://public.xbts.io/ws',
+    'wss://btsws.roelandp.nl/ws',
+    'wss://dex.iobanker.com/ws',
+    'wss://api.bitshares.dev/ws'
+  ],
+  testnet: [
+    'wss://testnet.xbts.io/ws',
+    'wss://testnet.dex.trading/'
+  ]
+};
 
 // Node status cache
 let nodeStatuses = new Map();
@@ -2940,12 +3165,21 @@ async function loadNodesList() {
   const nodesList = document.getElementById('nodes-list');
   nodesList.innerHTML = '';
 
-  // Get saved custom nodes
-  const savedNodes = await getSavedNodes();
-  const allNodes = [...new Set([...DEFAULT_NODES, ...savedNodes])];
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+
+  // Update network label in header
+  const networkLabel = document.getElementById('nodes-network-label');
+  if (networkLabel) {
+    networkLabel.textContent = network === 'testnet' ? 'Testnet Nodes' : 'Mainnet Nodes';
+  }
+
+  // Get nodes for the current network only
+  const defaultNodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+  const savedNodes = await getSavedNodesForNetwork(network);
+  const allNodes = [...new Set([...defaultNodes, ...savedNodes])];
 
   for (const node of allNodes) {
-    const isCustom = !DEFAULT_NODES.includes(node);
+    const isCustom = !defaultNodes.includes(node);
     const isActive = btsAPI && btsAPI.currentNode === node;
     const status = nodeStatuses.get(node);
 
@@ -2992,18 +3226,45 @@ async function loadNodesList() {
   });
 }
 
-async function getSavedNodes() {
+// Get all custom nodes keyed by network, migrating old flat-array format if needed
+async function getAllCustomNodes() {
   return new Promise(resolve => {
     chrome.storage.local.get(['customNodes'], result => {
-      resolve(result.customNodes || []);
+      const raw = result.customNodes;
+      // Migrate legacy flat array to per-network object
+      if (Array.isArray(raw)) {
+        const migrated = { mainnet: raw, testnet: [] };
+        chrome.storage.local.set({ customNodes: migrated });
+        resolve(migrated);
+      } else {
+        resolve(raw || { mainnet: [], testnet: [] });
+      }
     });
   });
 }
 
-async function saveCustomNodes(nodes) {
+async function getSavedNodesForNetwork(network) {
+  const all = await getAllCustomNodes();
+  return all[network] || [];
+}
+
+async function saveCustomNodesForNetwork(network, nodes) {
+  const all = await getAllCustomNodes();
+  all[network] = nodes;
   return new Promise(resolve => {
-    chrome.storage.local.set({ customNodes: nodes }, resolve);
+    chrome.storage.local.set({ customNodes: all }, resolve);
   });
+}
+
+// Legacy wrappers used by background testing (uses current network)
+async function getSavedNodes() {
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  return getSavedNodesForNetwork(network);
+}
+
+async function saveCustomNodes(nodes) {
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  return saveCustomNodesForNetwork(network, nodes);
 }
 
 async function handleAddNode() {
@@ -3020,14 +3281,16 @@ async function handleAddNode() {
     return;
   }
 
-  const savedNodes = await getSavedNodes();
-  if (savedNodes.includes(nodeUrl) || DEFAULT_NODES.includes(nodeUrl)) {
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const defaultNodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+  const savedNodes = await getSavedNodesForNetwork(network);
+  if (savedNodes.includes(nodeUrl) || defaultNodes.includes(nodeUrl)) {
     showToast('Node already exists', 'error');
     return;
   }
 
   savedNodes.push(nodeUrl);
-  await saveCustomNodes(savedNodes);
+  await saveCustomNodesForNetwork(network, savedNodes);
 
   input.value = '';
   await loadNodesList();
@@ -3039,11 +3302,12 @@ async function handleAddNode() {
 }
 
 async function handleRemoveNode(nodeUrl) {
-  const savedNodes = await getSavedNodes();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const savedNodes = await getSavedNodesForNetwork(network);
   const index = savedNodes.indexOf(nodeUrl);
   if (index > -1) {
     savedNodes.splice(index, 1);
-    await saveCustomNodes(savedNodes);
+    await saveCustomNodesForNetwork(network, savedNodes);
     await loadNodesList();
     showToast('Node removed', 'info');
   }
@@ -3104,8 +3368,10 @@ async function testNode(nodeUrl) {
 async function handleTestAllNodes() {
   showToast('Testing all nodes...', 'info');
 
-  const savedNodes = await getSavedNodes();
-  const allNodes = [...new Set([...DEFAULT_NODES, ...savedNodes])];
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const defaultNodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+  const savedNodes = await getSavedNodesForNetwork(network);
+  const allNodes = [...new Set([...defaultNodes, ...savedNodes])];
 
   // Mark all as testing
   for (const node of allNodes) {
@@ -3121,8 +3387,10 @@ async function handleTestAllNodes() {
 }
 
 async function handleResetNodes() {
-  if (confirm('Reset to default nodes? Custom nodes will be removed.')) {
-    await saveCustomNodes([]);
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const networkLabel = network === 'testnet' ? 'testnet' : 'mainnet';
+  if (confirm(`Reset to default ${networkLabel} nodes? Custom nodes for this network will be removed.`)) {
+    await saveCustomNodesForNetwork(network, []);
     nodeStatuses.clear();
     await loadNodesList();
     showToast('Nodes reset to defaults', 'info');
@@ -3138,10 +3406,11 @@ async function handleShowConnections() {
 
 async function loadConnectionsList() {
   const connectionsList = document.getElementById('connections-list');
-  const sites = await walletManager.getConnectedSites();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const sites = await walletManager.getConnectedSites(null, network);
 
   if (sites.length === 0) {
-    connectionsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔗</div><p>No connected sites</p></div>';
+    connectionsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔗</div><p>No connected sites on this network</p></div>';
     return;
   }
 
@@ -3377,9 +3646,10 @@ async function checkPendingApproval() {
     // For connection requests, check if CURRENT account is already connected (stale request)
     // For transfer/transaction requests, site MUST be connected, so don't clear those
     if (type === 'connection') {
+      const network = document.getElementById('network-select')?.value || 'mainnet';
       const currentAccount = await walletManager.getCurrentAccount();
       const isConnected = currentAccount?.id
-        ? await walletManager.isSiteConnected(origin, currentAccount.id)
+        ? await walletManager.isSiteConnected(origin, currentAccount.id, network)
         : false;
       if (isConnected) {
         // Current account is already connected, clear stale connection approval
@@ -3399,8 +3669,8 @@ async function checkPendingApproval() {
         dappIcon.alt = hostname;
       }
 
-      // Populate account selector (exclude watch-only accounts)
-      const accounts = await walletManager.getAllAccounts();
+      // Populate account selector: only accounts on the current network, exclude watch-only
+      const accounts = await walletManager.getAllAccounts(network);
       const signableAccounts = accounts.filter(acc => !acc.watchOnly);
       const activeAccount = await walletManager.getCurrentAccount();
       const selector = document.getElementById('dapp-connect-account');
