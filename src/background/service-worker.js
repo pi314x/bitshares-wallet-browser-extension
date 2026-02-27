@@ -232,7 +232,6 @@ class BackgroundService {
   }
 
   handleExternalConnection(port) {
-    console.log('External connection from:', port.sender?.origin);
     
     port.onMessage.addListener(async (message) => {
       try {
@@ -244,7 +243,6 @@ class BackgroundService {
     });
 
     port.onDisconnect.addListener(() => {
-      console.log('External connection closed');
     });
   }
 
@@ -252,7 +250,6 @@ class BackgroundService {
     const tabId = port.sender?.tab?.id;
     const origin = port.sender?.origin;
 
-    console.log('Content script connected from:', origin, 'tabId:', tabId);
 
     // Store port for later responses (after popup approval)
     if (tabId) {
@@ -269,7 +266,6 @@ class BackgroundService {
     });
 
     port.onDisconnect.addListener(() => {
-      console.log('Content script disconnected from tabId:', tabId);
       if (tabId) {
         this.contentPorts.delete(tabId);
       }
@@ -501,6 +497,10 @@ class BackgroundService {
     const numAmount = Number(amount);
     if (!Number.isFinite(numAmount) || numAmount <= 0) {
       throw new Error('Amount must be a positive number');
+    }
+    // BitShares amounts are int64 in base units; cap to prevent overflow
+    if (numAmount > Number.MAX_SAFE_INTEGER) {
+      throw new Error('Amount exceeds maximum allowed value');
     }
     if (memo !== undefined && memo !== null && typeof memo !== 'string') {
       throw new Error('Memo must be a string');

@@ -276,10 +276,16 @@ export class BitSharesAPI {
       }
 
       if (accounts && accounts.length > 0 && accounts[0]) {
-        this.cache.accounts.set(nameOrId, accounts[0]);
-        this.cache.accounts.set(accounts[0].name, accounts[0]);
-        this.cache.accounts.set(accounts[0].id, accounts[0]);
-        return accounts[0];
+        const acct = accounts[0];
+        // Basic schema validation on critical fields
+        if (typeof acct.id !== 'string' || !acct.id.startsWith('1.2.') ||
+            typeof acct.name !== 'string') {
+          throw new Error('Malformed account response from node');
+        }
+        this.cache.accounts.set(nameOrId, acct);
+        this.cache.accounts.set(acct.name, acct);
+        this.cache.accounts.set(acct.id, acct);
+        return acct;
       }
       return null;
     } catch (error) {
@@ -361,10 +367,16 @@ export class BitSharesAPI {
       }
 
       if (assets && assets.length > 0 && assets[0]) {
-        this.cache.assets.set(idOrSymbol, assets[0]);
-        this.cache.assets.set(assets[0].symbol, assets[0]);
-        this.cache.assets.set(assets[0].id, assets[0]);
-        return assets[0];
+        const a = assets[0];
+        // Basic schema validation on critical fields
+        if (typeof a.id !== 'string' || !a.id.startsWith('1.3.') ||
+            typeof a.symbol !== 'string' || typeof a.precision !== 'number') {
+          throw new Error('Malformed asset response from node');
+        }
+        this.cache.assets.set(idOrSymbol, a);
+        this.cache.assets.set(a.symbol, a);
+        this.cache.assets.set(a.id, a);
+        return a;
       }
       return null;
     } catch (error) {
@@ -653,47 +665,19 @@ export class BitSharesAPI {
 
       operationData.fee = requiredFees[0];
 
-      // --- DEBUG: Verify public key matches account's active authority ---
-      console.log('--- AUTHORITY DEBUG ---');
+      // Verify public key matches account's active authority (silent check)
       const localPubKey = await CryptoUtils.wifToKeys(privateKey);
-      console.log('Local public key (from WIF):', localPubKey.publicKey);
-
-      // Get the account from the operation (works for transfer, could be different for other ops)
       const accountId = operationData.from || operationData.account;
       if (accountId) {
         const accountInfo = await this.getAccount(accountId);
         if (accountInfo) {
-          console.log('Account name:', accountInfo.name);
-          console.log('Account ID:', accountInfo.id);
-          console.log('Account active authority:', JSON.stringify(accountInfo.active, null, 2));
-
-          // Extract the public keys from the active authority
           const activeKeys = accountInfo.active.key_auths;
-          console.log('Active key_auths:', activeKeys);
-
-          // Check if our local key matches any of the active keys
-          let keyFound = false;
-          for (const [pubKey, weight] of activeKeys) {
-            console.log(`  Checking key: ${pubKey} (weight: ${weight})`);
-            if (pubKey === localPubKey.publicKey) {
-              console.log('  ✓ KEY MATCH FOUND!');
-              keyFound = true;
-            } else {
-              console.log('  ✗ No match');
-              console.log('    Our key:    ', localPubKey.publicKey);
-              console.log('    Account key:', pubKey);
-            }
-          }
+          const keyFound = activeKeys.some(([pubKey]) => pubKey === localPubKey.publicKey);
           if (!keyFound) {
-            console.log('  ========================================');
-            console.log('  ✗ NO KEY MATCH - Local key is not in account active authority!');
-            console.log('  This means the key derived from your password/brainkey');
-            console.log('  does not match what is registered on the blockchain.');
-            console.log('  ========================================');
+            console.warn('Key mismatch: local key not found in account active authority');
           }
         }
       }
-      console.log('--- END AUTHORITY DEBUG ---');
 
       // Build transaction
       const transaction = await this.buildTransaction(operationType, operationData);
@@ -926,14 +910,8 @@ export class BitSharesAPI {
    */
   async signTransaction(transaction, privateKeyWIF) {
     try {
-      console.log('--- TRANSACTION DEBUG ---');
-      console.log('Chain ID:', this.chainId);
-      console.log('Transaction JSON:', JSON.stringify(transaction, null, 2));
-
       // 1. Serialize the transaction
       const serializedTx = this.serializeTransaction(transaction);
-      console.log('Serialized TX length:', serializedTx.length, 'bytes');
-      console.log('Serialized TX (Hex):', bytesToHex(serializedTx));
 
       // 2. Prepare message: ChainID + SerializedTx
       const chainIdBytes = hexToBytes(this.chainId);
@@ -941,19 +919,12 @@ export class BitSharesAPI {
       messageBytes.set(chainIdBytes);
       messageBytes.set(serializedTx, chainIdBytes.length);
 
-      console.log('ChainID bytes length:', chainIdBytes.length);
-      console.log('Full message length:', messageBytes.length, 'bytes');
-
       // 3. Hash the message (SHA256)
       const msgHash = await sha256(messageBytes);
-      console.log('Final Msg Hash (Hex):', bytesToHex(msgHash));
 
       // 4. Sign the hash using our CryptoUtils
       const signature = await CryptoUtils.signHash(msgHash, privateKeyWIF);
       transaction.signatures = [bytesToHex(signature)];
-
-      console.log('--- FINAL SIGNED TRANSACTION ---');
-      console.log(JSON.stringify(transaction, null, 2));
 
       return transaction;
     } catch (error) {
@@ -1208,41 +1179,31 @@ serializeOperationData(opType, opData) {
     // ref_block_num (uint16)
     const refBlockNumBytes = this.writeUint16LE(transaction.ref_block_num);
     buffers.push(refBlockNumBytes);
-    console.log('  ref_block_num:', transaction.ref_block_num, '-> bytes:', bytesToHex(refBlockNumBytes));
 
     // ref_block_prefix (uint32)
     const refBlockPrefixBytes = this.writeUint32LE(transaction.ref_block_prefix);
     buffers.push(refBlockPrefixBytes);
-    console.log('  ref_block_prefix:', transaction.ref_block_prefix, '-> bytes:', bytesToHex(refBlockPrefixBytes));
 
     // expiration (uint32 - seconds since epoch)
     const expiration = Math.floor(new Date(transaction.expiration + 'Z').getTime() / 1000);
     const expirationBytes = this.writeUint32LE(expiration);
     buffers.push(expirationBytes);
-    console.log('  expiration:', expiration, '-> bytes:', bytesToHex(expirationBytes));
 
     // operations (varint length + serialized operations)
     const opsLengthBytes = this.encodeVarint(transaction.operations.length);
     buffers.push(opsLengthBytes);
-    console.log('  operations count:', transaction.operations.length, '-> bytes:', bytesToHex(opsLengthBytes));
 
     for (const [opType, opData] of transaction.operations) {
-      // Operation type (varint)
       const opTypeBytes = this.encodeVarint(opType);
       buffers.push(opTypeBytes);
-      console.log('  op type:', opType, '-> bytes:', bytesToHex(opTypeBytes));
 
-      // Operation data (without the type - that's already added above)
       const opDataBytes = this.serializeOperationData(opType, opData);
       buffers.push(opDataBytes);
-      console.log('  op data length:', opDataBytes.length, 'bytes');
-      console.log('  op data hex:', bytesToHex(opDataBytes));
     }
 
     // extensions (varint length, typically 0)
     const extBytes = this.encodeVarint(transaction.extensions?.length || 0);
     buffers.push(extBytes);
-    console.log('  extensions:', transaction.extensions?.length || 0, '-> bytes:', bytesToHex(extBytes));
 
     return this.concatBytes(buffers);
   }
@@ -1252,42 +1213,29 @@ serializeOperationData(opType, opData) {
    */
   serializeTransferOp(op) {
     const buffers = [];
-    console.log('    --- Transfer Op Serialization ---');
 
     // fee
-    const feeBytes = this.serializeAssetAmount(op.fee);
-    buffers.push(feeBytes);
-    console.log('    fee:', JSON.stringify(op.fee), '-> bytes:', bytesToHex(feeBytes));
+    buffers.push(this.serializeAssetAmount(op.fee));
 
     // from (account id)
-    const fromBytes = this.serializeObjectId(op.from);
-    buffers.push(fromBytes);
-    console.log('    from:', op.from, '-> bytes:', bytesToHex(fromBytes));
+    buffers.push(this.serializeObjectId(op.from));
 
     // to (account id)
-    const toBytes = this.serializeObjectId(op.to);
-    buffers.push(toBytes);
-    console.log('    to:', op.to, '-> bytes:', bytesToHex(toBytes));
+    buffers.push(this.serializeObjectId(op.to));
 
     // amount
-    const amountBytes = this.serializeAssetAmount(op.amount);
-    buffers.push(amountBytes);
-    console.log('    amount:', JSON.stringify(op.amount), '-> bytes:', bytesToHex(amountBytes));
+    buffers.push(this.serializeAssetAmount(op.amount));
 
     // memo (optional)
     if (op.memo) {
       buffers.push(new Uint8Array([1])); // present flag
-      const memoBytes = this.serializeMemo(op.memo);
-      buffers.push(memoBytes);
-      console.log('    memo: present, bytes:', bytesToHex(memoBytes));
+      buffers.push(this.serializeMemo(op.memo));
     } else {
       buffers.push(new Uint8Array([0])); // not present
-      console.log('    memo: not present -> 00');
     }
 
     // extensions
     buffers.push(this.encodeVarint(0));
-    console.log('    extensions: 0 -> 00');
 
     return this.concatBytes(buffers);
   }
@@ -1324,41 +1272,28 @@ serializeOperationData(opType, opData) {
    */
   serializeLimitOrderCreateOp(op) {
     const buffers = [];
-    console.log('    --- Limit Order Create Op Serialization ---');
 
     // fee
-    const feeBytes = this.serializeAssetAmount(op.fee);
-    buffers.push(feeBytes);
-    console.log('    fee:', JSON.stringify(op.fee), '-> bytes:', bytesToHex(feeBytes));
+    buffers.push(this.serializeAssetAmount(op.fee));
 
     // seller (account id)
-    const sellerBytes = this.serializeObjectId(op.seller);
-    buffers.push(sellerBytes);
-    console.log('    seller:', op.seller, '-> bytes:', bytesToHex(sellerBytes));
+    buffers.push(this.serializeObjectId(op.seller));
 
     // amount_to_sell
-    const sellBytes = this.serializeAssetAmount(op.amount_to_sell);
-    buffers.push(sellBytes);
-    console.log('    amount_to_sell:', JSON.stringify(op.amount_to_sell), '-> bytes:', bytesToHex(sellBytes));
+    buffers.push(this.serializeAssetAmount(op.amount_to_sell));
 
     // min_to_receive
-    const receiveBytes = this.serializeAssetAmount(op.min_to_receive);
-    buffers.push(receiveBytes);
-    console.log('    min_to_receive:', JSON.stringify(op.min_to_receive), '-> bytes:', bytesToHex(receiveBytes));
+    buffers.push(this.serializeAssetAmount(op.min_to_receive));
 
     // expiration (uint32 - seconds since epoch)
     const expiration = Math.floor(new Date(op.expiration + 'Z').getTime() / 1000);
-    const expirationBytes = this.writeUint32LE(expiration);
-    buffers.push(expirationBytes);
-    console.log('    expiration:', expiration, '-> bytes:', bytesToHex(expirationBytes));
+    buffers.push(this.writeUint32LE(expiration));
 
     // fill_or_kill (bool - 1 byte)
     buffers.push(new Uint8Array([op.fill_or_kill ? 1 : 0]));
-    console.log('    fill_or_kill:', op.fill_or_kill ? 1 : 0);
 
     // extensions
     buffers.push(this.encodeVarint(0));
-    console.log('    extensions: 0');
 
     return this.concatBytes(buffers);
   }

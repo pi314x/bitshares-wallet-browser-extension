@@ -38,7 +38,7 @@
         method,
         params,
         id
-      }, '*');
+      }, window.location.origin);
     });
   }
 
@@ -356,5 +356,4 @@
     detail: { beet: beetCompat }
   }));
 
-  console.log('BitShares Wallet provider injected');
 })();
