@@ -56,5 +56,5 @@
     "https://faucet.bitshares.eu/*"
   ],
 
-  "content_security_policy": "script-src 'self'; object-src 'self'"
+  "content_security_policy": "script-src 'self'; object-src 'self'; style-src 'self'; frame-src 'none'"
 }

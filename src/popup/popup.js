@@ -857,8 +857,6 @@ async function loadDashboard(forceReconnect = false) {
     const account = await walletManager.getCurrentAccount();
     const allAccounts = await walletManager.getAllAccounts();
 
-    console.log('loadDashboard - current account:', account);
-    console.log('loadDashboard - all accounts:', allAccounts);
 
     // Populate account selector
     const accountSelector = document.getElementById('account-selector');
@@ -974,13 +972,13 @@ async function updateAssetsList(balances) {
     assetItem.className = 'asset-item';
     assetItem.style.cursor = 'pointer';
     assetItem.innerHTML = `
-      <div class="asset-icon">${asset.symbol.substring(0, 3)}</div>
+      <div class="asset-icon">${escapeHtml(asset.symbol.substring(0, 3))}</div>
       <div class="asset-info">
-        <div class="asset-name">${asset.symbol}</div>
-        <div class="asset-symbol">${asset.id}</div>
+        <div class="asset-name">${escapeHtml(asset.symbol)}</div>
+        <div class="asset-symbol">${escapeHtml(asset.id)}</div>
       </div>
       <div class="asset-balance">
-        <div class="asset-amount">${amount}</div>
+        <div class="asset-amount">${escapeHtml(amount)}</div>
       </div>
     `;
 
@@ -2188,7 +2186,7 @@ async function formatAmountWithSymbol(amountObj) {
     let formatted = amount.toFixed(precision);
     // Remove trailing zeros after decimal, keep at least 2 decimals for readability
     formatted = formatted.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
-    return `${formatted} ${asset.symbol}`;
+    return `${formatted} ${escapeHtml(asset.symbol)}`;
   } catch (e) {
     // Fallback if asset lookup fails
     return null;
@@ -2263,12 +2261,10 @@ document.getElementById('import-account-name')?.addEventListener('input', (e) =>
 
 async function handleAccountChange(e) {
   const accountId = e.target.value;
-  console.log('handleAccountChange - switching to accountId:', accountId);
   if (!accountId) return;
 
   try {
     await walletManager.setActiveAccount(accountId);
-    console.log('handleAccountChange - setActiveAccount completed');
     await loadDashboard();
     showToast('Account switched', 'success');
 
@@ -2332,7 +2328,7 @@ async function checkSiteConnectionForCurrentTab(accountId) {
       const selector = document.getElementById('dapp-connect-account');
       if (selector && signableAccounts.length > 0) {
         selector.innerHTML = signableAccounts.map(acc =>
-          `<option value="${acc.id}" data-name="${acc.name}" ${acc.id === accountId ? 'selected' : ''}>${acc.name}</option>`
+          `<option value="${escapeHtml(acc.id)}" data-name="${escapeHtml(acc.name)}" ${acc.id === accountId ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
         ).join('');
       }
 
@@ -2440,14 +2436,14 @@ async function loadAccountsList() {
     item.className = `account-item${account.isActive ? ' active' : ''}${account.watchOnly ? ' watch-only' : ''}`;
     item.innerHTML = `
       <div class="account-item-info">
-        <div class="account-item-name">${account.name}</div>
-        <div class="account-item-id">${account.id}</div>
+        <div class="account-item-name">${escapeHtml(account.name)}</div>
+        <div class="account-item-id">${escapeHtml(account.id)}</div>
         ${account.isActive ? '<span class="account-badge">Active</span>' : ''}
         ${account.watchOnly ? '<span class="account-badge watch-only">Watch Only</span>' : ''}
       </div>
       <div class="account-item-actions">
-        ${!account.isActive ? `<button class="account-btn set-active" data-id="${account.id}" title="Set as active">✓</button>` : ''}
-        ${!account.isActive && accounts.length > 1 ? `<button class="account-btn remove" data-id="${account.id}" title="Remove account">✕</button>` : ''}
+        ${!account.isActive ? `<button class="account-btn set-active" data-id="${escapeHtml(account.id)}" title="Set as active">✓</button>` : ''}
+        ${!account.isActive && accounts.length > 1 ? `<button class="account-btn remove" data-id="${escapeHtml(account.id)}" title="Remove account">✕</button>` : ''}
       </div>
     `;
     accountsList.appendChild(item);
@@ -2782,7 +2778,7 @@ async function handleShowReceive() {
 
   if (selector && accounts.length > 0) {
     selector.innerHTML = accounts.map(acc =>
-      `<option value="${acc.id}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${acc.watchOnly ? `${acc.name} (Watch Only)` : acc.name}</option>`
+      `<option value="${escapeHtml(acc.id)}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${acc.watchOnly ? `${escapeHtml(acc.name)} (Watch Only)` : escapeHtml(acc.name)}</option>`
     ).join('');
   }
 
@@ -2974,12 +2970,12 @@ async function loadNodesList() {
 
     nodeItem.innerHTML = `
       <div class="node-info">
-        <div class="node-url">${node}</div>
-        <div class="node-status ${statusClass}">${statusText}</div>
+        <div class="node-url">${escapeHtml(node)}</div>
+        <div class="node-status ${statusClass}">${escapeHtml(statusText)}</div>
       </div>
       <div class="node-actions-inline">
-        <button class="node-btn connect" title="Connect to this node" data-node="${node}">⚡</button>
-        ${isCustom ? `<button class="node-btn remove" title="Remove node" data-node="${node}">✕</button>` : ''}
+        <button class="node-btn connect" title="Connect to this node" data-node="${escapeHtml(node)}">⚡</button>
+        ${isCustom ? `<button class="node-btn remove" title="Remove node" data-node="${escapeHtml(node)}">✕</button>` : ''}
       </div>
     `;
 
@@ -3161,11 +3157,11 @@ async function loadConnectionsList() {
 
     item.innerHTML = `
       <div class="connection-info">
-        <div class="connection-origin">${site.origin}</div>
-        <div class="connection-account">Account: ${accountDisplay}</div>
-        <div class="connection-date">Connected: ${dateStr}</div>
+        <div class="connection-origin">${escapeHtml(site.origin)}</div>
+        <div class="connection-account">Account: ${escapeHtml(accountDisplay)}</div>
+        <div class="connection-date">Connected: ${escapeHtml(dateStr)}</div>
       </div>
-      <button class="connection-btn-remove" data-origin="${site.origin}" data-account="${site.accountId || ''}" title="Disconnect">✕</button>
+      <button class="connection-btn-remove" data-origin="${escapeHtml(site.origin)}" data-account="${escapeHtml(site.accountId || '')}" title="Disconnect">✕</button>
     `;
 
     connectionsList.appendChild(item);
@@ -3226,8 +3222,8 @@ async function loadNetworkFees() {
       const feeItem = document.createElement('div');
       feeItem.className = 'fee-item';
       feeItem.innerHTML = `
-        <span class="fee-name">${label}</span>
-        <span class="fee-amount">${feeData.formatted || feeData.amount + ' ' + feeData.symbol}</span>
+        <span class="fee-name">${escapeHtml(label)}</span>
+        <span class="fee-amount">${escapeHtml(feeData.formatted || feeData.amount + ' ' + (feeData.symbol || ''))}</span>
       `;
       feesList.appendChild(feeItem);
     }
@@ -3351,13 +3347,13 @@ async function showPendingApprovalIndicator() {
 
     let message, hint;
     if (type === 'connection') {
-      message = `<strong>${hostname}</strong> wants to connect`;
+      message = `<strong>${escapeHtml(hostname)}</strong> wants to connect`;
       hint = 'Unlock your wallet to approve the connection';
     } else if (type === 'transfer') {
-      message = `<strong>${hostname}</strong> requests a transfer`;
+      message = `<strong>${escapeHtml(hostname)}</strong> requests a transfer`;
       hint = 'Unlock your wallet to review and sign';
     } else {
-      message = `<strong>${hostname}</strong> requests a transaction`;
+      message = `<strong>${escapeHtml(hostname)}</strong> requests a transaction`;
       hint = 'Unlock your wallet to review and sign';
     }
     indicator.innerHTML = `
@@ -3410,7 +3406,7 @@ async function checkPendingApproval() {
       const selector = document.getElementById('dapp-connect-account');
       if (selector && signableAccounts.length > 0) {
         selector.innerHTML = signableAccounts.map(acc =>
-          `<option value="${acc.id}" data-name="${acc.name}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${acc.name}</option>`
+          `<option value="${escapeHtml(acc.id)}" data-name="${escapeHtml(acc.name)}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
         ).join('');
       }
 
@@ -4618,7 +4614,7 @@ document.getElementById('setting-retrieve-key')?.addEventListener('click', async
 
   if (selector && accounts.length > 0) {
     selector.innerHTML = accounts.map(acc =>
-      `<option value="${acc.id}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${acc.name}</option>`
+      `<option value="${escapeHtml(acc.id)}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
     ).join('');
   }
 
@@ -4758,8 +4754,8 @@ async function loadAddressBook() {
         item.className = 'contact-item wallet-account';
         item.innerHTML = `
           <div class="contact-info">
-            <div class="contact-name">${account.name}</div>
-            <div class="contact-account">${account.accountId || account.id}</div>
+            <div class="contact-name">${escapeHtml(account.name)}</div>
+            <div class="contact-account">${escapeHtml(account.accountId || account.id)}</div>
           </div>
           <div class="contact-badge">Wallet</div>
         `;
@@ -4780,11 +4776,11 @@ async function loadAddressBook() {
       item.className = 'contact-item';
       item.innerHTML = `
         <div class="contact-info">
-          <div class="contact-name">${contact.name}</div>
-          <div class="contact-account">${contact.account}</div>
+          <div class="contact-name">${escapeHtml(contact.name)}</div>
+          <div class="contact-account">${escapeHtml(contact.account)}</div>
         </div>
         <div class="contact-actions">
-          <button class="contact-btn delete" data-account="${contact.account}" title="Delete">✕</button>
+          <button class="contact-btn delete" data-account="${escapeHtml(contact.account)}" title="Delete">✕</button>
         </div>
       `;
       contactsList.appendChild(item);
@@ -5006,7 +5002,7 @@ async function initializeSwap() {
         const asset = await btsAPI.getAsset(balance.asset_id);
         const precision = Math.pow(10, asset.precision);
         const amount = (parseInt(balance.amount) / precision).toFixed(asset.precision);
-        fromSelect.innerHTML += `<option value="${asset.id}" data-symbol="${asset.symbol}" data-precision="${asset.precision}">${asset.symbol} (${amount})</option>`;
+        fromSelect.innerHTML += `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)} (${escapeHtml(amount)})</option>`;
       }
     }
 
@@ -5152,7 +5148,7 @@ async function findSwapPools(assetId) {
     for (const counterAssetId of counterAssets) {
       const asset = await btsAPI.getAsset(counterAssetId);
       if (asset) {
-        toSelect.innerHTML += `<option value="${asset.id}" data-symbol="${asset.symbol}" data-precision="${asset.precision}">${asset.symbol}</option>`;
+        toSelect.innerHTML += `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)}</option>`;
       }
     }
 
@@ -5247,7 +5243,7 @@ function displaySwapPools(pools) {
 
     item.innerHTML = `
       <div class="pool-info">
-        <div class="pool-name">Pool ${pool.id}${index === 0 ? '<span class="pool-badge">Best</span>' : ''}</div>
+        <div class="pool-name">Pool ${escapeHtml(pool.id)}${index === 0 ? '<span class="pool-badge">Best</span>' : ''}</div>
         <div class="pool-liquidity">Fee: ${pool.feePercent.toFixed(2)}%</div>
       </div>
       <div class="pool-rate">${pool.rate.toFixed(6)}</div>

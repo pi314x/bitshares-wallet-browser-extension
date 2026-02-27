@@ -205,5 +205,4 @@
     return true;
   });
 
-  console.log('BitShares Wallet content script loaded');
 })();

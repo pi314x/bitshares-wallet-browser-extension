@@ -13,12 +13,15 @@ export class WalletManager {
     this.decryptedKeys = null;
     this.api = null;
 
-    // Auto-lock timer
-    this.autoLockTimer = null;
+    // Auto-lock duration (timer managed via chrome.alarms)
     this.autoLockDuration = 15 * 60 * 1000; // Default: 15 minutes
 
     // Mutex to prevent concurrent lock/unlock race conditions
     this._lockMutex = Promise.resolve();
+
+    // Unlock attempt rate-limiting
+    this._failedUnlockAttempts = 0;
+    this._unlockLockoutUntil = 0;
   }
 
   /**
@@ -233,12 +236,6 @@ export class WalletManager {
    * Call this after any wallet activity to extend the unlock period
    */
   resetAutoLockTimer() {
-    // Clear existing timer
-    if (this.autoLockTimer) {
-      clearTimeout(this.autoLockTimer);
-      this.autoLockTimer = null;
-    }
-
     // Don't start timer if auto-lock is disabled or wallet is locked
     if (this.autoLockDuration <= 0 || !this.isUnlockedState) {
       return;
@@ -248,12 +245,14 @@ export class WalletManager {
     const storage = chrome.storage.session || chrome.storage.local;
     storage.set({ unlockTimestamp: Date.now() });
 
-    // Start new timer (.unref() prevents it from keeping Node.js alive in test environments)
-    this.autoLockTimer = setTimeout(() => {
-      console.log('Auto-lock timer expired, locking wallet');
-      this.lock();
-    }, this.autoLockDuration);
-    if (this.autoLockTimer.unref) this.autoLockTimer.unref();
+    // Delegate to chrome.alarms (survives service worker restarts).
+    // The alarm listener is registered in service-worker.js setupAutoLock().
+    if (typeof chrome !== 'undefined' && chrome.alarms) {
+      chrome.alarms.clear('auto-lock');
+      chrome.alarms.create('auto-lock', {
+        delayInMinutes: this.autoLockDuration / 60000
+      });
+    }
   }
 
   /**
@@ -290,6 +289,12 @@ export class WalletManager {
     try {
       // Normalize brainkey (always generated, kept as backup)
       const normalizedBrainkey = CryptoUtils.normalizeBrainkey(brainkey);
+
+      // Validate brainkey has sufficient entropy (expect 12+ words)
+      const wordCount = normalizedBrainkey.split(' ').length;
+      if (wordCount < 12) {
+        throw new Error(`Brainkey too short (${wordCount} words). Must be at least 12 words for sufficient entropy.`);
+      }
 
       // Determine primary keys:
       // • password-based (cloud wallet) when BitShares credentials are provided
@@ -662,38 +667,65 @@ export class WalletManager {
    * Unlock the wallet with password
    */
   async unlock(password) {
-    return new Promise((resolve, reject) => {
-      chrome.storage.local.get(['wallet', 'autoLockDuration'], async (result) => {
-        if (!result.wallet) {
-          reject(new Error('No wallet found'));
-          return;
-        }
+    // Rate-limit failed attempts: exponential backoff (1s, 2s, 4s, 8s, 16s)
+    const now = Date.now();
+    if (now < this._unlockLockoutUntil) {
+      const waitSec = Math.ceil((this._unlockLockoutUntil - now) / 1000);
+      throw new Error(`Too many failed attempts. Try again in ${waitSec}s.`);
+    }
 
-        try {
-          const wallet = result.wallet;
-          const salt = this._getWalletSalt(wallet);
-          const encryptionKey = await CryptoUtils.deriveKey(password, salt);
-          const decrypted = await CryptoUtils.decrypt(wallet.encrypted, encryptionKey);
-
-          this.currentWallet = wallet;
-          this.decryptedKeys = decrypted.keys;
-          this.isUnlockedState = true;
-
-          // Store password hash temporarily for session
-          await this.storeSessionPassword(password);
-
-          // Load saved auto-lock duration and start timer
-          if (result.autoLockDuration !== undefined) {
-            this.autoLockDuration = result.autoLockDuration;
+    // Serialize lock/unlock to prevent race conditions
+    const prev = this._lockMutex;
+    let release;
+    this._lockMutex = new Promise(r => { release = r; });
+    await prev;
+    try {
+      const success = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(['wallet', 'autoLockDuration'], async (result) => {
+          if (!result.wallet) {
+            reject(new Error('No wallet found'));
+            return;
           }
-          this.resetAutoLockTimer();
 
-          resolve(true);
-        } catch (error) {
-          resolve(false);
-        }
+          try {
+            const wallet = result.wallet;
+            const salt = this._getWalletSalt(wallet);
+            const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+            const decrypted = await CryptoUtils.decrypt(wallet.encrypted, encryptionKey);
+
+            this.currentWallet = wallet;
+            this.decryptedKeys = decrypted.keys;
+            this.isUnlockedState = true;
+
+            // Store password hash temporarily for session
+            await this.storeSessionPassword(password);
+
+            // Load saved auto-lock duration and start timer
+            if (result.autoLockDuration !== undefined) {
+              this.autoLockDuration = result.autoLockDuration;
+            }
+            this.resetAutoLockTimer();
+
+            resolve(true);
+          } catch (error) {
+            resolve(false);
+          }
+        });
       });
-    });
+
+      if (success) {
+        this._failedUnlockAttempts = 0;
+        this._unlockLockoutUntil = 0;
+      } else {
+        this._failedUnlockAttempts++;
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 60s
+        const delaySec = Math.min(60, Math.pow(2, this._failedUnlockAttempts - 1));
+        this._unlockLockoutUntil = Date.now() + delaySec * 1000;
+      }
+      return success;
+    } finally {
+      release();
+    }
   }
 
   /**
@@ -706,10 +738,9 @@ export class WalletManager {
     this._lockMutex = new Promise(r => { release = r; });
     await prev;
     try {
-      // Clear auto-lock timer
-      if (this.autoLockTimer) {
-        clearTimeout(this.autoLockTimer);
-        this.autoLockTimer = null;
+      // Clear auto-lock alarm
+      if (typeof chrome !== 'undefined' && chrome.alarms) {
+        chrome.alarms.clear('auto-lock');
       }
 
       this.isUnlockedState = false;
@@ -1181,8 +1212,11 @@ export class WalletManager {
           const memoBytes = encoder.encode(memo);
           const memoHex = Array.from(memoBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-          // Generate unique nonce (timestamp-based uint64)
-          const nonce = Date.now().toString() + Math.floor(Math.random() * 1000000).toString();
+          // Generate unique nonce: timestamp (ms) in upper 48 bits + 16 random bits
+          const ts = BigInt(Date.now());
+          const randBytes = crypto.getRandomValues(new Uint8Array(2));
+          const rand = BigInt(randBytes[0]) << 8n | BigInt(randBytes[1]);
+          const nonce = ((ts << 16n) | rand).toString();
 
           // BitShares requires full memo_data structure
           memoObject = {
