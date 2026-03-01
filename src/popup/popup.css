@@ -1345,15 +1345,21 @@ body {
   animation: modalSlide 0.3s ease;
 }
 
-.modal-content::-webkit-scrollbar {
+.modal-content::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar,
+.address-book-modal-content::-webkit-scrollbar {
   width: 6px;
 }
 
-.modal-content::-webkit-scrollbar-track {
+.modal-content::-webkit-scrollbar-track,
+.modal-body::-webkit-scrollbar-track,
+.address-book-modal-content::-webkit-scrollbar-track {
   background: var(--bg-secondary);
 }
 
-.modal-content::-webkit-scrollbar-thumb {
+.modal-content::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb,
+.address-book-modal-content::-webkit-scrollbar-thumb {
   background: var(--primary);
   border-radius: 3px;
 }
