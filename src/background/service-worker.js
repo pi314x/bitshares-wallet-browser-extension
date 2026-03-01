@@ -340,9 +340,13 @@ class BackgroundService {
     port.onMessage.addListener(async (message) => {
       try {
         const response = await this.handleDAppMessage(message, port.sender, port);
-        port.postMessage({ id: message.id, ...response });
+        try {
+          port.postMessage({ id: message.id, ...response });
+        } catch (_) { /* port disconnected before response — ignore */ }
       } catch (error) {
-        port.postMessage({ id: message.id, error: error.message });
+        try {
+          port.postMessage({ id: message.id, error: error.message });
+        } catch (_) { /* port disconnected — ignore */ }
       }
     });
 
