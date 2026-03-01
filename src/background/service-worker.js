@@ -862,39 +862,16 @@ class BackgroundService {
     await chrome.action.setBadgeText({ text: '1' });
     await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
 
-    // Open the popup automatically so the user sees the approval request immediately.
-    // Strategy 1: focus the most recent normal window and call openPopup().
-    // Strategy 2: if that fails, open a dedicated approval window as a reliable fallback.
-    let opened = false;
+    // Open the extension popup so the user sees the approval request immediately.
+    // If openPopup() fails (no focused window, unsupported browser), the badge
+    // acts as the fallback indicator — the user clicks the extension icon.
     try {
       const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
       const target = windows.find(w => w.focused) || windows[windows.length - 1];
       if (target) await chrome.windows.update(target.id, { focused: true });
       await chrome.action.openPopup();
-      opened = true;
     } catch {
-      // openPopup() failed (no focused window, unsupported Chrome version, etc.)
-    }
-
-    if (!opened) {
-      // Don't open a second window if one is already up
-      const existing = await chrome.windows.getAll({ windowTypes: ['popup'] });
-      const approvalWin = existing.find(w =>
-        w.tabs?.some(t => t.url?.includes(chrome.runtime.id))
-      );
-      if (!approvalWin) {
-        try {
-          await chrome.windows.create({
-            url: chrome.runtime.getURL('popup/popup.html'),
-            type: 'popup',
-            width: 380,
-            height: 620,
-            focused: true
-          });
-        } catch (e) {
-          console.log('Could not open approval window:', e.message);
-        }
-      }
+      // openPopup() failed — badge already set above, user will click the icon
     }
   }
 

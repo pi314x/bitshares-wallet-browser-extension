@@ -273,7 +273,7 @@
         <h2>Add Account</h2>
       </div>
       <div class="form-container">
-        <p class="form-description">Add another BitShares account to your wallet. Enter the account name and its BitShares password.</p>
+        <div class="form-section-label">BitShares Account</div>
         <div class="form-group">
           <label for="add-account-name">Account Name</label>
           <input type="text" id="add-account-name" placeholder="e.g., my-other-account">
@@ -284,6 +284,7 @@
           <label for="add-account-watch-only">Watch only (no private keys, view balances only)</label>
         </div>
         <div id="add-account-keys-section">
+          <div class="form-section-label">Authentication</div>
           <div class="form-group">
             <label for="add-account-password">BitShares Password</label>
             <div class="password-input-wrapper">
@@ -300,6 +301,7 @@
               </button>
             </div>
           </div>
+          <div class="form-section-label">Local Encryption</div>
           <div class="form-group">
             <label for="add-account-wallet-password">Wallet Password</label>
             <div class="password-input-wrapper">
@@ -569,6 +571,9 @@
           <button id="btn-dapp-reject" class="btn btn-secondary">Reject</button>
           <button id="btn-dapp-connect" class="btn btn-primary">Connect</button>
         </div>
+        <div class="approval-dismiss-bar">
+          <div class="approval-dismiss-fill" id="connect-dismiss-fill"></div>
+        </div>
       </div>
     </div>
 
@@ -607,6 +612,9 @@
           <button id="btn-transfer-reject" class="btn btn-secondary">Reject</button>
           <button id="btn-transfer-approve" class="btn btn-primary">Approve</button>
         </div>
+        <div class="approval-dismiss-bar">
+          <div class="approval-dismiss-fill" id="transfer-dismiss-fill"></div>
+        </div>
       </div>
     </div>
 
@@ -628,6 +636,9 @@
         <div class="modal-actions">
           <button id="btn-tx-sign-reject" class="btn btn-secondary">Reject</button>
           <button id="btn-tx-sign-approve" class="btn btn-primary">Approve</button>
+        </div>
+        <div class="approval-dismiss-bar">
+          <div class="approval-dismiss-fill" id="txsign-dismiss-fill"></div>
         </div>
       </div>
     </div>

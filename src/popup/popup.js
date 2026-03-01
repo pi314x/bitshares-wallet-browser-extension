@@ -392,11 +392,46 @@ function showScreen(screenId) {
   }
 }
 
+// Approval dismiss bar — auto-rejects after APPROVAL_TIMEOUT_MS milliseconds
+const APPROVAL_TIMEOUT_MS = 60_000;
+let _approvalDismissTimer = null;
+let _approvalDismissFill  = null;
+
+function startApprovalDismiss(fillId, onExpire) {
+  stopApprovalDismiss();
+  _approvalDismissFill = document.getElementById(fillId);
+  if (_approvalDismissFill) {
+    _approvalDismissFill.style.transition = 'none';
+    _approvalDismissFill.style.width = '100%';
+    void _approvalDismissFill.offsetWidth; // force reflow so transition starts from 100%
+    _approvalDismissFill.style.transition = `width ${APPROVAL_TIMEOUT_MS}ms linear`;
+    _approvalDismissFill.style.width = '0%';
+  }
+  _approvalDismissTimer = setTimeout(onExpire, APPROVAL_TIMEOUT_MS);
+}
+
+function stopApprovalDismiss() {
+  if (_approvalDismissTimer) { clearTimeout(_approvalDismissTimer); _approvalDismissTimer = null; }
+  if (_approvalDismissFill) {
+    _approvalDismissFill.style.transition = 'none';
+    _approvalDismissFill.style.width = '100%';
+    _approvalDismissFill = null;
+  }
+}
+
+const _approvalDismissMap = {
+  'dapp-connect-modal':     { fillId: 'connect-dismiss-fill',  onExpire: () => handleDappRejectUpdated() },
+  'dapp-transfer-modal':    { fillId: 'transfer-dismiss-fill', onExpire: () => handleTransferReject() },
+  'dapp-transaction-modal': { fillId: 'txsign-dismiss-fill',   onExpire: () => handleTransactionSignReject() },
+};
+
 // Show modal
 function showModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) {
     modal.classList.add('active');
+    const dismiss = _approvalDismissMap[modalId];
+    if (dismiss) startApprovalDismiss(dismiss.fillId, dismiss.onExpire);
   }
 }
 
@@ -405,6 +440,7 @@ function hideModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) {
     modal.classList.remove('active');
+    if (_approvalDismissMap[modalId]) stopApprovalDismiss();
   }
 }
 
