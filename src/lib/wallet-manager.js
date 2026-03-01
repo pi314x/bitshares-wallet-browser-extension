@@ -133,10 +133,24 @@ export class WalletManager {
    * Re-creates and reconnects whenever the instance is missing or the socket
    * has dropped (e.g. after service-worker idle, network hiccup, etc.).
    * Uses the nodes saved via setApi() so reconnection stays on the correct network.
+   * Falls back to reading selectedNetwork from storage when _apiNodes is null
+   * (handles the MV3 service-worker restart race where setApi hasn't been called yet).
    */
   async ensureApiConnected() {
     if (!this.api || !this.api.isConnected) {
-      this.api = new BitSharesAPI(this._apiNodes || null);
+      let nodes = this._apiNodes;
+      if (!nodes) {
+        // Service worker restarted before setApi() was called — read the user's
+        // network preference from storage so we connect to the right chain.
+        const stored = await chrome.storage.local.get(['selectedNetwork']);
+        const net = stored.selectedNetwork || 'mainnet';
+        nodes = net === 'testnet'
+          ? ['wss://testnet.xbts.io/ws', 'wss://testnet.dex.trading/']
+          : ['wss://node.xbts.io/ws', 'wss://cloud.xbts.io/ws', 'wss://public.xbts.io/ws',
+             'wss://btsws.roelandp.nl/ws', 'wss://dex.iobanker.com/ws', 'wss://api.bitshares.dev/ws'];
+        this._apiNodes = nodes; // cache so subsequent reconnects stay on the same network
+      }
+      this.api = new BitSharesAPI(nodes);
       await this.api.connect();
     }
   }
@@ -472,6 +486,10 @@ export class WalletManager {
             id: accountInfo.id,
             network
           });
+          // Store this account's keys under its own key slot so that
+          // getAccountKeys() uses the per-account path for ALL accounts
+          // (prevents "first account only" signing bug).
+          await this._promoteToOwnKeys(accountInfo.id);
         }
       }
     } catch (error) {
@@ -495,12 +513,64 @@ export class WalletManager {
           id: accountInfo.id,
           network
         });
+        // Store this account's keys under its own key slot so that
+        // getAccountKeys() uses the per-account path for ALL accounts
+        // (prevents "first account only" signing bug).
+        await this._promoteToOwnKeys(accountInfo.id);
       } else {
         console.warn('Account not found on chain:', accountName);
       }
     } catch (error) {
       console.error('Find account by name error:', error);
       // Don't throw - account might not exist yet
+    }
+  }
+
+  /**
+   * Store the currently-decrypted master keys as account-specific keys for
+   * the given account ID, and mark hasOwnKeys = true on the account entry.
+   *
+   * Called after the primary wallet account is found on-chain so that ALL
+   * accounts (primary and secondary alike) go through the per-account key
+   * lookup path in getAccountKeys().  This prevents the "only first account
+   * can sign" bug where secondary accounts incorrectly fell back to the master
+   * decryptedKeys, which belong to a different account.
+   */
+  async _promoteToOwnKeys(accountId) {
+    if (!this.decryptedKeys) return; // wallet not unlocked, nothing to store
+    try {
+      const password = await this.getStoredPassword();
+      return new Promise((resolve) => {
+        chrome.storage.local.get(['wallet'], async (result) => {
+          try {
+            const wallet = result.wallet;
+            if (!wallet) { resolve(); return; }
+
+            const salt = this._getWalletSalt(wallet);
+            const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+            const encryptedAccountData = await CryptoUtils.encrypt(
+              { keys: this.decryptedKeys },
+              encryptionKey
+            );
+
+            // Mark the account entry as having its own key storage
+            const acc = wallet.accounts?.find(a => a.id === accountId);
+            if (acc) acc.hasOwnKeys = true;
+
+            await this.saveWallet(wallet);
+
+            // Persist the encrypted keys under the standard per-account key
+            const keyData = {};
+            keyData[`accountKeys_${accountId}`] = encryptedAccountData;
+            chrome.storage.local.set(keyData, resolve);
+          } catch (e) {
+            console.warn('_promoteToOwnKeys failed for', accountId, e.message);
+            resolve(); // non-fatal
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('_promoteToOwnKeys: could not get session password:', e.message);
     }
   }
 
@@ -967,9 +1037,11 @@ export class WalletManager {
             // Get encryption key from wallet password
             const encryptionKey = await CryptoUtils.deriveKey(walletPassword, salt);
 
-            // Encrypt the account's keys (password intentionally not stored)
+            // Encrypt the account's keys and credentials so they can be retrieved later
             const encryptedAccountData = await CryptoUtils.encrypt({
-              keys: keys
+              keys: keys,
+              bitsharesPassword: bitsharesPassword,
+              bitsharesAccountName: accountInfo.name
             }, encryptionKey);
 
             // Add to accounts list
@@ -1174,7 +1246,14 @@ export class WalletManager {
           }
 
           // If account has its own keys, decrypt them
-          if (account.hasOwnKeys && result[`accountKeys_${accountId}`]) {
+          if (account.hasOwnKeys) {
+            if (!result[`accountKeys_${accountId}`]) {
+              // Keys entry is missing — fail loudly rather than silently signing
+              // with the master wallet key (which belongs to a different account
+              // and would produce an invalid signature / "Missing Active Authority").
+              reject(new Error(`Encrypted key data for account ${accountId} is missing. Please re-add the account.`));
+              return;
+            }
             const password = await this.getStoredPassword();
             const salt = this._getWalletSalt(wallet);
             const encryptionKey = await CryptoUtils.deriveKey(password, salt);
@@ -1224,7 +1303,7 @@ export class WalletManager {
   /**
    * Send a transfer transaction
    */
-  async sendTransfer(to, amount, assetId, memo, encryptMemo = false) {
+  async sendTransfer(to, amount, assetId, memo, encryptMemo = false, accountId = null) {
     // Ensure unlocked (will restore from session if service worker restarted)
     await this.ensureUnlocked();
 
@@ -1234,7 +1313,15 @@ export class WalletManager {
     try {
       await this.ensureApiConnected();
 
-      const fromAccount = await this.getCurrentAccount();
+      // Use the provided accountId (dApp-connected account) or fall back to active account
+      let fromAccount;
+      if (accountId) {
+        const all = await this.getAllAccounts();
+        fromAccount = all.find(a => a.id === accountId);
+        if (!fromAccount) throw new Error(`Account ${accountId} not found in wallet`);
+      } else {
+        fromAccount = await this.getCurrentAccount();
+      }
 
       // Get the correct keys for this account
       const keys = await this.getAccountKeys(fromAccount.id);
@@ -1310,7 +1397,7 @@ export class WalletManager {
   /**
    * Sign a transaction from dApp request
    */
-  async signTransaction(transaction) {
+  async signTransaction(transaction, accountId = null) {
     // Ensure unlocked (will restore from session if service worker restarted)
     await this.ensureUnlocked();
 
@@ -1320,11 +1407,7 @@ export class WalletManager {
     try {
       await this.ensureApiConnected();
 
-      // Get keys for the current account
-      const currentAccount = await this.getCurrentAccount();
-      const keys = await this.getAccountKeys(currentAccount.id);
-
-      // Normalise: accept either a full tx object or a raw operations array
+      // Normalise first so we can inspect operations before choosing a signer
       let tx;
       if (transaction && Array.isArray(transaction.operations)) {
         tx = transaction;
@@ -1333,6 +1416,44 @@ export class WalletManager {
       } else {
         throw new Error('Invalid transaction format: expected { operations: [...] } or [[opType, opData], ...]');
       }
+
+      // Determine the signing account using three cascading strategies:
+      //  1. Caller-provided accountId (from connection metadata)
+      //  2. Account ID found inside the transaction's own operations (most reliable —
+      //     works even when connection metadata is missing or stale)
+      //  3. Currently active account (last resort)
+      let resolvedId = accountId;
+
+      if (!resolvedId) {
+        // Parse operations: each op is either [opType, opData] or a plain object
+        const ops = tx.operations || [];
+        for (const op of ops) {
+          const opData = Array.isArray(op) ? op[1] : op;
+          if (!opData || typeof opData !== 'object') continue;
+          // Fields that identify the authorising account across common op types
+          for (const field of ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account']) {
+            const val = opData[field];
+            if (typeof val === 'string' && /^1\.2\.\d+$/.test(val)) {
+              resolvedId = val;
+              break;
+            }
+          }
+          if (resolvedId) break;
+        }
+      }
+
+      let signingAccount;
+      if (resolvedId) {
+        const all = await this.getAllAccounts();
+        signingAccount = all.find(a => a.id === resolvedId);
+        if (!signingAccount) {
+          throw new Error(`Account ${resolvedId} is required to sign but was not found in this wallet`);
+        }
+      } else {
+        signingAccount = await this.getCurrentAccount();
+      }
+
+      const keys = await this.getAccountKeys(signingAccount.id);
 
       // Sign the transaction AND broadcast it (fills fees, refreshes headers, signs, broadcasts)
       const result = await this.api.signAndBroadcast(tx, keys.active.privateKey);
@@ -1548,14 +1669,21 @@ export class WalletManager {
    * @param {string} origin - Site origin URL
    * @param {string} accountId - Optional account ID (removes all if not provided)
    */
-  async removeConnectedSite(origin, accountId = null) {
+  async removeConnectedSite(origin, accountId = null, network = null) {
     const sites = await this.getConnectedSites();
     let filtered;
     if (accountId) {
-      // Remove only the specific origin+account connection
-      filtered = sites.filter(s => !(s.origin === origin && s.accountId === accountId));
+      // Remove the specific origin+account connection, optionally scoped to network
+      filtered = sites.filter(s => !(
+        s.origin === origin &&
+        s.accountId === accountId &&
+        (!network || (s.network || 'mainnet') === network)
+      ));
+    } else if (network) {
+      // Remove all connections for this origin on the given network only
+      filtered = sites.filter(s => !(s.origin === origin && (s.network || 'mainnet') === network));
     } else {
-      // Remove all connections for this origin (legacy behavior)
+      // Remove all connections for this origin across all networks
       filtered = sites.filter(s => s.origin !== origin);
     }
 
@@ -1762,10 +1890,12 @@ export class WalletManager {
             return;
           }
 
-          // Check for account-specific BitShares password
-          if (accountId && result[`accountKeys_${accountId}`]) {
+          // When a specific account is requested, only return data for THAT account.
+          // Never fall through to the primary wallet blob — that would expose the
+          // primary account's password when a different account is selected.
+          if (accountId) {
             const account = wallet.accounts?.find(a => a.id === accountId);
-            if (account?.hasOwnKeys) {
+            if (account?.hasOwnKeys && result[`accountKeys_${accountId}`]) {
               try {
                 const accountData = await CryptoUtils.decrypt(
                   result[`accountKeys_${accountId}`],
@@ -1779,19 +1909,36 @@ export class WalletManager {
                   return;
                 }
               } catch (e) {
-                // Fall through to default wallet
+                // Decryption failed — password not available
               }
             }
+            // Account-specific storage exists but has no bitsharesPassword
+            // (added before this data was stored, or primary account path below)
+            // Check if this accountId matches the primary wallet account
+            if (decrypted.bitsharesAccountName && decrypted.bitsharesPassword) {
+              const primaryAccount = wallet.accounts?.find(
+                a => a.name === decrypted.bitsharesAccountName
+              );
+              if (primaryAccount?.id === accountId) {
+                resolve({
+                  accountName: decrypted.bitsharesAccountName,
+                  password: decrypted.bitsharesPassword
+                });
+                return;
+              }
+            }
+            // Not available for this account
+            resolve(null);
+            return;
           }
 
-          // Check default wallet's BitShares password
+          // No specific account — return primary wallet's BitShares password
           if (decrypted.bitsharesPassword) {
             resolve({
               accountName: decrypted.bitsharesAccountName,
               password: decrypted.bitsharesPassword
             });
           } else {
-            // Wallet was not imported via account+password method
             resolve(null);
           }
         } catch (error) {

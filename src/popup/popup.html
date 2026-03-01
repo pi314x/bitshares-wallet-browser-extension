@@ -542,7 +542,8 @@
             <h4 id="dapp-name"></h4>
             <p id="dapp-origin" class="dapp-origin"></p>
           </div>
-          <p class="connect-message">This site wants to connect to your BitShares wallet</p>
+          <p class="connect-message" id="dapp-connect-message">This site wants to connect to your BitShares wallet</p>
+          <p id="dapp-connect-network" class="connect-network-notice"></p>
           <div class="form-group" style="margin: var(--spacing-md) 0;">
             <label for="dapp-connect-account">Connect with account:</label>
             <select id="dapp-connect-account" class="account-selector">
@@ -813,6 +814,7 @@
         <button class="btn-back" data-target="settings-screen">←</button>
         <h2>Manage Connections</h2>
       </div>
+      <p id="connections-network-info" class="connections-network-info"></p>
       <div id="connections-list" class="connections-list">
         <!-- Connected sites will be populated here -->
       </div>

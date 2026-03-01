@@ -416,7 +416,7 @@ body {
 .form-group input,
 .form-group select,
 .form-group textarea {
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   background: var(--bg-input);
@@ -1429,6 +1429,13 @@ body {
 .connect-message {
   text-align: center;
   color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.connect-network-notice {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
   margin-bottom: var(--spacing-md);
 }
 
@@ -1714,6 +1721,7 @@ body {
 .history-icon {
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -2153,6 +2161,14 @@ body {
 }
 
 /* Connected Sites */
+.connections-network-info {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
 .connections-list {
   display: flex;
   flex-direction: column;
@@ -2435,7 +2451,7 @@ body {
 
 .swap-input-group input[type="number"] {
   width: 100%;
-  padding: var(--spacing-md);
+  padding: var(--spacing-sm);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   background: var(--bg-input);
@@ -2481,7 +2497,7 @@ body {
 .swap-direction-btn {
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: 54%;
   transform: translate(-50%, -50%);
   width: 36px;
   height: 36px;

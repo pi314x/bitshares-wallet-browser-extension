@@ -2408,16 +2408,22 @@ async function checkSiteConnectionForCurrentTab(accountId) {
         ).join('');
       }
 
+      // Show network notice on the modal
+      const networkLabel2 = network === 'testnet' ? 'BitShares Testnet' : 'BitShares Mainnet';
+      const noticeEl2 = document.getElementById('dapp-connect-network');
+      if (noticeEl2) noticeEl2.textContent = `This approval is only valid for ${networkLabel2}.`;
+
       // Create a pending request ID for the approval
       const requestId = crypto.randomUUID();
       pendingDappRequest = { id: requestId, type: 'connection', origin, isLocalRequest: true };
 
-      // Store in chrome.storage so it persists
+      // Store in chrome.storage so it persists (include network so checkPendingApproval doesn't reject it)
       await chrome.storage.local.set({
         pendingApproval: {
           requestId,
           type: 'connection',
           origin,
+          network,
           params: {},
           isLocalRequest: true // Flag to indicate this was triggered from popup, not from dapp
         }
@@ -2501,7 +2507,7 @@ async function handleShowAccounts() {
 async function loadAccountsList() {
   const accountsList = document.getElementById('accounts-list');
   // Show ALL accounts (not filtered by network) so user can see and remove accounts from other networks
-  const accounts = await walletManager.getAllAccounts();
+  const accounts = (await walletManager.getAllAccounts()).sort((a, b) => a.name.localeCompare(b.name));
   const network = document.getElementById('network-select')?.value || 'mainnet';
 
   if (accounts.length === 0) {
@@ -2987,8 +2993,9 @@ async function handleShowHistory() {
 }
 
 async function handleShowReceive() {
-  // Populate account selector
-  const accounts = await walletManager.getAllAccounts();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  // Only show accounts that belong to the current network
+  const accounts = await walletManager.getAllAccounts(network);
   const activeAccount = await walletManager.getCurrentAccount();
   const selector = document.getElementById('receive-account-selector');
 
@@ -3007,7 +3014,8 @@ async function handleShowReceive() {
 async function updateReceiveScreenDisplay() {
   const selector = document.getElementById('receive-account-selector');
   const selectedId = selector?.value;
-  const accounts = await walletManager.getAllAccounts();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const accounts = await walletManager.getAllAccounts(network);
   const activeAccount = await walletManager.getCurrentAccount();
   const account = accounts.find(a => a.id === selectedId) || activeAccount;
 
@@ -3041,8 +3049,9 @@ async function handleReceiveAccountChange() {
 async function handleNetworkChange(e) {
   const network = e.target.value;
 
-  // Persist network selection
-  chrome.storage.local.set({ selectedNetwork: network });
+  // Persist network selection (awaited so storage is committed before the
+  // service worker reads it via NETWORK_SWITCH → connectToBlockchain).
+  await new Promise(resolve => chrome.storage.local.set({ selectedNetwork: network }, resolve));
 
   try {
     showToast(`Switching to ${network}...`, 'info');
@@ -3052,9 +3061,15 @@ async function handleNetworkChange(e) {
       await btsAPI.disconnect();
     }
 
-    // Connect to new network
+    // Reconnect popup's API to the new network
     await initializeAPI();
     await loadDashboard();
+
+    // Tell the service worker to also reconnect — it signs transactions and must
+    // use the same chain/chainId as the popup, otherwise signatures are rejected.
+    try {
+      await chrome.runtime.sendMessage({ type: 'NETWORK_SWITCH', network });
+    } catch { /* service worker will use storage-based fallback on next request */ }
 
     showToast(`Connected to ${network}`, 'success');
   } catch (error) {
@@ -3407,6 +3422,14 @@ async function handleShowConnections() {
 async function loadConnectionsList() {
   const connectionsList = document.getElementById('connections-list');
   const network = document.getElementById('network-select')?.value || 'mainnet';
+
+  // Show current network + chain ID at top of screen
+  const networkLabel = network === 'testnet' ? 'BitShares Testnet' : 'BitShares Mainnet';
+  const chainId = btsAPI?.chainId || '';
+  const chainDisplay = chainId ? ` · Chain: ${chainId.slice(0, 8)}…${chainId.slice(-8)}` : '';
+  const networkInfoEl = document.getElementById('connections-network-info');
+  if (networkInfoEl) networkInfoEl.textContent = `${networkLabel}${chainDisplay}`;
+
   const sites = await walletManager.getConnectedSites(null, network);
 
   if (sites.length === 0) {
@@ -3439,7 +3462,9 @@ async function loadConnectionsList() {
   connectionsList.querySelectorAll('.connection-btn-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
       const accountId = btn.dataset.account || null;
-      await walletManager.removeConnectedSite(btn.dataset.origin, accountId);
+      // Scope removal to the currently viewed network so mainnet and testnet
+      // connections for the same site remain independent.
+      await walletManager.removeConnectedSite(btn.dataset.origin, accountId, network);
       await loadConnectionsList();
       showToast('Site disconnected', 'info');
     });
@@ -3635,6 +3660,42 @@ async function showPendingApprovalIndicator() {
   }
 }
 
+// Show the connection modal as a gate before a pending transfer/transaction.
+// The pendingApproval (the transaction) stays in storage; after the user connects,
+// checkPendingApproval() is called again to show the transaction modal.
+async function showConnectionAuthGuard(requestId, pendingType, origin, network, currentAccount) {
+  const hostname = new URL(origin).hostname;
+  document.getElementById('dapp-name').textContent = hostname;
+  document.getElementById('dapp-origin').textContent = origin;
+
+  const networkLabel = network === 'testnet' ? 'BitShares Testnet' : 'BitShares Mainnet';
+  const noticeEl = document.getElementById('dapp-connect-network');
+  if (noticeEl) noticeEl.textContent = `This approval is only valid for ${networkLabel}.`;
+
+  const dappIcon = document.getElementById('dapp-icon');
+  if (dappIcon) { dappIcon.src = '../assets/icons/dapp-default.svg'; dappIcon.alt = hostname; }
+
+  const msgEl = document.getElementById('dapp-connect-message');
+  if (msgEl) {
+    msgEl.textContent = pendingType === 'transfer'
+      ? 'Connect your account to authorize this transfer.'
+      : 'Connect your account to authorize this transaction.';
+  }
+
+  const accounts = await walletManager.getAllAccounts(network);
+  const signableAccounts = accounts.filter(acc => !acc.watchOnly);
+  const selector = document.getElementById('dapp-connect-account');
+  if (selector && signableAccounts.length > 0) {
+    selector.innerHTML = signableAccounts.map(acc =>
+      `<option value="${escapeHtml(acc.id)}" data-name="${escapeHtml(acc.name)}" ${acc.id === currentAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+    ).join('');
+  }
+
+  // authGuard: pendingApproval in storage IS the transaction (not a connection request)
+  pendingDappRequest = { id: requestId, type: pendingType, origin, authGuard: true };
+  showModal('dapp-connect-modal');
+}
+
 // Check for pending dApp approval requests (opened from background script)
 async function checkPendingApproval() {
   try {
@@ -3642,11 +3703,31 @@ async function checkPendingApproval() {
     if (!result.pendingApproval) return;
 
     const { requestId, type, origin, params } = result.pendingApproval;
+    const currentNetwork = document.getElementById('network-select')?.value || 'mainnet';
+
+    // Reject any request whose network doesn't match the wallet's current network.
+    // Legacy requests without a network field default to 'mainnet'.
+    // This check applies to ALL request types, including connection requests.
+    const requestNetwork = result.pendingApproval.network || 'mainnet';
+    if (requestNetwork !== currentNetwork) {
+      const networkLabel = currentNetwork === 'testnet' ? 'BitShares Testnet' : 'BitShares Mainnet';
+      const reason = `Your wallet is connected to ${networkLabel}. Please switch your dApp to ${networkLabel} and try again.`;
+      // Reject back to the dApp immediately (don't wait for the 90-second timeout)
+      try {
+        await chrome.runtime.sendMessage({ type: 'DAPP_REJECT_REQUEST', requestId, reason });
+      } catch {
+        // Service worker may not have this request in memory; storage cleanup is enough
+        await chrome.storage.local.remove(['pendingApproval']);
+        await chrome.action.setBadgeText({ text: '' });
+      }
+      showToast(`Request rejected — wallet is on ${currentNetwork}`, 'info');
+      return;
+    }
 
     // For connection requests, check if CURRENT account is already connected (stale request)
     // For transfer/transaction requests, site MUST be connected, so don't clear those
     if (type === 'connection') {
-      const network = document.getElementById('network-select')?.value || 'mainnet';
+      const network = currentNetwork;
       const currentAccount = await walletManager.getCurrentAccount();
       const isConnected = currentAccount?.id
         ? await walletManager.isSiteConnected(origin, currentAccount.id, network)
@@ -3661,6 +3742,9 @@ async function checkPendingApproval() {
       const hostname = new URL(origin).hostname;
       document.getElementById('dapp-name').textContent = hostname;
       document.getElementById('dapp-origin').textContent = origin;
+      const networkLabel = currentNetwork === 'testnet' ? 'BitShares Testnet' : 'BitShares Mainnet';
+      const noticeEl = document.getElementById('dapp-connect-network');
+      if (noticeEl) noticeEl.textContent = `This approval is only valid for ${networkLabel}.`;
 
       // Set default dapp icon
       const dappIcon = document.getElementById('dapp-icon');
@@ -3683,9 +3767,27 @@ async function checkPendingApproval() {
       pendingDappRequest = { id: requestId, type, origin };
       showModal('dapp-connect-modal');
     } else if (type === 'transfer') {
+      // Auth guard: active account must be connected to the requesting origin
+      const currentAccount = await walletManager.getCurrentAccount();
+      const alreadyConnected = currentAccount?.id
+        ? await walletManager.isSiteConnected(origin, currentAccount.id, currentNetwork)
+        : false;
+      if (!alreadyConnected) {
+        await showConnectionAuthGuard(requestId, type, origin, currentNetwork, currentAccount);
+        return;
+      }
       // Show transfer approval modal
       await showTransferApprovalModal(requestId, origin, params);
     } else if (type === 'transaction') {
+      // Auth guard: active account must be connected to the requesting origin
+      const currentAccount = await walletManager.getCurrentAccount();
+      const alreadyConnected = currentAccount?.id
+        ? await walletManager.isSiteConnected(origin, currentAccount.id, currentNetwork)
+        : false;
+      if (!alreadyConnected) {
+        await showConnectionAuthGuard(requestId, type, origin, currentNetwork, currentAccount);
+        return;
+      }
       // Show generic transaction signing modal with operation details
       const operations = params?.operations || params?.ops || (params?.transaction?.operations) || [];
       await showTransactionSigningModal(requestId, origin, operations);
@@ -3762,47 +3864,75 @@ async function showTransferApprovalModal(requestId, origin, params) {
   showModal('dapp-transfer-modal');
 }
 
+// Helper: reset the connect modal message text to its default after use
+function resetConnectModalMessage() {
+  const msgEl = document.getElementById('dapp-connect-message');
+  if (msgEl) msgEl.textContent = 'This site wants to connect to your BitShares wallet';
+}
+
 // Update dApp handlers to use correct message types
 async function handleDappRejectUpdated() {
-  if (pendingDappRequest) {
-    // For local requests (account switch), we don't need to notify service worker
-    if (!pendingDappRequest.isLocalRequest) {
-      try {
-        await chrome.runtime.sendMessage({
-          type: 'DAPP_APPROVE_CONNECTION',
-          data: { requestId: pendingDappRequest.id, approved: false }
-        });
-      } catch (e) {
-        console.error('Failed to reject connection:', e);
-      }
+  const req = pendingDappRequest;
+  pendingDappRequest = null;
+  hideModal('dapp-connect-modal');
+  resetConnectModalMessage();
+
+  if (!req) return;
+
+  if (req.authGuard) {
+    // The underlying transaction must be rejected back to the dApp
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'DAPP_REJECT_REQUEST',
+        data: { requestId: req.id, reason: 'User rejected site connection' }
+      });
+    } catch {
+      await chrome.storage.local.remove(['pendingApproval']);
+      await chrome.action.setBadgeText({ text: '' });
     }
-    // Clear pending approval from storage
+  } else if (!req.isLocalRequest) {
+    // Standard dApp connection rejection
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'DAPP_APPROVE_CONNECTION',
+        data: { requestId: req.id, approved: false }
+      });
+    } catch (e) {
+      console.error('Failed to reject connection:', e);
+    }
+    await chrome.storage.local.remove(['pendingApproval']);
+    await chrome.action.setBadgeText({ text: '' });
+  } else {
+    // Local (account-switch) request: just clear storage
     await chrome.storage.local.remove(['pendingApproval']);
     await chrome.action.setBadgeText({ text: '' });
   }
-  pendingDappRequest = null;
-  hideModal('dapp-connect-modal');
 }
 
 async function handleDappConnectUpdated() {
-  if (pendingDappRequest) {
-    try {
-      // Get selected account from the connection modal
-      const selector = document.getElementById('dapp-connect-account');
-      const accountId = selector?.value;
-      const accountName = selector?.options[selector.selectedIndex]?.dataset.name ||
-                         selector?.options[selector.selectedIndex]?.text;
+  const req = pendingDappRequest;
+  pendingDappRequest = null;
+  hideModal('dapp-connect-modal');
+  resetConnectModalMessage();
 
-      if (pendingDappRequest.isLocalRequest) {
-        // Local request (from account switch) - add connection directly
-        await walletManager.addConnectedSite(
-          pendingDappRequest.origin,
-          accountId,
-          accountName,
-          ['getAccount', 'signTransaction', 'transfer']
-        );
-        showToast(`Site connected with ${accountName}!`, 'success');
+  if (!req) return;
 
+  try {
+    const selector = document.getElementById('dapp-connect-account');
+    const accountId = selector?.value;
+    const accountName = selector?.options[selector.selectedIndex]?.dataset.name ||
+                       selector?.options[selector.selectedIndex]?.text;
+
+    if (req.isLocalRequest || req.authGuard) {
+      // Add connection directly (local popup flow or auth-guard pre-connect)
+      await walletManager.addConnectedSite(
+        req.origin,
+        accountId,
+        accountName,
+        ['getAccount', 'signTransaction', 'transfer']
+      );
+
+      if (req.isLocalRequest) {
         // Notify the content script about the new connection
         try {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -3815,29 +3945,30 @@ async function handleDappConnectUpdated() {
         } catch (e) {
           // Ignore tab messaging errors
         }
-      } else {
-        // dApp request - send through service worker
-        await chrome.runtime.sendMessage({
-          type: 'DAPP_APPROVE_CONNECTION',
-          data: {
-            requestId: pendingDappRequest.id,
-            approved: true,
-            accountId,
-            accountName
-          }
-        });
-        showToast(`Site connected with ${accountName}!`, 'success');
       }
-    } catch (e) {
-      console.error('Failed to approve connection:', e);
-      showToast('Failed to connect: ' + e.message, 'error');
+
+      showToast(`Site connected with ${accountName}!`, 'success');
+    } else {
+      // Standard dApp connection request — send through service worker
+      await chrome.runtime.sendMessage({
+        type: 'DAPP_APPROVE_CONNECTION',
+        data: { requestId: req.id, approved: true, accountId, accountName }
+      });
+      showToast(`Site connected with ${accountName}!`, 'success');
     }
-    // Clear pending approval from storage
+  } catch (e) {
+    console.error('Failed to approve connection:', e);
+    showToast('Failed to connect: ' + e.message, 'error');
+    return;
+  }
+
+  if (req.authGuard) {
+    // pendingApproval in storage is still the transaction — show it now
+    await checkPendingApproval();
+  } else {
     await chrome.storage.local.remove(['pendingApproval']);
     await chrome.action.setBadgeText({ text: '' });
   }
-  pendingDappRequest = null;
-  hideModal('dapp-connect-modal');
 }
 
 // Transfer approval handlers
@@ -4877,8 +5008,9 @@ document.getElementById('setting-retrieve-key')?.addEventListener('click', async
   document.getElementById('retrieve-key-password').value = '';
   document.getElementById('private-key-display').style.display = 'none';
 
-  // Populate account selector
-  const accounts = await walletManager.getAllAccounts();
+  // Populate account selector (only show accounts on the current network)
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const accounts = await walletManager.getAllAccounts(network);
   const activeAccount = await walletManager.getCurrentAccount();
   const selector = document.getElementById('retrieve-key-account');
 
@@ -4893,6 +5025,14 @@ document.getElementById('setting-retrieve-key')?.addEventListener('click', async
 
 document.getElementById('btn-reveal-key')?.addEventListener('click', handleRevealKey);
 document.getElementById('btn-copy-private-key')?.addEventListener('click', handleCopyPrivateKey);
+
+// Hide the previous result whenever the user changes the account or key type
+document.getElementById('retrieve-key-account')?.addEventListener('change', () => {
+  document.getElementById('private-key-display').style.display = 'none';
+});
+document.getElementById('key-type-select')?.addEventListener('change', () => {
+  document.getElementById('private-key-display').style.display = 'none';
+});
 
 async function handleRevealKey() {
   const password = document.getElementById('retrieve-key-password')?.value;
@@ -4913,7 +5053,7 @@ async function handleRevealKey() {
         document.getElementById('revealed-public-key').textContent = `Account: ${btsCredentials.accountName}`;
         document.getElementById('private-key-display').style.display = 'block';
       } else {
-        showToast('BitShares password not available (wallet was not imported via account+password)', 'error');
+        showToast('BitShares password not stored for this account. Remove and re-add it to enable retrieval.', 'error');
       }
     } else {
       // Handle regular key reveal
@@ -4998,7 +5138,8 @@ async function saveAddressBook(contacts) {
 async function loadAddressBook() {
   const contactsList = document.getElementById('contacts-list');
   const contacts = await getAddressBook();
-  const walletAccounts = await walletManager.getAllAccounts();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const walletAccounts = await walletManager.getAllAccounts(network);
 
   contactsList.innerHTML = '';
 
@@ -5133,7 +5274,8 @@ async function handleDeleteContact(account) {
 // Show address book modal for send screen
 async function showAddressBookForSend() {
   const contacts = await getAddressBook();
-  const walletAccounts = await walletManager.getAllAccounts();
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  const walletAccounts = await walletManager.getAllAccounts(network);
   const currentAccount = await walletManager.getCurrentAccount();
 
   // Filter out the current account and watch-only accounts from wallet accounts
@@ -5736,15 +5878,15 @@ async function handleExecuteSwap() {
       extensions: []
     };
 
-    const result = await walletManager.broadcastOperation('liquidity_pool_exchange', opData);
+    await walletManager.broadcastOperation('liquidity_pool_exchange', opData);
 
-    if (result) {
-      showToast('Swap successful!', 'success');
-      // Refresh balances without resetting asset selection
-      await refreshSwapBalances();
-      // Also refresh dashboard balances
-      await loadDashboard();
-    }
+    // broadcastOperation throws on failure, so reaching here means success.
+    // broadcast_transaction_with_callback returns null on success (BitShares node convention)
+    // so we must NOT gate the refresh on the return value.
+    showToast('Swap successful!', 'success');
+    // Refresh swap-screen balances and dashboard balances
+    await refreshSwapBalances();
+    await loadDashboard();
   } catch (error) {
     console.error('Swap error:', error);
     showToast('Swap failed: ' + error.message, 'error');

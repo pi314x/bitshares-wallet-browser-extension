@@ -60,38 +60,52 @@ class BackgroundService {
     });
   }
 
-  async connectToBlockchain() {
+  async connectToBlockchain(networkOverride = null) {
     try {
-      // Use the same network the user selected in the popup
+      // Use the network passed directly (e.g. from NETWORK_SWITCH message) or
+      // fall back to what the user last saved in storage.  Preferring the
+      // in-message value avoids a race where chrome.storage.local.get() could
+      // still return the old network if the popup's set() hasn't flushed yet.
       const result = await chrome.storage.local.get(['selectedNetwork']);
-      const network = result.selectedNetwork || 'mainnet';
+      const network = networkOverride || result.selectedNetwork || 'mainnet';
       const nodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+
+      // Null out the old walletManager API BEFORE connecting so that if the
+      // new connection fails, ensureApiConnected() won't fall back to the stale
+      // API (which may have the wrong chainId / network).
+      this.walletManager.api = null;
+      this.walletManager._apiNodes = [...nodes]; // seed reconnect with correct nodes
+
       this.api = new BitSharesAPI(nodes);
 
       await this.api.connect();
       console.log('Connected to BitShares blockchain via:', this.api.currentNode);
-      
+
+      // Share the connected API with walletManager so signTransaction, sendTransfer, etc.
+      // use the correct network (chain ID, nodes) — not a default mainnet fallback.
+      this.walletManager.setApi(this.api);
+
       // Notify popup of connection status
-      chrome.runtime.sendMessage({ 
-        type: 'CONNECTION_STATUS', 
+      chrome.runtime.sendMessage({
+        type: 'CONNECTION_STATUS',
         connected: true,
-        node: this.api.currentNode 
+        node: this.api.currentNode
       }).catch(() => {}); // Ignore if popup is closed
-      
+
     } catch (error) {
       console.error('Failed to connect to blockchain:', error);
-      
+
       // Notify popup of connection status
-      chrome.runtime.sendMessage({ 
-        type: 'CONNECTION_STATUS', 
+      chrome.runtime.sendMessage({
+        type: 'CONNECTION_STATUS',
         connected: false,
-        error: error.message 
+        error: error.message
       }).catch(() => {});
-      
+
       // Retry after delay with exponential backoff
-      const retryDelay = Math.min(30000, 5000 * (this.api.connectionAttempts + 1));
+      const retryDelay = Math.min(30000, 5000 * (this.api?.connectionAttempts + 1 || 1));
       console.log(`Retrying connection in ${retryDelay/1000} seconds...`);
-      setTimeout(() => this.connectToBlockchain(), retryDelay);
+      setTimeout(() => this.connectToBlockchain(networkOverride), retryDelay);
     }
   }
 
@@ -209,6 +223,18 @@ class BackgroundService {
       case 'DAPP_APPROVE_TRANSFER':
         return await this.approveTransfer(data.requestId, data.approved);
 
+      case 'DAPP_REJECT_REQUEST':
+        return await this.rejectPendingRequest(data.requestId, data.reason);
+
+      case 'NETWORK_SWITCH':
+        // Popup switched networks — reconnect to the new chain so that all
+        // subsequent signing operations use the correct chainId and nodes.
+        // Pass the network directly from the message to avoid a storage-read
+        // race where chrome.storage.local.get could still return the old value
+        // if the popup's set() hasn't flushed yet.
+        await this.connectToBlockchain(data.network);
+        return { success: true };
+
       // Settings
       case 'SETTINGS_UPDATE':
         await this.updateSettings(data.settings);
@@ -314,9 +340,11 @@ class BackgroundService {
       case 'signTransaction':
         return await this.handleSignRequest(origin, params, id, tabId);
 
-      case 'disconnect':
-        await this.walletManager.removeConnectedSite(origin);
+      case 'disconnect': {
+        const disconnectNetwork = await this.getCurrentNetwork();
+        await this.walletManager.removeConnectedSite(origin, null, disconnectNetwork);
         return { success: true };
+      }
 
       case 'getChainId':
         return { chainId: await this.api.getChainId() };
@@ -327,14 +355,16 @@ class BackgroundService {
       case 'getBalance':
         return await this.handleGetBalance(origin, params);
 
-      case 'checkConnection':
-        // Check if current account is connected to this site
+      case 'checkConnection': {
+        // Check if current account is connected to this site on the current network
+        const checkNetwork = await this.getCurrentNetwork();
         const currentAccount = await this.walletManager.getCurrentAccount();
         if (currentAccount && currentAccount.id) {
-          const connected = await this.walletManager.isSiteConnected(origin, currentAccount.id);
+          const connected = await this.walletManager.isSiteConnected(origin, currentAccount.id, checkNetwork);
           return { connected, account: connected ? currentAccount : null };
         }
         return { connected: false, account: null };
+      }
 
       case 'signMessage':
         return await this.handleSignMessage(origin, params, id, tabId);
@@ -362,10 +392,11 @@ class BackgroundService {
       );
     }
 
-    // Check if CURRENT account is already connected to this site
+    // Check if CURRENT account is already connected to this site on the current network
+    const connNetwork = await this.getCurrentNetwork();
     const account = await this.walletManager.getCurrentAccount();
     if (account && account.id) {
-      const isConnected = await this.walletManager.isSiteConnected(origin, account.id);
+      const isConnected = await this.walletManager.isSiteConnected(origin, account.id, connNetwork);
       if (isConnected) {
         // Return account info and balance for already connected account
         let balances = [];
@@ -571,8 +602,9 @@ class BackgroundService {
   }
 
   async handleGetBalance(origin, params) {
-    // Verify connection
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    // Verify connection on current network
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -629,8 +661,9 @@ class BackgroundService {
   }
 
   async handleSignMessage(origin, params, messageId, tabId) {
-    // Verify connection
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    // Verify connection on current network
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -673,8 +706,9 @@ class BackgroundService {
   }
 
   async handleSwapRequest(origin, params, messageId, tabId) {
-    // Verify connection
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    // Verify connection on current network
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -717,8 +751,9 @@ class BackgroundService {
   }
 
   async handleLimitOrderRequest(origin, params, messageId, tabId) {
-    // Verify connection
-    const isConnected = await this.walletManager.isSiteConnected(origin);
+    // Verify connection on current network
+    const network = await this.getCurrentNetwork();
+    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -788,17 +823,74 @@ class BackgroundService {
     await chrome.action.setBadgeText({ text: '1' });
     await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
 
-    // Open the popup automatically so the user sees the approval request immediately
+    // Open the popup automatically so the user sees the approval request immediately.
+    // Strategy 1: focus the most recent normal window and call openPopup().
+    // Strategy 2: if that fails, open a dedicated approval window as a reliable fallback.
+    let opened = false;
     try {
+      const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
+      const target = windows.find(w => w.focused) || windows[windows.length - 1];
+      if (target) await chrome.windows.update(target.id, { focused: true });
       await chrome.action.openPopup();
+      opened = true;
     } catch {
-      // openPopup() can fail if no browser window is focused; badge remains as fallback
-      console.log('Could not open popup automatically, waiting for user to click extension icon');
+      // openPopup() failed (no focused window, unsupported Chrome version, etc.)
+    }
+
+    if (!opened) {
+      // Don't open a second window if one is already up
+      const existing = await chrome.windows.getAll({ windowTypes: ['popup'] });
+      const approvalWin = existing.find(w =>
+        w.tabs?.some(t => t.url?.includes(chrome.runtime.id))
+      );
+      if (!approvalWin) {
+        try {
+          await chrome.windows.create({
+            url: chrome.runtime.getURL('popup/popup.html'),
+            type: 'popup',
+            width: 380,
+            height: 620,
+            focused: true
+          });
+        } catch (e) {
+          console.log('Could not open approval window:', e.message);
+        }
+      }
     }
   }
 
   capitalizeType(type) {
     return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+
+  /**
+   * Immediately reject any pending request with a custom reason message.
+   * Used when the popup detects a network mismatch so the dApp gets a clear
+   * error rather than waiting for the 90-second timeout.
+   */
+  async rejectPendingRequest(requestId, reason = 'Request rejected') {
+    let request = this.pendingRequests.get(requestId);
+    if (!request) {
+      const stored = await chrome.storage.local.get(['pendingApproval']);
+      if (stored.pendingApproval?.requestId === requestId) {
+        request = stored.pendingApproval;
+      }
+    }
+    if (!request) return { success: true }; // Already gone
+
+    if (request.timeout) clearTimeout(request.timeout);
+
+    if (request.reject) {
+      request.reject(new Error(reason));
+    } else if (request.tabId && this.contentPorts.has(request.tabId)) {
+      const port = this.contentPorts.get(request.tabId);
+      port.postMessage({ id: request.messageId, error: reason });
+    }
+
+    this.pendingRequests.delete(requestId);
+    await chrome.storage.local.remove(['pendingApproval']);
+    await chrome.action.setBadgeText({ text: '' });
+    return { success: true };
   }
 
   async approveConnection(requestId, approved, accountId = null, accountName = null) {
@@ -912,7 +1004,13 @@ class BackgroundService {
       try {
         // Support params.transaction or params directly as the transaction object
         const txData = request.params?.transaction || request.params;
-        const result = await this.walletManager.signTransaction(txData);
+        // Let signTransaction determine the signing account from the transaction's own
+        // operation fields (e.g. 'from', 'account', 'seller', …).  Passing a conn.accountId
+        // override here was the root cause of "Missing Active Authority" for non-primary
+        // accounts: when the dApp switched to account B the connection metadata still
+        // pointed to the first connected account A, so signatures were produced with A's
+        // keys even though the transaction said from = B.
+        const result = await this.walletManager.signTransaction(txData, null);
         if (request.resolve) {
           request.resolve(result);
         } else if (request.tabId && this.contentPorts.has(request.tabId)) {
@@ -973,18 +1071,23 @@ class BackgroundService {
     if (approved) {
       try {
         const { to, amount, asset, memo } = request.params;
-        // Convert asset symbol to ID if needed
-        const assetId = asset === 'BTS' ? '1.3.0' : asset;
+        // Map core asset symbols (BTS on mainnet, TEST on testnet) to the universal asset ID
+        const assetId = (asset === 'BTS' || asset === 'TEST') ? '1.3.0' : asset;
 
         // Ensure wallet is unlocked (restore from session if needed)
         await this.walletManager.ensureUnlocked();
 
+        // Use the currently active wallet account as the sender.
+        // Using conn.accountId (first connected account) here caused the same
+        // "Missing Active Authority" bug as in approveTransaction when the user
+        // switched to a different account after the initial connection.
         const result = await this.walletManager.sendTransfer(
           to,
           amount,
           assetId,
           memo,
-          false // Don't encrypt memo (it's an EVM address)
+          false,
+          null   // null → sendTransfer falls back to getCurrentAccount()
         );
 
         // If we have resolve callback in memory, use it
