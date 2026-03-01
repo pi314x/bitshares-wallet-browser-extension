@@ -5,6 +5,57 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-03-01
+
+### Added
+- **Network selector on the welcome screen** — choose Mainnet or Testnet before
+  creating or importing a wallet; selection is persisted across sessions and
+  syncs to the dashboard selector
+- **Testnet key prefix** (`TEST`) — key generation and import now use the
+  correct prefix for the selected network (`BTS` for mainnet, `TEST` for
+  testnet); wallet-manager `importWallet` passes the prefix through to
+  `generateKeysFromPassword`
+- **Import key verification** — when importing by account name + password, the
+  generated keys are compared against the account's `active.key_auths`,
+  `owner.key_auths`, and `options.memo_key` on-chain before the wallet is
+  created; wrong password is rejected with a clear error
+- **Premium name import** — account-name format validation is no longer applied
+  on the import screen; non-standard / premium names (e.g. single-word,
+  short, mixed-case) can now be imported
+- **Watch-only accounts in Retrieve Key** — selecting a watch-only account now
+  shows "This is a watch-only account — no private keys are stored." instead of
+  the generic password-not-found message; watch-only accounts are labelled in
+  the selector and checked before the password field is even validated
+- **Retrieve Key account list sorted by name**
+- **`ensureConnected()` in service worker** — before handling any dApp request
+  that needs a chain ID, the service worker now checks whether its active API
+  is connected to the network the user last selected in storage; reconnects
+  automatically if they diverge (handles missed `NETWORK_SWITCH` messages
+  when the worker was sleeping)
+- **Chain ID re-validation at approval time** — `approveConnection` re-checks
+  the site's declared `chain_id` against the live chain before storing the
+  connection; prevents approving a cross-chain connection if the user switched
+  networks while the approval popup was open
+- **Popup-side chain ID guard** — `checkPendingApproval` validates the site's
+  `chain_id` against the popup's active API chain before showing the approval
+  modal; rejects immediately on mismatch
+
+### Fixed
+- **Service worker network drift** — `initializeAPI()` in the popup now sends
+  `NETWORK_SWITCH` to the service worker after every reconnect (not only on
+  manual dropdown changes); fixes the case where wallet creation or import on
+  a non-default network left the service worker on mainnet
+- **`bitsharesPassword` not stored for imported accounts** — `importWallet`
+  now stores the BitShares password in the encrypted blob so "Retrieve Private
+  Key" works for accounts imported by name + password (matches behaviour
+  of `addAccountByCredentials`)
+
+### Changed
+- `handleNetworkChange` no longer sends a duplicate `NETWORK_SWITCH` message
+  (it now delegates to `initializeAPI()` which handles it)
+
+---
+
 ## [0.3.1] — 2026-02-24
 
 ### Fixed

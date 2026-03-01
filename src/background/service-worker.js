@@ -29,6 +29,7 @@ class BackgroundService {
     this.pendingRequests = new Map();
     this.contentPorts = new Map(); // Store ports by tabId for responding after approval
     this.autoLockMinutes = 5;
+    this.currentNetwork = null; // tracks which network this.api is connected to
 
     this.init();
   }
@@ -84,6 +85,7 @@ class BackgroundService {
       // Share the connected API with walletManager so signTransaction, sendTransfer, etc.
       // use the correct network (chain ID, nodes) — not a default mainnet fallback.
       this.walletManager.setApi(this.api);
+      this.currentNetwork = network; // record which network we're connected to
 
       // Notify popup of connection status
       chrome.runtime.sendMessage({
@@ -106,6 +108,22 @@ class BackgroundService {
       const retryDelay = Math.min(30000, 5000 * (this.api?.connectionAttempts + 1 || 1));
       console.log(`Retrying connection in ${retryDelay/1000} seconds...`);
       setTimeout(() => this.connectToBlockchain(networkOverride), retryDelay);
+    }
+  }
+
+  /**
+   * Ensure the service worker is connected to the network the user last selected.
+   * Called before any dApp request that needs a valid chain ID.
+   * Handles two failure modes:
+   *  1. API not connected (service worker just started / connection dropped)
+   *  2. NETWORK_SWITCH was missed while the service worker was sleeping — the stored
+   *     network differs from what this.api is connected to
+   */
+  async ensureConnected() {
+    const result = await chrome.storage.local.get(['selectedNetwork']);
+    const storedNetwork = result.selectedNetwork || 'mainnet';
+    if (!this.api?.isConnected || storedNetwork !== this.currentNetwork) {
+      await this.connectToBlockchain(storedNetwork);
     }
   }
 
@@ -347,6 +365,7 @@ class BackgroundService {
       }
 
       case 'getChainId':
+        await this.ensureConnected();
         return { chainId: await this.api.getChainId() };
 
       case 'transfer':
@@ -384,6 +403,10 @@ class BackgroundService {
   }
 
   async handleConnectionRequest(origin, params, messageId, tabId, port) {
+    // Reconnect to the correct network if needed (handles missed NETWORK_SWITCH
+    // messages and service-worker restarts that completed before connecting).
+    await this.ensureConnected();
+
     // Validate chain_id if the site specified one
     const activeChainId = await this.api.getChainId();
     if (params && params.chain_id && params.chain_id !== activeChainId) {
@@ -936,6 +959,23 @@ class BackgroundService {
         }
       } catch (e) {
         console.error('Could not get account for approval response:', e);
+      }
+
+      // Re-validate chain ID at approval time — the user may have switched networks
+      // while the approval popup was showing, which would make this a cross-chain approval.
+      if (request.params?.chain_id) {
+        await this.ensureConnected();
+        const currentChainId = await this.api.getChainId();
+        if (request.params.chain_id !== currentChainId) {
+          const error = new Error(
+            `Chain ID mismatch: cannot approve connection — site chain does not match the wallet's current network.`
+          );
+          if (request.reject) request.reject(error);
+          this.pendingRequests.delete(requestId);
+          await chrome.storage.local.remove(['pendingApproval']);
+          await chrome.action.setBadgeText({ text: '' });
+          throw error;
+        }
       }
 
       // Store connection with account info and current network

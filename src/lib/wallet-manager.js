@@ -393,12 +393,15 @@ export class WalletManager {
 
       let bitsharesAccountName = null;
 
+      const keyPrefix = network === 'testnet' ? 'TEST' : 'BTS';
+
       switch (importData.type) {
         case 'account':
-          // Generate keys from account name and password
+          // Generate keys from account name and password, using the correct prefix for the network
           keys = await CryptoUtils.generateKeysFromPassword(
             importData.accountName,
-            importData.password
+            importData.password,
+            keyPrefix
           );
           bitsharesAccountName = importData.accountName;
           break;
@@ -420,7 +423,7 @@ export class WalletManager {
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: brainkey,
         bitsharesAccountName: bitsharesAccountName,
-        // Note: bitsharesPassword is intentionally NOT stored — only derived keys are kept.
+        bitsharesPassword: importData.type === 'account' ? importData.password : null,
         keys: keys,
         accounts: []
       }, encryptionKey);

@@ -9,12 +9,14 @@ A secure browser extension for the BitShares blockchain - similar to MetaMask bu
 ### Wallet Management
 - Create new wallet with password-protected brainkey
 - Import existing wallets via:
-  - Account name + password
+  - Account name + password (keys verified against chain before import)
   - Brainkey phrase
   - WIF private keys
+  - Premium / non-standard account names supported on import
 - Secure AES-256-GCM encryption
 - Auto-lock functionality (configurable timer or disabled)
 - Backup brainkey for recovery
+- Multi-account support with watch-only accounts
 
 ### Asset Management
 - View BTS and all BitShares assets
@@ -74,12 +76,21 @@ Unknown or future operations gracefully fall back to a formatted JSON display.
 - BeetEOS/Scatter API compatibility
 - Event-based communication
 
+### Network Support
+- **BitShares Mainnet** and **BitShares Testnet** selectable at any point
+  - Network selector on the welcome screen (before wallet creation or import)
+  - Network selector on the dashboard
+  - Network persisted across popup sessions
+- Network-aware nodes, faucet URLs, and key prefixes (`BTS` / `TEST`)
+- Service worker stays in sync with the popup network — `ensureConnected()` reconnects to the stored network before every dApp request
+
 ### Settings
 - Auto-lock timer configuration
 - Network selection (Mainnet/Testnet)
-- Custom node configuration
+- Custom node configuration per network
 - Connected sites management
 - Change wallet password
+- Retrieve private keys (watch-only accounts clearly identified)
 
 ## Testing
 
@@ -277,6 +288,15 @@ if (chainId !== BTS_MAINNET) {
 }
 ```
 
+**Tip:** Pass `chain_id` directly in the `connect()` call so the extension
+rejects the connection immediately if the user is on the wrong network:
+
+```javascript
+const { account, balances } = await window.bitsharesWallet.connect({
+  chain_id: BTS_TESTNET   // connection is rejected if wallet is not on testnet
+});
+```
+
 #### Disconnecting
 
 ```javascript
@@ -416,14 +436,22 @@ await window.beet.forgetIdentity();
 ## BitShares Network
 
 ### Mainnet Nodes
-- `wss://eu.nodes.bitshares.ws`
-- `wss://us.nodes.bitshares.ws`
-- `wss://api.bitshares.dev`
 - `wss://node.xbts.io/ws`
+- `wss://cloud.xbts.io/ws`
+- `wss://public.xbts.io/ws`
+- `wss://btsws.roelandp.nl/ws`
+- `wss://dex.iobanker.com/ws`
+- `wss://api.bitshares.dev/ws`
 
 ### Testnet Nodes
-- `wss://testnet.bitshares.eu/ws`
+- `wss://testnet.xbts.io/ws`
 - `wss://testnet.dex.trading/`
+
+### Chain IDs
+| Network | Chain ID |
+|---------|----------|
+| Mainnet | `4018d7844c78f6a6c41c6a552b898022310fc5dec06da467ee7905a8dad512c8` |
+| Testnet | `39f5e2ede1f8bc1a3a54a7914414e3779e33193f1f5693510e73cb7a87617447` |
 
 ## Building for Distribution
 

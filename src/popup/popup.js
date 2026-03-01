@@ -95,6 +95,13 @@ function setupEventListeners() {
   document.getElementById('history-filter-select')?.addEventListener('change', handleHistoryFilter);
   document.getElementById('btn-swap')?.addEventListener('click', handleShowSwap);
   document.getElementById('network-select')?.addEventListener('change', handleNetworkChange);
+  document.getElementById('welcome-network-select')?.addEventListener('change', (e) => {
+    const network = e.target.value;
+    // Keep the dashboard selector in sync so handleGenerateWallet/handleImportWallet read the right value
+    const networkSelect = document.getElementById('network-select');
+    if (networkSelect) networkSelect.value = network;
+    chrome.storage.local.set({ selectedNetwork: network });
+  });
   document.getElementById('account-selector')?.addEventListener('change', handleAccountChange);
   document.getElementById('btn-add-account-submit')?.addEventListener('click', handleAddAccount);
 
@@ -206,6 +213,8 @@ async function initializeApp() {
     const savedNetwork = savedNetworkResult.selectedNetwork || 'mainnet';
     const networkSelect = document.getElementById('network-select');
     if (networkSelect) networkSelect.value = savedNetwork;
+    const welcomeNetworkSelect = document.getElementById('welcome-network-select');
+    if (welcomeNetworkSelect) welcomeNetworkSelect.value = savedNetwork;
 
     // Check if wallet exists
     const hasWallet = await walletManager.hasWallet();
@@ -317,6 +326,12 @@ async function initializeAPI() {
   if (walletManager) {
     walletManager.setApi(btsAPI);
   }
+
+  // Keep the service worker in sync — it may have missed a NETWORK_SWITCH message
+  // (e.g. popup reconnects after wallet creation/import on a non-default network).
+  try {
+    chrome.runtime.sendMessage({ type: 'NETWORK_SWITCH', network }).catch(() => {});
+  } catch { /* ignore if service worker is not running */ }
 }
 
 // Get network nodes based on selected network (defaults + custom)
@@ -770,6 +785,10 @@ async function handleImportWallet() {
   try {
     let importData = {};
 
+    // Determine network before the switch so key verification can use it
+    const importNetwork = document.getElementById('network-select')?.value || 'mainnet';
+    const importKeyPrefix = getKeyPrefix(importNetwork);
+
     switch (tabId) {
       case 'import-account': {
         const accountName = document.getElementById('import-account-name')?.value?.trim();
@@ -778,15 +797,33 @@ async function handleImportWallet() {
           showToast('Please enter the BitShares account name', 'error');
           return;
         }
-        const nameError = validateAccountNameFormat(accountName);
-        if (nameError) {
-          showToast('Account name: ' + nameError, 'error');
-          return;
-        }
+        // No format validation here — premium/non-standard account names are valid on-chain
         if (!accountPassword) {
           showToast('Please enter the BitShares password', 'error');
           return;
         }
+
+        // Verify that the password matches the on-chain keys before creating the wallet
+        if (btsAPI && btsAPI.isConnected) {
+          const accountInfo = await btsAPI.getAccount(accountName);
+          if (!accountInfo) {
+            showToast('Account not found on the network', 'error');
+            return;
+          }
+          const verifyKeys = await CryptoUtils.generateKeysFromPassword(accountName, accountPassword, importKeyPrefix);
+          const generatedPubKeys = [verifyKeys.active.publicKey, verifyKeys.owner.publicKey, verifyKeys.memo.publicKey];
+          const onchainKeys = [
+            ...(accountInfo.active?.key_auths?.map(k => k[0]) || []),
+            ...(accountInfo.owner?.key_auths?.map(k => k[0]) || []),
+            accountInfo.options?.memo_key
+          ].filter(Boolean);
+          const hasMatch = generatedPubKeys.some(k => onchainKeys.includes(k));
+          if (!hasMatch) {
+            showToast('Password does not match this account\'s keys', 'error');
+            return;
+          }
+        }
+
         importData = { type: 'account', accountName, password: accountPassword };
         break;
       }
@@ -802,7 +839,6 @@ async function handleImportWallet() {
       }
     }
 
-    const importNetwork = document.getElementById('network-select')?.value || 'mainnet';
     await walletManager.importWallet(importData, walletPassword, importNetwork);
     await initializeAPI();
     await loadDashboard();
@@ -2311,6 +2347,7 @@ document.getElementById('add-account-name')?.addEventListener('input', (e) => {
 });
 
 // Validate account name when typing in import wallet form (account tab)
+// Note: no format validation here — premium/non-standard names must be importable
 document.getElementById('import-account-name')?.addEventListener('input', (e) => {
   const accountName = e.target.value.trim();
   const statusEl = document.getElementById('import-account-name-status');
@@ -2319,13 +2356,6 @@ document.getElementById('import-account-name')?.addEventListener('input', (e) =>
 
   if (!accountName) {
     statusEl.textContent = '';
-    return;
-  }
-
-  const formatError = validateAccountNameFormat(accountName);
-  if (formatError) {
-    statusEl.textContent = '✗ ' + formatError;
-    statusEl.className = 'input-status invalid';
     return;
   }
 
@@ -3061,15 +3091,9 @@ async function handleNetworkChange(e) {
       await btsAPI.disconnect();
     }
 
-    // Reconnect popup's API to the new network
+    // Reconnect popup's API to the new network (also notifies the service worker)
     await initializeAPI();
     await loadDashboard();
-
-    // Tell the service worker to also reconnect — it signs transactions and must
-    // use the same chain/chainId as the popup, otherwise signatures are rejected.
-    try {
-      await chrome.runtime.sendMessage({ type: 'NETWORK_SWITCH', network });
-    } catch { /* service worker will use storage-based fallback on next request */ }
 
     showToast(`Connected to ${network}`, 'success');
   } catch (error) {
@@ -3721,6 +3745,21 @@ async function checkPendingApproval() {
         await chrome.action.setBadgeText({ text: '' });
       }
       showToast(`Request rejected — wallet is on ${currentNetwork}`, 'info');
+      return;
+    }
+
+    // If the site declared a chain_id, verify it matches the popup's active connection.
+    // This catches the race where the user switched networks while the popup was closed.
+    const requestChainId = params?.chain_id;
+    if (requestChainId && btsAPI?.chainId && requestChainId !== btsAPI.chainId) {
+      const reason = `Chain ID mismatch: the site uses a different chain than the wallet is connected to. Switch your wallet network to match the site.`;
+      try {
+        await chrome.runtime.sendMessage({ type: 'DAPP_REJECT_REQUEST', requestId, reason });
+      } catch {
+        await chrome.storage.local.remove(['pendingApproval']);
+        await chrome.action.setBadgeText({ text: '' });
+      }
+      showToast('Connection rejected — chain mismatch', 'error');
       return;
     }
 
@@ -5015,8 +5054,8 @@ document.getElementById('setting-retrieve-key')?.addEventListener('click', async
   const selector = document.getElementById('retrieve-key-account');
 
   if (selector && accounts.length > 0) {
-    selector.innerHTML = accounts.map(acc =>
-      `<option value="${escapeHtml(acc.id)}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+    selector.innerHTML = [...accounts].sort((a, b) => a.name.localeCompare(b.name)).map(acc =>
+      `<option value="${escapeHtml(acc.id)}" data-watch-only="${acc.watchOnly ? '1' : ''}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}${acc.watchOnly ? ' (Watch Only)' : ''}</option>`
     ).join('');
   }
 
@@ -5037,7 +5076,14 @@ document.getElementById('key-type-select')?.addEventListener('change', () => {
 async function handleRevealKey() {
   const password = document.getElementById('retrieve-key-password')?.value;
   const keyType = document.getElementById('key-type-select')?.value;
-  const accountId = document.getElementById('retrieve-key-account')?.value;
+  const accountSelector = document.getElementById('retrieve-key-account');
+  const accountId = accountSelector?.value;
+
+  // Watch-only accounts have no stored keys
+  if (accountSelector?.selectedOptions[0]?.dataset.watchOnly === '1') {
+    showToast('This is a watch-only account — no private keys are stored.', 'error');
+    return;
+  }
 
   if (!password) {
     showToast('Please enter your password', 'error');
