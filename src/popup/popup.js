@@ -944,10 +944,12 @@ async function loadDashboard(forceReconnect = false) {
       return;
     }
 
-    // Ensure active account is on the current network; if not, switch to first on this network
+    // Ensure active account is on the current network; if not, restore per-network selection
     let account = await walletManager.getCurrentAccount();
     if (!account || !allAccounts.find(a => a.id === account.id)) {
-      account = allAccounts[0];
+      const stored = await chrome.storage.local.get(['activeAccountPerNetwork']);
+      const preferredId = stored.activeAccountPerNetwork?.[network];
+      account = (preferredId && allAccounts.find(a => a.id === preferredId)) || allAccounts[0];
       await walletManager.setActiveAccount(account.id);
     }
 
@@ -2370,6 +2372,14 @@ async function handleAccountChange(e) {
 
   try {
     await walletManager.setActiveAccount(accountId);
+
+    // Remember this selection per network
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const stored = await chrome.storage.local.get(['activeAccountPerNetwork']);
+    const perNetwork = stored.activeAccountPerNetwork || {};
+    perNetwork[network] = accountId;
+    chrome.storage.local.set({ activeAccountPerNetwork: perNetwork });
+
     await loadDashboard();
     showToast('Account switched', 'success');
 

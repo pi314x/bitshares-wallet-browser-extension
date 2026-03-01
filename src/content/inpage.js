@@ -64,6 +64,10 @@
       if (eventType === 'accountChanged' && event.data.data) {
         updateProviderAccount(event.data.data);
       }
+      // Update cached chainId when the network changes or the wallet unlocks
+      if ((eventType === 'networkChanged' || eventType === 'unlocked') && event.data.data && providerInstance) {
+        providerInstance.chainId = event.data.data.chainId || null;
+      }
       // Emit event to listeners
       emitEvent(eventType, event.data.data);
     }

@@ -68,10 +68,18 @@
             event: 'locked'
           }, window.location.origin);
         } else if (message.type === 'WALLET_UNLOCKED') {
-          // Forward unlock event to page
+          // Forward unlock event to page, including network/chainId data
           window.postMessage({
             type: 'BITSHARES_WALLET_EVENT',
-            event: 'unlocked'
+            event: 'unlocked',
+            data: message.data
+          }, window.location.origin);
+        } else if (message.type === 'NETWORK_CHANGED') {
+          // Forward network change event to page
+          window.postMessage({
+            type: 'BITSHARES_WALLET_EVENT',
+            event: 'networkChanged',
+            data: message.data
           }, window.location.origin);
         } else {
           // Forward other responses to page
@@ -193,12 +201,19 @@
     } else if (message.type === 'WALLET_UNLOCKED') {
       window.postMessage({
         type: 'BITSHARES_WALLET_EVENT',
-        event: 'unlocked'
+        event: 'unlocked',
+        data: message.data
       }, window.location.origin);
     } else if (message.type === 'ACCOUNT_CHANGED') {
       window.postMessage({
         type: 'BITSHARES_WALLET_EVENT',
         event: 'accountChanged',
+        data: message.data
+      }, window.location.origin);
+    } else if (message.type === 'NETWORK_CHANGED') {
+      window.postMessage({
+        type: 'BITSHARES_WALLET_EVENT',
+        event: 'networkChanged',
         data: message.data
       }, window.location.origin);
     }

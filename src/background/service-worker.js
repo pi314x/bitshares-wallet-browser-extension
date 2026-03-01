@@ -170,6 +170,15 @@ class BackgroundService {
         const unlocked = await this.walletManager.unlock(data.password);
         if (unlocked) {
           this.resetAutoLock();
+          // Notify connected dApps that the wallet is unlocked, along with
+          // the currently active network and chain ID so they can reconnect
+          // without asking the user to switch networks or refresh the page.
+          const unlockChainId = await this.api.getChainId().catch(() => null);
+          const unlockNetResult = await chrome.storage.local.get(['selectedNetwork']);
+          this.broadcastToConnectedSites({
+            type: 'WALLET_UNLOCKED',
+            data: { network: unlockNetResult.selectedNetwork || 'mainnet', chainId: unlockChainId }
+          });
         }
         return { success: unlocked };
 
@@ -251,6 +260,13 @@ class BackgroundService {
         // race where chrome.storage.local.get could still return the old value
         // if the popup's set() hasn't flushed yet.
         await this.connectToBlockchain(data.network);
+        // Notify all open dApp tabs so they can react (e.g. re-connect with
+        // the correct chain_id) without requiring a page refresh.
+        const newChainId = await this.api.getChainId().catch(() => null);
+        this.broadcastToConnectedSites({
+          type: 'NETWORK_CHANGED',
+          data: { network: data.network, chainId: newChainId }
+        });
         return { success: true };
 
       // Settings
