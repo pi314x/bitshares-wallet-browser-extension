@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "BitShares Wallet",
-  "version": "0.3.4",
+  "version": "0.6.1",
   "description": "A secure BitShares blockchain wallet extension - Sign transactions, manage keys, and interact with dApps",
   "author": "BitShares Community",
   "homepage_url": "https://bitshares.org",
