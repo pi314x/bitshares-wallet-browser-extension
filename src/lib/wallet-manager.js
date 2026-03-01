@@ -423,7 +423,8 @@ export class WalletManager {
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: brainkey,
         bitsharesAccountName: bitsharesAccountName,
-        bitsharesPassword: importData.type === 'account' ? importData.password : null,
+        // bitsharesPassword intentionally NOT stored — only derived keys are kept.
+        // Storing the source password would expose it if the wallet password is compromised.
         keys: keys,
         accounts: []
       }, encryptionKey);
@@ -755,7 +756,20 @@ export class WalletManager {
    * Unlock the wallet with password
    */
   async unlock(password) {
-    // Rate-limit failed attempts: exponential backoff (1s, 2s, 4s, 8s, 16s)
+    // Rate-limit failed attempts: exponential backoff (1s, 2s, 4s, 8s, 16s, …, 60s).
+    // Lockout state is read from storage so MV3 service-worker restarts cannot reset it.
+    const storedLockout = await new Promise(r =>
+      chrome.storage.local.get(['unlockLockoutUntil', 'failedUnlockAttempts'], r)
+    );
+    const storedLockoutUntil = storedLockout.unlockLockoutUntil || 0;
+    const storedAttempts     = storedLockout.failedUnlockAttempts || 0;
+
+    // Prefer persisted values (survive service-worker restarts) over stale in-memory ones
+    if (storedLockoutUntil > this._unlockLockoutUntil) {
+      this._unlockLockoutUntil  = storedLockoutUntil;
+      this._failedUnlockAttempts = storedAttempts;
+    }
+
     const now = Date.now();
     if (now < this._unlockLockoutUntil) {
       const waitSec = Math.ceil((this._unlockLockoutUntil - now) / 1000);
@@ -803,12 +817,18 @@ export class WalletManager {
 
       if (success) {
         this._failedUnlockAttempts = 0;
-        this._unlockLockoutUntil = 0;
+        this._unlockLockoutUntil  = 0;
+        chrome.storage.local.remove(['unlockLockoutUntil', 'failedUnlockAttempts']);
       } else {
         this._failedUnlockAttempts++;
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, capped at 60s
         const delaySec = Math.min(60, Math.pow(2, this._failedUnlockAttempts - 1));
         this._unlockLockoutUntil = Date.now() + delaySec * 1000;
+        // Persist so a service-worker restart cannot reset the counter
+        chrome.storage.local.set({
+          unlockLockoutUntil:    this._unlockLockoutUntil,
+          failedUnlockAttempts:  this._failedUnlockAttempts,
+        });
       }
       return success;
     } finally {

@@ -149,7 +149,7 @@ class BackgroundService {
     });
   }
 
-  async handleMessage(message, sender) {
+  async handleMessage(message, _sender) {
     const { type, data } = message;
 
     switch (type) {
@@ -330,7 +330,6 @@ class BackgroundService {
 
   handleContentScriptConnection(port) {
     const tabId = port.sender?.tab?.id;
-    const origin = port.sender?.origin;
 
 
     // Store port for later responses (after popup approval)
@@ -418,7 +417,7 @@ class BackgroundService {
     }
   }
 
-  async handleConnectionRequest(origin, params, messageId, tabId, port) {
+  async handleConnectionRequest(origin, params, messageId, tabId, _port) {
     // Reconnect to the correct network if needed (handles missed NETWORK_SWITCH
     // messages and service-worker restarts that completed before connecting).
     await this.ensureConnected();
@@ -479,7 +478,7 @@ class BackgroundService {
       request.resolve = resolve;
       request.reject = reject;
 
-      // Timeout after 90 seconds
+      // Timeout after 60 seconds (matches the dismiss-bar countdown in the approval popup)
       request.timeout = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
@@ -487,7 +486,7 @@ class BackgroundService {
           chrome.action.setBadgeText({ text: '' });
           reject(new Error('Connection request timed out. Please click the BitShares extension icon to approve.'));
         }
-      }, 90000);
+      }, 60000);
     });
   }
 
@@ -556,7 +555,7 @@ class BackgroundService {
       request.resolve = resolve;
       request.reject = reject;
 
-      // Timeout after 90 seconds
+      // Timeout after 60 seconds (matches the dismiss-bar countdown in the approval popup)
       request.timeout = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
@@ -564,7 +563,7 @@ class BackgroundService {
           chrome.action.setBadgeText({ text: '' });
           reject(new Error('Transaction signing request timed out. Please click the BitShares extension icon to approve.'));
         }
-      }, 90000);
+      }, 60000);
     });
   }
 
@@ -605,6 +604,9 @@ class BackgroundService {
     if (memo !== undefined && memo !== null && typeof memo !== 'string') {
       throw new Error('Memo must be a string');
     }
+    if (memo && memo.length > 2048) {
+      throw new Error('Memo too long (max 2048 characters)');
+    }
 
     // Create pending request for user approval
     // Note: Don't check if unlocked here - popup will handle unlock if needed
@@ -628,7 +630,7 @@ class BackgroundService {
       request.resolve = resolve;
       request.reject = reject;
 
-      // Timeout after 90 seconds
+      // Timeout after 60 seconds (matches the dismiss-bar countdown in the approval popup)
       request.timeout = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
@@ -636,7 +638,7 @@ class BackgroundService {
           chrome.action.setBadgeText({ text: '' });
           reject(new Error('Transfer request timed out. Please click the BitShares extension icon to approve.'));
         }
-      }, 90000);
+      }, 60000);
     });
   }
 
@@ -711,6 +713,12 @@ class BackgroundService {
     if (!message) {
       throw new Error('Missing required parameter: message');
     }
+    if (typeof message !== 'string') {
+      throw new Error('Message must be a string');
+    }
+    if (message.length > 4096) {
+      throw new Error('Message too long (max 4096 characters)');
+    }
 
     // Create pending request for user approval
     const requestId = crypto.randomUUID();
@@ -740,7 +748,7 @@ class BackgroundService {
           chrome.action.setBadgeText({ text: '' });
           reject(new Error('Sign message request timed out'));
         }
-      }, 90000);
+      }, 60000);
     });
   }
 
@@ -785,7 +793,7 @@ class BackgroundService {
           chrome.action.setBadgeText({ text: '' });
           reject(new Error('Swap request timed out'));
         }
-      }, 90000);
+      }, 60000);
     });
   }
 
@@ -836,7 +844,7 @@ class BackgroundService {
           chrome.action.setBadgeText({ text: '' });
           reject(new Error('Limit order request timed out'));
         }
-      }, 90000);
+      }, 60000);
     });
   }
 

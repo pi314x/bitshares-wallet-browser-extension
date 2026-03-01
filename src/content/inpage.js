@@ -348,7 +348,8 @@
   
   // BeetEOS compatibility
   window.beet = beetCompat;
-  window.scatter = beetCompat; // Some dApps use scatter interface
+  // window.scatter intentionally NOT set: Scatter is an EOS wallet with different
+  // signing semantics. Aliasing it would cause confused-deputy calls from EOS dApps.
 
   // Announce availability
   window.dispatchEvent(new CustomEvent('bitsharesWalletReady', {
