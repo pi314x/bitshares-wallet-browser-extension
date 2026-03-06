@@ -683,7 +683,7 @@
 
     .coffee-status {
       font-size: 14px;
-      margin-top: 8px;
+      margin-top: 32px;
       padding: 8px 16px;
       border-radius: 8px;
     }
@@ -1974,8 +1974,6 @@
 
         <!-- Wallet detected: payment form -->
         <div id="coffee-wallet-form" style="display:none">
-          <p class="coffee-account-hint">Sending to BitShares account <strong id="copy-donation-name" title="Click to copy" style="cursor:pointer">buy-me-a-coffee</strong></p>
-
           <!-- Step 1: connect / approve -->
           <div id="coffee-connect-step">
             <button id="coffee-connect-btn" class="btn-coffee">
@@ -2408,7 +2406,7 @@
             try {
               const preChainId = await wallet.getChainId();
               if (preChainId !== MAINNET_CHAIN_ID) {
-                showErr('🌐 Wrong network: your wallet is connected to ' + networkName(preChainId) + '. Please switch to BitShares Mainnet in the extension and try again.');
+                showErr('🌐 Wrong network: Your wallet is connected to ' + networkName(preChainId) + '. Please switch to BitShares Mainnet in the extension and try again.');
                 return;
               }
             } catch (_) { /* chain ID not available yet — will verify after connect */ }
@@ -2419,7 +2417,7 @@
             // 4. Re-verify chain ID after connect (user could have switched mid-flow)
             const chainId = await wallet.getChainId();
             if (chainId !== MAINNET_CHAIN_ID) {
-              showErr('🌐 Wrong network: your wallet is connected to ' + networkName(chainId) + '. Please switch to BitShares Mainnet in the extension and try again.');
+              showErr('🌐 Wrong network: Your wallet is connected to ' + networkName(chainId) + '. Please switch to BitShares Mainnet in the extension and try again.');
               return;
             }
 
