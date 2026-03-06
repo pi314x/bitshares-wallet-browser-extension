@@ -2374,8 +2374,22 @@
           const status = document.getElementById('coffee-status');
           btn.disabled = true;
           btn.textContent = 'Connecting…';
+          status.style.display = 'none';
 
           try {
+            // Check lock state before connecting so we can give a targeted message
+            try {
+              const lockState = await wallet.request('isLocked', {});
+              if (lockState && lockState.locked) {
+                btn.disabled = false;
+                btn.textContent = 'Connect Wallet';
+                status.textContent = '🔒 Your wallet is locked. Please open the BitShares extension and unlock it first.';
+                status.className = 'coffee-status coffee-status--err';
+                status.style.display = 'block';
+                return;
+              }
+            } catch (_) { /* extension may not support isLocked — continue */ }
+
             await wallet.connect({ app: 'BitShares Wallet – Support' });
 
             // Mainnet-only check
@@ -2398,6 +2412,20 @@
           } catch (err) {
             btn.disabled = false;
             btn.textContent = 'Connect Wallet';
+            const msg = err.message || '';
+            if (msg.toLowerCase().includes('locked')) {
+              status.textContent = '🔒 Your wallet is locked. Please open the BitShares extension and unlock it first.';
+            } else if (msg.toLowerCase().includes('rejected') || msg.toLowerCase().includes('denied')) {
+              status.textContent = '✗ Connection rejected. Please try again and click Approve in the wallet popup.';
+            } else if (msg.toLowerCase().includes('timed out')) {
+              status.textContent = '⏱ No response from wallet. Make sure it\'s unlocked and click the extension icon to approve.';
+            } else if (msg) {
+              status.textContent = '✗ ' + msg;
+            } else {
+              status.textContent = '✗ Could not connect. Make sure your wallet is installed and unlocked.';
+            }
+            status.className = 'coffee-status coffee-status--err';
+            status.style.display = 'block';
           }
         });
 
