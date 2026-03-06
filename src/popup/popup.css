@@ -1920,6 +1920,10 @@ body {
   font-family: var(--font-mono);
 }
 
+.settings-copy {
+  cursor: pointer;
+}
+
 .settings-item select {
   background: transparent;
   border: none;
@@ -2297,6 +2301,15 @@ body {
   opacity: 1;
 }
 
+.node-btn.pin {
+  opacity: 0.25;
+}
+
+.node-btn.pin.pinned {
+  opacity: 1;
+  color: var(--accent);
+}
+
 .node-btn.connect {
   color: var(--primary);
 }
@@ -2315,7 +2328,8 @@ body {
   gap: var(--spacing-sm);
 }
 
-.node-actions .btn {
+.node-actions .btn,
+.add-node-section .btn {
   flex: 1;
   font-size: 12px;
   padding: var(--spacing-sm);
