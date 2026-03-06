@@ -858,8 +858,8 @@ export class WalletManager {
       release();
     }
 
-    // Notify background script
-    chrome.runtime.sendMessage({ type: 'WALLET_LOCKED' });
+    // Notify background script (fire-and-forget — popup may be closed)
+    chrome.runtime.sendMessage({ type: 'WALLET_LOCKED' }).catch(() => {});
   }
 
   /**
