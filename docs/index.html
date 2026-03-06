@@ -542,37 +542,143 @@
     }
 
     .coffee-input {
-      width: 90px;
-      padding: 10px 12px;
+      width: 130px;
+      padding: 10px 14px;
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.3);
-      background: rgba(255,255,255,0.12);
-      color: #fff;
+      border: 1px solid rgba(0,212,170,0.35);
+      background: rgba(0,212,170,0.08);
+      color: var(--text-primary);
       font-size: 16px;
       font-weight: 600;
+      font-family: inherit;
       text-align: center;
     }
 
     .coffee-input:focus {
       outline: none;
-      border-color: rgba(255,255,255,0.6);
+      border-color: rgba(0,212,170,0.7);
+      background: rgba(0,212,170,0.12);
     }
 
-    .coffee-asset-select {
-      padding: 10px 12px;
+    .coffee-input::placeholder {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* Custom asset picker */
+    .coffee-picker {
+      position: relative;
+    }
+
+    .coffee-picker-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 14px;
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.3);
-      background: rgba(255,255,255,0.12);
-      color: #fff;
+      border: 1px solid rgba(0,212,170,0.35);
+      background: rgba(0,212,170,0.08);
+      color: var(--text-primary);
       font-size: 14px;
       font-weight: 600;
+      font-family: inherit;
       cursor: pointer;
-      max-width: 160px;
+      transition: border-color 0.2s, background 0.2s;
+      white-space: nowrap;
     }
 
-    .coffee-asset-select option {
-      background: #1a1a2e;
+    .coffee-picker-btn:hover,
+    .coffee-picker-btn:focus {
+      outline: none;
+      border-color: rgba(0,212,170,0.7);
+      background: rgba(0,212,170,0.12);
+    }
+
+    .coffee-picker-logo-wrap {
+      display: flex;
+      align-items: center;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .coffee-picker-logo-wrap img {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .coffee-picker-letter {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--gradient-primary);
       color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .coffee-picker-arrow {
+      font-size: 11px;
+      opacity: 0.6;
+      margin-left: 2px;
+    }
+
+    .coffee-picker-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      min-width: 200px;
+      background: var(--bg-card);
+      border: 1px solid rgba(0,212,170,0.2);
+      border-radius: 12px;
+      overflow: hidden;
+      z-index: 100;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .coffee-picker-dropdown.open {
+      display: block;
+    }
+
+    .coffee-picker-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .coffee-picker-option:hover {
+      background: rgba(0,212,170,0.1);
+    }
+
+    .coffee-picker-option.selected {
+      background: rgba(0,212,170,0.15);
+    }
+
+    .coffee-picker-option-logo {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    .coffee-picker-option-balance {
+      margin-left: auto;
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-muted);
     }
 
     .coffee-status {
@@ -1880,7 +1986,16 @@
           <!-- Step 2: form (shown after approval) -->
           <div id="coffee-send-step" style="display:none">
             <div class="coffee-form-row">
-              <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset"></select>
+              <!-- Custom asset picker -->
+              <div class="coffee-picker" id="coffee-picker">
+                <button type="button" class="coffee-picker-btn" id="coffee-picker-btn" aria-haspopup="listbox">
+                  <span class="coffee-picker-logo-wrap" id="coffee-picker-logo-wrap"></span>
+                  <span id="coffee-picker-label">BTS</span>
+                  <span class="coffee-picker-arrow">▾</span>
+                </button>
+                <div class="coffee-picker-dropdown" id="coffee-picker-dropdown" role="listbox"></div>
+              </div>
+              <input type="hidden" id="coffee-asset" value="BTS">
               <input type="number" id="coffee-amount" placeholder="Amount" min="0.001" step="0.001"
                      class="coffee-input" aria-label="Amount">
               <button id="coffee-send-btn" class="btn-coffee btn-coffee--sm">Send ☕</button>
@@ -2138,19 +2253,115 @@
 
       const MAINNET_CHAIN_ID = '4018d7844c78f6a6c41c6a552b898022310fc5dec06da467ee7905a8dad512c8';
 
+      const LOGO_CDN = 'https://raw.githubusercontent.com/pi314x/bitshares-wallet-browser-extension/master/src/assets/logos';
+
+      function assetLogoEl(symbol, cls) {
+        const wrap = document.createElement('span');
+        wrap.className = cls || '';
+        const img = document.createElement('img');
+        img.src = LOGO_CDN + '/' + symbol + '.png';
+        img.alt = symbol;
+        img.className = 'coffee-picker-option-logo';
+        img.onerror = function () {
+          img.style.display = 'none';
+          const letter = document.createElement('span');
+          letter.className = 'coffee-picker-letter';
+          letter.textContent = symbol.charAt(0);
+          wrap.appendChild(letter);
+        };
+        wrap.appendChild(img);
+        return wrap;
+      }
+
+      function setPickerValue(symbol, balanceStr) {
+        document.getElementById('coffee-asset').value = symbol;
+        document.getElementById('coffee-picker-label').textContent = symbol;
+        const logoWrap = document.getElementById('coffee-picker-logo-wrap');
+        logoWrap.innerHTML = '';
+        logoWrap.appendChild(assetLogoEl(symbol, '').firstChild || document.createTextNode(''));
+        // rebuild logo wrap properly
+        const img = document.createElement('img');
+        img.src = LOGO_CDN + '/' + symbol + '.png';
+        img.alt = symbol;
+        img.style.cssText = 'width:22px;height:22px;border-radius:50%;object-fit:cover';
+        img.onerror = function () {
+          img.style.display = 'none';
+          const letter = document.createElement('span');
+          letter.className = 'coffee-picker-letter';
+          letter.textContent = symbol.charAt(0);
+          logoWrap.appendChild(letter);
+        };
+        logoWrap.innerHTML = '';
+        logoWrap.appendChild(img);
+        // update selected state in dropdown
+        document.querySelectorAll('.coffee-picker-option').forEach(function (el) {
+          el.classList.toggle('selected', el.dataset.symbol === symbol);
+        });
+      }
+
       function populateAssets(balances) {
-        const sel = document.getElementById('coffee-asset');
-        sel.innerHTML = '';
         // balances from getBalance: [{ asset: 'BTS', balance: '1.23' }, ...]
         const bts  = balances.filter(function (b) { return b.asset === 'BTS'; });
         const rest = balances.filter(function (b) { return b.asset !== 'BTS'; });
         const sorted = bts.concat(rest);
         if (sorted.length === 0) sorted.push({ asset: 'BTS', balance: '0' });
-        sorted.forEach(function (b) {
-          const opt = document.createElement('option');
-          opt.value = b.asset;
-          opt.textContent = b.asset + ' (' + parseFloat(b.balance || 0).toFixed(2) + ')';
-          sel.appendChild(opt);
+
+        const dropdown = document.getElementById('coffee-picker-dropdown');
+        dropdown.innerHTML = '';
+
+        sorted.forEach(function (b, i) {
+          const sym = b.asset;
+          const bal = parseFloat(b.balance || 0).toFixed(2);
+
+          const opt = document.createElement('div');
+          opt.className = 'coffee-picker-option' + (i === 0 ? ' selected' : '');
+          opt.dataset.symbol = sym;
+          opt.setAttribute('role', 'option');
+
+          // Logo
+          const img = document.createElement('img');
+          img.src = LOGO_CDN + '/' + sym + '.png';
+          img.alt = sym;
+          img.className = 'coffee-picker-option-logo';
+          img.onerror = function () {
+            img.style.display = 'none';
+            const letter = document.createElement('span');
+            letter.className = 'coffee-picker-letter';
+            letter.textContent = sym.charAt(0);
+            opt.insertBefore(letter, opt.children[1]);
+          };
+          opt.appendChild(img);
+
+          const label = document.createElement('span');
+          label.textContent = sym;
+          opt.appendChild(label);
+
+          const balEl = document.createElement('span');
+          balEl.className = 'coffee-picker-option-balance';
+          balEl.textContent = bal;
+          opt.appendChild(balEl);
+
+          opt.addEventListener('click', function () {
+            setPickerValue(sym, bal);
+            dropdown.classList.remove('open');
+          });
+
+          dropdown.appendChild(opt);
+        });
+
+        // Set initial value to first item
+        setPickerValue(sorted[0].asset, parseFloat(sorted[0].balance || 0).toFixed(2));
+
+        // Toggle dropdown
+        const pickerBtn = document.getElementById('coffee-picker-btn');
+        pickerBtn.onclick = function (e) {
+          e.stopPropagation();
+          dropdown.classList.toggle('open');
+        };
+
+        // Close on outside click
+        document.addEventListener('click', function () {
+          dropdown.classList.remove('open');
         });
       }
 
