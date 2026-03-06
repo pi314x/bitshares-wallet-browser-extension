@@ -1863,18 +1863,6 @@ body {
   opacity: 0.7;
 }
 
-.history-txid--link {
-  display: inline-block;
-  text-decoration: none;
-  color: var(--text-muted);
-  transition: color var(--transition-fast);
-}
-
-.history-txid--link:hover {
-  color: var(--primary);
-  opacity: 1;
-}
-
 .history-amount {
   text-align: right;
 }

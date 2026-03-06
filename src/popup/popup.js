@@ -2418,16 +2418,14 @@ async function createHistoryItem(operation) {
     }
   }
 
-  // Add click handler to entire item to copy txId to clipboard
+  // Click the entire row to open in block explorer
   if (txId) {
     item.style.cursor = 'pointer';
-    item.title = 'Click to copy transaction ID';
-    item.addEventListener('click', () => {
-      navigator.clipboard.writeText(txId).then(() => {
-        showToast('Transaction ID copied!', 'success');
-      }).catch(() => {
-        showToast('Failed to copy', 'error');
-      });
+    item.title = 'Open in block explorer';
+    item.addEventListener('click', (e) => {
+      // Don't double-fire if the user somehow clicks a nested link
+      if (e.target.closest('a')) return;
+      chrome.tabs.create({ url: `${_explorerUrl}/${txId}` });
     });
   }
 
@@ -3359,14 +3357,7 @@ async function handleResetExplorerUrl() {
  */
 function explorerLink(txId) {
   if (!txId) return '';
-  const safeId  = escapeHtml(txId);
-  const safeUrl = escapeHtml(`${_explorerUrl}/${txId}`);
-  return `<a class="history-txid history-txid--link"
-             href="${safeUrl}"
-             target="_blank"
-             rel="noopener noreferrer"
-             title="View in explorer"
-             onclick="event.stopPropagation()">${safeId} ↗</a>`;
+  return `<span class="history-txid">${escapeHtml(txId)}</span>`;
 }
 
 // === Node Management ===
