@@ -8,6 +8,7 @@ import { WalletManager } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 import { CryptoUtils } from '../lib/crypto-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
+import { getAssetLogo } from '../assets/asset-logos.js';
 import { renderIdenticonToCanvas } from '../lib/identicon.js';
 
 // Global state
@@ -1106,22 +1107,55 @@ async function loadBalances(accountId) {
   }
 }
 
+async function getFavouriteAssets() {
+  const result = await chrome.storage.local.get(['favouriteAssets']);
+  return new Set(result.favouriteAssets || []);
+}
+
+async function toggleFavouriteAsset(symbol) {
+  const favs = await getFavouriteAssets();
+  if (favs.has(symbol)) {
+    favs.delete(symbol);
+  } else {
+    favs.add(symbol);
+  }
+  await chrome.storage.local.set({ favouriteAssets: [...favs] });
+  return favs;
+}
+
 async function updateAssetsList(balances) {
   const assetsList = document.getElementById('assets-list');
   assetsList.innerHTML = '';
 
+  const favs = await getFavouriteAssets();
+
+  // Resolve all assets and filter zero balances
+  const items = [];
   for (const balance of balances) {
     if (parseInt(balance.amount) === 0) continue;
-
     const asset = await btsAPI.getAsset(balance.asset_id);
     const precision = Math.pow(10, asset.precision);
     const amount = (parseInt(balance.amount) / precision).toFixed(asset.precision);
+    items.push({ asset, amount, isFav: favs.has(asset.symbol) });
+  }
+
+  // Favourites first, then alphabetical within each group
+  items.sort((a, b) => {
+    if (a.isFav !== b.isFav) return a.isFav ? -1 : 1;
+    return a.asset.symbol.localeCompare(b.asset.symbol);
+  });
+
+  for (const { asset, amount, isFav } of items) {
+    const logoUrl = getAssetLogo(asset.symbol);
+    const iconHtml = logoUrl
+      ? `<img class="asset-icon asset-icon--logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(asset.symbol)}"
+            onerror="this.outerHTML='<div class=\\'asset-icon\\'>${escapeHtml(asset.symbol.substring(0, 3))}</div>'">`
+      : `<div class="asset-icon">${escapeHtml(asset.symbol.substring(0, 3))}</div>`;
 
     const assetItem = document.createElement('div');
     assetItem.className = 'asset-item';
-    assetItem.style.cursor = 'pointer';
     assetItem.innerHTML = `
-      <div class="asset-icon">${escapeHtml(asset.symbol.substring(0, 3))}</div>
+      ${iconHtml}
       <div class="asset-info">
         <div class="asset-name">${escapeHtml(asset.symbol)}</div>
         <div class="asset-symbol">${escapeHtml(asset.id)}</div>
@@ -1129,16 +1163,31 @@ async function updateAssetsList(balances) {
       <div class="asset-balance">
         <div class="asset-amount">${escapeHtml(amount)}</div>
       </div>
+      <button class="asset-fav-btn${isFav ? ' asset-fav-btn--active' : ''}"
+              title="${isFav ? 'Remove from favourites' : 'Add to favourites'}"
+              aria-label="${isFav ? 'Remove from favourites' : 'Add to favourites'}">★</button>
     `;
 
-    // Click to open send with this asset pre-selected
+    // Star button toggles favourite — does not navigate
+    assetItem.querySelector('.asset-fav-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const newFavs = await toggleFavouriteAsset(asset.symbol);
+      const btn = e.currentTarget;
+      const nowFav = newFavs.has(asset.symbol);
+      btn.classList.toggle('asset-fav-btn--active', nowFav);
+      btn.title = nowFav ? 'Remove from favourites' : 'Add to favourites';
+      // Re-sort: re-render the whole list to move the item
+      await updateAssetsList(balances);
+    });
+
+    // Click the row (not the star) to open send
     assetItem.addEventListener('click', () => {
       handleShowSend(asset.id);
     });
 
     assetsList.appendChild(assetItem);
   }
-  
+
   if (assetsList.children.length === 0) {
     assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💰</div><p>No assets yet</p></div>';
   }
