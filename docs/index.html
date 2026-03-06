@@ -442,6 +442,71 @@
       margin-bottom: 32px;
     }
 
+    /* Support section */
+    .support {
+      background: linear-gradient(135deg, rgba(245,166,35,0.06) 0%, rgba(0,212,170,0.04) 100%);
+      border-top: 1px solid rgba(245,166,35,0.15);
+      border-bottom: 1px solid rgba(245,166,35,0.15);
+      padding: 72px 0;
+      text-align: center;
+    }
+
+    .support-inner {
+      max-width: 560px;
+      margin: 0 auto;
+    }
+
+    .support-icon {
+      font-size: 48px;
+      line-height: 1;
+      margin-bottom: 20px;
+    }
+
+    .support h2 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .support p {
+      color: var(--text-secondary);
+      font-size: 16px;
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+
+    .btn-coffee {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #f5a623, #f7c355);
+      color: #1a1000;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 14px 32px;
+      border-radius: 50px;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 24px rgba(245,166,35,0.35);
+    }
+
+    .btn-coffee:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(245,166,35,0.5);
+    }
+
+    .btn-coffee--sm {
+      font-size: 14px;
+      padding: 10px 22px;
+      box-shadow: 0 2px 12px rgba(245,166,35,0.25);
+    }
+
+    .btn-coffee svg {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid rgba(0, 212, 170, 0.08);
@@ -1035,6 +1100,9 @@
         <a href="https://github.com/pi314x/bitshares-wallet-browser-extension" class="btn btn-secondary" target="_blank">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
           View Source
+        </a>
+        <a href="https://buymeacoffee.com/bitshares-wallet-browser-extension" target="_blank" class="btn-coffee btn-coffee--sm">
+          ☕ Buy me a coffee
         </a>
       </div>
     </div>
@@ -1655,6 +1723,25 @@
         <a href="https://github.com/pi314x/bitshares-wallet-browser-extension" class="btn btn-secondary" target="_blank">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
           View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Support the Developer -->
+  <section class="support">
+    <div class="container">
+      <div class="support-inner">
+        <div class="support-icon">☕</div>
+        <h2>Support the Developer</h2>
+        <p>This wallet is free, open-source, and built by one developer in their spare time.<br>
+           If it saves you time or helps you trade on BitShares, a coffee goes a long way.</p>
+        <a href="https://buymeacoffee.com/bitshares-wallet-browser-extension" target="_blank" class="btn-coffee">
+          <!-- Buy Me a Coffee cup icon -->
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/>
+          </svg>
+          Buy me a coffee
         </a>
       </div>
     </div>
