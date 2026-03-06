@@ -14,6 +14,9 @@ import { renderIdenticonToCanvas } from '../lib/identicon.js';
 // Global state
 let walletManager = null;
 let btsAPI = null;
+
+const DEFAULT_EXPLORER = 'https://btslens.pages.dev';
+let _explorerUrl = DEFAULT_EXPLORER; // cached after first load
 let currentScreen = 'loading-screen';
 let isLocked = true;
 
@@ -128,6 +131,7 @@ function setupEventListeners() {
   document.getElementById('setting-backup')?.addEventListener('click', handleShowBackup);
   document.getElementById('btn-reset-wallet')?.addEventListener('click', handleResetWallet);
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
+  document.getElementById('explorer-url-save')?.addEventListener('click', handleSaveExplorerUrl);
   document.getElementById('setting-nodes')?.addEventListener('click', handleShowNodes);
   document.getElementById('setting-connections')?.addEventListener('click', handleShowConnections);
   document.getElementById('setting-accounts')?.addEventListener('click', handleShowAccounts);
@@ -208,6 +212,10 @@ async function initializeApp() {
   try {
     // Initialize wallet manager
     walletManager = new WalletManager();
+
+    // Load explorer URL early so history items are linked on first render
+    const explorerResult = await chrome.storage.local.get(['explorerUrl']);
+    _explorerUrl = (explorerResult.explorerUrl || DEFAULT_EXPLORER).replace(/\/+$/, '');
 
     // Restore saved network selection before any API calls
     const savedNetworkResult = await chrome.storage.local.get(['selectedNetwork']);
@@ -1356,7 +1364,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">${isSend ? 'Sent' : 'Received'}</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount ${isSend ? 'negative' : 'positive'}">
           ${isSend ? '-' : '+'}${transferAmount}
@@ -1375,7 +1383,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Order Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">
           ${orderDisplay}
@@ -1389,7 +1397,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Order Cancelled</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1406,7 +1414,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Trade Filled</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">
           ${fillDisplay}
@@ -1435,7 +1443,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">${issueType}</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">
           +${issueAmount}
@@ -1459,7 +1467,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Swap</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">
           ${swapDisplay}
@@ -1474,7 +1482,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Call Order Update</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${collateralAmount}</div>
       `;
@@ -1487,7 +1495,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Account Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.name || '-')}</div>
       `;
@@ -1500,7 +1508,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Account Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1513,7 +1521,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Account Whitelist</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1526,7 +1534,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Account Upgrade</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1539,7 +1547,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Account Transfer</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1552,7 +1560,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Asset Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.symbol || '-')}</div>
       `;
@@ -1565,7 +1573,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Asset Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
       `;
@@ -1578,7 +1586,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">BitAsset Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
       `;
@@ -1591,7 +1599,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Feed Producers Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
       `;
@@ -1605,7 +1613,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Asset Reserved</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount negative">-${reserveAmount}</div>
       `;
@@ -1618,7 +1626,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Fund Fee Pool</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_id || '-')}</div>
       `;
@@ -1632,7 +1640,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Asset Settle</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${settleAmount}</div>
       `;
@@ -1645,7 +1653,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Global Settle</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_settle || '-')}</div>
       `;
@@ -1658,7 +1666,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Publish Feed</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_id || '-')}</div>
       `;
@@ -1671,7 +1679,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Witness Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1684,7 +1692,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Witness Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1697,7 +1705,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Proposal Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1710,7 +1718,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Proposal Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.proposal || '-')}</div>
       `;
@@ -1723,7 +1731,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Proposal Deleted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.proposal || '-')}</div>
       `;
@@ -1737,7 +1745,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Withdraw Permission Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${withdrawLimitAmount}</div>
       `;
@@ -1750,7 +1758,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Withdraw Permission Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1764,7 +1772,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Withdraw Permission Claim</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${withdrawClaimAmount}</div>
       `;
@@ -1777,7 +1785,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Withdraw Permission Deleted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1790,7 +1798,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Committee Member Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1803,7 +1811,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Committee Member Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1816,7 +1824,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Global Params Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1830,7 +1838,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Vesting Balance Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${vestingCreateAmount}</div>
       `;
@@ -1844,7 +1852,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Vesting Balance Withdraw</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${vestingWithdrawAmount}</div>
       `;
@@ -1857,7 +1865,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Worker Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.name || '-')}</div>
       `;
@@ -1870,7 +1878,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Custom Operation</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1883,7 +1891,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Assert</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1897,7 +1905,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Balance Claimed</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${balanceClaimAmount}</div>
       `;
@@ -1911,7 +1919,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Override Transfer</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount negative">-${overrideTransferAmount}</div>
       `;
@@ -1925,7 +1933,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Transfer to Blind</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount negative">-${toBlindAmount}</div>
       `;
@@ -1938,7 +1946,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Blind Transfer</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -1952,7 +1960,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Transfer from Blind</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${fromBlindAmount}</div>
       `;
@@ -1966,7 +1974,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Settle Cancelled</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${settleCancelAmount}</div>
       `;
@@ -1980,7 +1988,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Fees Claimed</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${claimFeesAmount}</div>
       `;
@@ -1993,7 +2001,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">FBA Distribute</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2007,7 +2015,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Bid Collateral</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${bidCollateralAmount}</div>
       `;
@@ -2021,7 +2029,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Execute Bid</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${executeBidAmount}</div>
       `;
@@ -2035,7 +2043,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Claim Pool</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${claimPoolAmount}</div>
       `;
@@ -2048,7 +2056,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Asset Issuer Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
       `;
@@ -2062,7 +2070,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">HTLC Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount negative">-${htlcCreateAmount}</div>
       `;
@@ -2075,7 +2083,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">HTLC Redeemed</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2089,7 +2097,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">HTLC Redeemed (Virtual)</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${htlcRedeemedAmount}</div>
       `;
@@ -2102,7 +2110,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">HTLC Extended</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2115,7 +2123,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">HTLC Refunded</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2128,7 +2136,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Custom Authority Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2141,7 +2149,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Custom Authority Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2154,7 +2162,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Custom Authority Deleted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2168,7 +2176,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Ticket Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${ticketCreateAmount}</div>
       `;
@@ -2181,7 +2189,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Ticket Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.ticket || '-')}</div>
       `;
@@ -2194,7 +2202,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Pool Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2207,7 +2215,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Pool Deleted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.pool || '-')}</div>
       `;
@@ -2225,7 +2233,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Pool Deposit</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${poolDepositDisplay}</div>
       `;
@@ -2239,7 +2247,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Pool Withdraw</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${poolWithdrawAmount}</div>
       `;
@@ -2252,7 +2260,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">SameT Fund Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2265,7 +2273,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">SameT Fund Deleted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.fund_id || '-')}</div>
       `;
@@ -2278,7 +2286,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">SameT Fund Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.fund_id || '-')}</div>
       `;
@@ -2292,7 +2300,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">SameT Fund Borrow</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${sametBorrowAmount}</div>
       `;
@@ -2306,7 +2314,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">SameT Fund Repay</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount negative">-${sametRepayAmount}</div>
       `;
@@ -2319,7 +2327,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Credit Offer Created</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2332,7 +2340,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Credit Offer Deleted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.offer_id || '-')}</div>
       `;
@@ -2345,7 +2353,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Credit Offer Updated</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">${escapeHtml(opData.offer_to_update || opData.offer_id || '-')}</div>
       `;
@@ -2359,7 +2367,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Credit Offer Accepted</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount positive">+${creditAcceptAmount}</div>
       `;
@@ -2373,7 +2381,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Credit Deal Repay</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount negative">-${creditRepayAmount}</div>
       `;
@@ -2386,7 +2394,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">Credit Deal Expired</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -2400,7 +2408,7 @@ async function createHistoryItem(operation) {
         <div class="history-info">
           <div class="history-type">${escapeHtml(opLabel)}</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
-          <div class="history-txid">${escapeHtml(txId)}</div>
+          ${explorerLink(txId)}
         </div>
         <div class="history-amount">-</div>
       `;
@@ -3284,6 +3292,7 @@ async function handleResetWallet() {
 async function handleShowSettings() {
   showScreen('settings-screen');
   await loadAutolockSetting();
+  await loadExplorerUrl();
 }
 
 async function loadAutolockSetting() {
@@ -3305,6 +3314,45 @@ async function handleAutolockChange(e) {
   } else {
     showToast(`Auto-lock set to ${minutes} minutes`, 'info');
   }
+}
+
+// === Explorer URL ===
+
+async function loadExplorerUrl() {
+  const result = await chrome.storage.local.get(['explorerUrl']);
+  _explorerUrl = result.explorerUrl || DEFAULT_EXPLORER;
+  const input = document.getElementById('explorer-url');
+  if (input) input.value = _explorerUrl;
+}
+
+async function handleSaveExplorerUrl() {
+  const input = document.getElementById('explorer-url');
+  let url = (input?.value || '').trim();
+  if (!url) url = DEFAULT_EXPLORER;
+  // Strip trailing slash for consistent concatenation
+  url = url.replace(/\/+$/, '');
+  await chrome.storage.local.set({ explorerUrl: url });
+  _explorerUrl = url;
+  if (input) input.value = url;
+  showToast('Explorer URL saved', 'success');
+}
+
+/**
+ * Returns the HTML for the operation-ID row in a history item.
+ * If an explorer URL is configured the ID becomes a clickable link.
+ * Clicks are intercepted via event delegation so the row click
+ * (which opens the detail modal) is not triggered.
+ */
+function explorerLink(txId) {
+  if (!txId) return '';
+  const safeId  = escapeHtml(txId);
+  const safeUrl = escapeHtml(`${_explorerUrl}/${txId}`);
+  return `<a class="history-txid history-txid--link"
+             href="${safeUrl}"
+             target="_blank"
+             rel="noopener noreferrer"
+             title="View in explorer"
+             onclick="event.stopPropagation()">${safeId} ↗</a>`;
 }
 
 // === Node Management ===
