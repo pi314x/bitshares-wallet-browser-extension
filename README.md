@@ -461,6 +461,12 @@ npm run build:all
 
 On tag push (`git tag v1.0.0 && git push origin v1.0.0`), GitHub Actions automatically builds and creates a release with both browser zips attached.
 
+## Support the Project
+
+If this wallet saves you time or helps you trade on BitShares, consider buying me a coffee ☕
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/bitshares-wallet-browser-extension)
+
 ## Contributing
 
 1. Fork the repository
