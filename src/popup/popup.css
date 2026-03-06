@@ -3042,6 +3042,55 @@ body {
   background: rgba(239, 68, 68, 0.3);
 }
 
+/* Lockout countdown message on unlock screen */
+.lockout-msg {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Network badge on create/import wallet screens */
+.network-badge {
+  display: inline-block;
+  margin-bottom: var(--spacing-sm);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.network-badge.mainnet {
+  background: rgba(0, 212, 170, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(0, 212, 170, 0.4);
+}
+
+.network-badge.testnet {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+/* Nodes screen network label */
+.nodes-network-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--spacing-sm);
+  padding: 3px 8px;
+  background: rgba(0, 212, 170, 0.08);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
 /* Responsive Adjustments */
 @media (max-height: 600px) {
   .wallet-container {

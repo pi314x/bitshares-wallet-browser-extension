@@ -106,6 +106,7 @@ function setupEventListeners() {
     const networkSelect = document.getElementById('network-select');
     if (networkSelect) networkSelect.value = network;
     chrome.storage.local.set({ selectedNetwork: network });
+    updateNetworkBadges(network);
   });
   document.getElementById('account-selector')?.addEventListener('change', handleAccountChange);
   document.getElementById('btn-add-account-submit')?.addEventListener('click', handleAddAccount);
@@ -238,6 +239,7 @@ async function initializeApp() {
     if (networkSelect) networkSelect.value = savedNetwork;
     const welcomeNetworkSelect = document.getElementById('welcome-network-select');
     if (welcomeNetworkSelect) welcomeNetworkSelect.value = savedNetwork;
+    updateNetworkBadges(savedNetwork);
 
     // Check if wallet exists
     const hasWallet = await walletManager.hasWallet();
@@ -974,12 +976,48 @@ async function handleUnlock() {
     }
   } catch (error) {
     console.error('Unlock error:', error);
-    showToast('Failed to unlock wallet', 'error');
+    showToast(error.message || 'Failed to unlock wallet', 'error');
     // Re-enable on error
     if (passwordField) passwordField.disabled = false;
     if (unlockBtn) unlockBtn.disabled = false;
     if (eyeToggle) eyeToggle.disabled = false;
+    // Show lockout countdown if rate-limited
+    if (error.message && error.message.includes('Too many failed attempts')) {
+      startUnlockCountdown(passwordField, unlockBtn, eyeToggle);
+    }
   }
+}
+
+function startUnlockCountdown(passwordField, unlockBtn, eyeToggle) {
+  const msgEl = document.getElementById('unlock-lockout-msg');
+  if (!msgEl) return;
+
+  // Extract seconds from error message or check storage
+  chrome.storage.local.get(['unlockLockoutUntil'], (result) => {
+    const lockoutUntil = result.unlockLockoutUntil || 0;
+    if (lockoutUntil <= Date.now()) return;
+
+    // Disable inputs during lockout
+    if (passwordField) passwordField.disabled = true;
+    if (unlockBtn) unlockBtn.disabled = true;
+    if (eyeToggle) eyeToggle.disabled = true;
+    msgEl.style.display = 'block';
+
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        msgEl.style.display = 'none';
+        msgEl.textContent = '';
+        if (passwordField) passwordField.disabled = false;
+        if (unlockBtn) unlockBtn.disabled = false;
+        if (eyeToggle) eyeToggle.disabled = false;
+        passwordField?.focus();
+      } else {
+        msgEl.textContent = `Too many failed attempts. Try again in ${remaining}s.`;
+      }
+    }, 500);
+  });
 }
 
 async function handleLock() {
@@ -3286,12 +3324,24 @@ async function handleReceiveAccountChange() {
 
 // === Network ===
 
+function updateNetworkBadges(network) {
+  const label = network === 'testnet' ? 'Testnet' : 'Mainnet';
+  const ids = ['create-wallet-network-badge', 'import-wallet-network-badge'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.textContent = label;
+    el.className = `network-badge ${network}`;
+  }
+}
+
 async function handleNetworkChange(e) {
   const network = e.target.value;
 
   // Persist network selection (awaited so storage is committed before the
   // service worker reads it via NETWORK_SWITCH → connectToBlockchain).
   await new Promise(resolve => chrome.storage.local.set({ selectedNetwork: network }, resolve));
+  updateNetworkBadges(network);
 
   try {
     showToast(`Switching to ${network}...`, 'info');
