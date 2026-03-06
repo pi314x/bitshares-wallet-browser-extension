@@ -1155,6 +1155,8 @@ async function updateAssetsList(balances) {
 
     const assetItem = document.createElement('div');
     assetItem.className = 'asset-item';
+    assetItem.dataset.fav = isFav ? '1' : '0';
+    assetItem.dataset.assetIdNum = assetIdNum(asset.id);
     assetItem.innerHTML = `
       ${iconHtml}
       <div class="asset-info">
@@ -1169,16 +1171,54 @@ async function updateAssetsList(balances) {
               aria-label="${isFav ? 'Remove from favourites' : 'Add to favourites'}">★</button>
     `;
 
-    // Star button toggles favourite — does not navigate
+    // Star button — FLIP-animate items into their new sort order, no full re-render
     assetItem.querySelector('.asset-fav-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
-      const btn = e.currentTarget; // capture before first await — currentTarget is nullified post-dispatch
+      const btn = e.currentTarget; // capture before first await
+
+      // FLIP — First: snapshot Y position of every asset row
+      const list = document.getElementById('assets-list');
+      const rows = [...list.querySelectorAll('.asset-item')];
+      const firstY = new Map(rows.map(el => [el, el.getBoundingClientRect().top]));
+
       const newFavs = await toggleFavouriteAsset(asset.symbol);
       const nowFav = newFavs.has(asset.symbol);
+
+      // Update button + data attribute
       btn.classList.toggle('asset-fav-btn--active', nowFav);
       btn.title = nowFav ? 'Remove from favourites' : 'Add to favourites';
-      // Re-sort: re-render the whole list to move the item
-      await updateAssetsList(balances);
+      assetItem.dataset.fav = nowFav ? '1' : '0';
+
+      // Re-sort DOM children in-place (no innerHTML wipe)
+      [...list.querySelectorAll('.asset-item')]
+        .sort((a, b) => {
+          const fa = a.dataset.fav === '1', fb = b.dataset.fav === '1';
+          if (fa !== fb) return fa ? -1 : 1;
+          return parseInt(a.dataset.assetIdNum) - parseInt(b.dataset.assetIdNum);
+        })
+        .forEach(el => list.appendChild(el));
+
+      // FLIP — Invert: push each row back to where it was (instant, no transition)
+      rows.forEach(el => {
+        const dy = firstY.get(el) - el.getBoundingClientRect().top;
+        if (dy !== 0) {
+          el.style.transition = 'none';
+          el.style.transform = `translateY(${dy}px)`;
+        }
+      });
+
+      // FLIP — Play: animate to natural (dy=0) position
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        rows.forEach(el => {
+          if (el.style.transform) {
+            el.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+            el.style.transform = '';
+            el.addEventListener('transitionend', () => {
+              el.style.transition = '';
+            }, { once: true });
+          }
+        });
+      }));
     });
 
     // Click the row (not the star) to open send
