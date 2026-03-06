@@ -1139,10 +1139,11 @@ async function updateAssetsList(balances) {
     items.push({ asset, amount, isFav: favs.has(asset.symbol) });
   }
 
-  // Favourites first, then alphabetical within each group
+  // Favourites first, then by asset_id numeric index (e.g. 1.3.0 < 1.3.5)
+  const assetIdNum = id => parseInt(id.split('.')[2] ?? '0', 10);
   items.sort((a, b) => {
     if (a.isFav !== b.isFav) return a.isFav ? -1 : 1;
-    return a.asset.symbol.localeCompare(b.asset.symbol);
+    return assetIdNum(a.asset.id) - assetIdNum(b.asset.id);
   });
 
   for (const { asset, amount, isFav } of items) {
