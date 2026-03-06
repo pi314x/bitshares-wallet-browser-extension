@@ -1148,17 +1148,13 @@ async function updateAssetsList(balances) {
 
   for (const { asset, amount, isFav } of items) {
     const logoUrl = getAssetLogo(asset.symbol);
-    const iconHtml = logoUrl
-      ? `<img class="asset-icon asset-icon--logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(asset.symbol)}"
-            onerror="this.outerHTML='<div class=\\'asset-icon\\'>${escapeHtml(asset.symbol.substring(0, 3))}</div>'">`
-      : `<div class="asset-icon">${escapeHtml(asset.symbol.substring(0, 3))}</div>`;
+    const symbolText = asset.symbol.substring(0, 3);
 
     const assetItem = document.createElement('div');
     assetItem.className = 'asset-item';
     assetItem.dataset.fav = isFav ? '1' : '0';
     assetItem.dataset.assetIdNum = assetIdNum(asset.id);
     assetItem.innerHTML = `
-      ${iconHtml}
       <div class="asset-info">
         <div class="asset-name">${escapeHtml(asset.symbol)}</div>
         <div class="asset-symbol">${escapeHtml(asset.id)}</div>
@@ -1170,6 +1166,26 @@ async function updateAssetsList(balances) {
               title="${isFav ? 'Remove from favourites' : 'Add to favourites'}"
               aria-label="${isFav ? 'Remove from favourites' : 'Add to favourites'}">★</button>
     `;
+
+    // Build the icon element separately to avoid any inline event handlers
+    if (logoUrl) {
+      const img = document.createElement('img');
+      img.className = 'asset-icon asset-icon--logo';
+      img.src = logoUrl;
+      img.alt = asset.symbol;
+      img.addEventListener('error', () => {
+        const fallback = document.createElement('div');
+        fallback.className = 'asset-icon';
+        fallback.textContent = symbolText;
+        img.replaceWith(fallback);
+      }, { once: true });
+      assetItem.insertAdjacentElement('afterbegin', img);
+    } else {
+      const icon = document.createElement('div');
+      icon.className = 'asset-icon';
+      icon.textContent = symbolText;
+      assetItem.insertAdjacentElement('afterbegin', icon);
+    }
 
     // Star button — FLIP-animate items into their new sort order, no full re-render
     assetItem.querySelector('.asset-fav-btn').addEventListener('click', async (e) => {
@@ -4277,7 +4293,8 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
