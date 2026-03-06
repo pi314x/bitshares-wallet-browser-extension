@@ -584,6 +584,58 @@
     .coffee-status--ok  { background: rgba(0,212,120,0.2); color: #00d478; }
     .coffee-status--err { background: rgba(255,80,80,0.2);  color: #ff8080; }
 
+    .coffee-steps {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .coffee-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .coffee-step-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.6;
+    }
+
+    .coffee-thanks {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .coffee-thanks-icon {
+      font-size: 52px;
+      line-height: 1;
+      animation: coffeePop 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+
+    @keyframes coffeePop {
+      from { transform: scale(0.4); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    .coffee-thanks-msg {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 4px 0 0;
+    }
+
+    .coffee-thanks-sub {
+      font-size: 15px;
+      opacity: 0.75;
+      margin: 0;
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid rgba(0, 212, 170, 0.08);
@@ -1826,13 +1878,29 @@
 
           <!-- Step 2: form (shown after approval) -->
           <div id="coffee-send-step" style="display:none">
-            <div class="coffee-form-row">
-              <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset"></select>
-              <input type="number" id="coffee-amount" placeholder="Amount" min="0.001" step="0.001"
-                     class="coffee-input" aria-label="Amount">
+            <div class="coffee-steps">
+              <div class="coffee-step">
+                <label class="coffee-step-label">Choose currency</label>
+                <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset"></select>
+              </div>
+              <div class="coffee-step">
+                <label class="coffee-step-label">Enter amount</label>
+                <input type="number" id="coffee-amount" placeholder="0.00" min="0.001" step="0.001"
+                       class="coffee-input" aria-label="Amount">
+              </div>
               <button id="coffee-send-btn" class="btn-coffee btn-coffee--sm">Send ☕</button>
             </div>
             <p id="coffee-status" class="coffee-status" style="display:none"></p>
+          </div>
+
+          <!-- Step 3: thank you (shown after successful payment) -->
+          <div id="coffee-thanks-step" style="display:none">
+            <div class="coffee-thanks">
+              <div class="coffee-thanks-icon">☕</div>
+              <p class="coffee-thanks-msg" id="coffee-thanks-msg"></p>
+              <p class="coffee-thanks-sub">You're keeping the blockchain warm. Cheers! 🍻</p>
+              <button id="coffee-send-another" class="btn-coffee btn-coffee--sm" style="margin-top:16px">Send another ☕</button>
+            </div>
           </div>
         </div>
 
@@ -2128,18 +2196,25 @@
 
           try {
             await wallet.transfer({ to: DONATION_ACCOUNT, amount: amount, asset: asset, memo: 'Coffee ☕' });
-            status.textContent = '✓ Sent — thank you so much! ☕';
-            status.className   = 'coffee-status coffee-status--ok';
-            status.style.display = 'block';
-            btn.textContent = 'Send ☕';
+            document.getElementById('coffee-send-step').style.display = 'none';
+            document.getElementById('coffee-thanks-msg').textContent =
+              'Thanks a lot for the ' + amount + ' ' + asset + ' coffee!';
+            document.getElementById('coffee-thanks-step').style.display = 'block';
             document.getElementById('coffee-amount').value = '';
           } catch (err) {
             status.textContent = '✗ ' + (err.message || 'Transfer cancelled');
             status.className   = 'coffee-status coffee-status--err';
             status.style.display = 'block';
             btn.textContent = 'Send ☕';
+            btn.disabled = false;
           }
-          btn.disabled = false;
+        });
+
+        document.getElementById('coffee-send-another').addEventListener('click', function () {
+          document.getElementById('coffee-thanks-step').style.display = 'none';
+          document.getElementById('coffee-send-step').style.display = 'block';
+          document.getElementById('coffee-send-btn').disabled = false;
+          document.getElementById('coffee-send-btn').textContent = 'Send ☕';
         });
       }
 
