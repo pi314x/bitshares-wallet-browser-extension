@@ -1878,16 +1878,10 @@
 
           <!-- Step 2: form (shown after approval) -->
           <div id="coffee-send-step" style="display:none">
-            <div class="coffee-steps">
-              <div class="coffee-step">
-                <label class="coffee-step-label">Choose currency</label>
-                <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset"></select>
-              </div>
-              <div class="coffee-step">
-                <label class="coffee-step-label">Enter amount</label>
-                <input type="number" id="coffee-amount" placeholder="0.00" min="0.001" step="0.001"
-                       class="coffee-input" aria-label="Amount">
-              </div>
+            <div class="coffee-form-row">
+              <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset"></select>
+              <input type="number" id="coffee-amount" placeholder="Amount" min="0.001" step="0.001"
+                     class="coffee-input" aria-label="Amount">
               <button id="coffee-send-btn" class="btn-coffee btn-coffee--sm">Send ☕</button>
             </div>
             <p id="coffee-status" class="coffee-status" style="display:none"></p>
@@ -2141,18 +2135,20 @@
     (function () {
       const DONATION_ACCOUNT = 'buy-me-a-coffee';
 
+      const MAINNET_CHAIN_ID = '4018d7844c78f6a6c41c6a552b898022310fc5dec06da467ee7905a8dad512c8';
+
       function populateAssets(balances) {
         const sel = document.getElementById('coffee-asset');
         sel.innerHTML = '';
-        const bts = balances.find(function (b) { return (b.asset || b.symbol) === 'BTS'; });
-        const rest = balances.filter(function (b) { return (b.asset || b.symbol) !== 'BTS'; });
-        const sorted = bts ? [bts].concat(rest) : rest;
-        if (sorted.length === 0) sorted.push({ asset: 'BTS', balance: 0 });
+        // balances from getBalance: [{ asset: 'BTS', balance: '1.23' }, ...]
+        const bts  = balances.filter(function (b) { return b.asset === 'BTS'; });
+        const rest = balances.filter(function (b) { return b.asset !== 'BTS'; });
+        const sorted = bts.concat(rest);
+        if (sorted.length === 0) sorted.push({ asset: 'BTS', balance: '0' });
         sorted.forEach(function (b) {
-          const sym = b.asset || b.symbol || 'BTS';
           const opt = document.createElement('option');
-          opt.value = sym;
-          opt.textContent = sym + ' (' + parseFloat(b.balance || 0).toFixed(2) + ')';
+          opt.value = b.asset;
+          opt.textContent = b.asset + ' (' + parseFloat(b.balance || 0).toFixed(2) + ')';
           sel.appendChild(opt);
         });
       }
@@ -2163,12 +2159,28 @@
 
         document.getElementById('coffee-connect-btn').addEventListener('click', async function () {
           const btn = this;
+          const status = document.getElementById('coffee-status');
           btn.disabled = true;
           btn.textContent = 'Connecting…';
 
           try {
-            const conn = await wallet.connect({ app: 'BitShares Wallet – Support' });
-            populateAssets(conn.balances || []);
+            await wallet.connect({ app: 'BitShares Wallet – Support' });
+
+            // Mainnet-only check
+            const chainId = await wallet.getChainId();
+            if (chainId !== MAINNET_CHAIN_ID) {
+              btn.disabled = false;
+              btn.textContent = 'Connect Wallet';
+              status.textContent = '⚠ Please switch to BitShares mainnet in the wallet.';
+              status.className = 'coffee-status coffee-status--err';
+              status.style.display = 'block';
+              return;
+            }
+
+            // Fetch detailed balances (symbol + formatted amount)
+            const bal = await wallet.request('getBalance', {});
+            populateAssets(bal.balances || []);
+            status.style.display = 'none';
             document.getElementById('coffee-connect-step').style.display = 'none';
             document.getElementById('coffee-send-step').style.display = 'block';
           } catch (err) {
