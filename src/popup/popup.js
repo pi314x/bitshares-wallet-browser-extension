@@ -131,7 +131,9 @@ function setupEventListeners() {
   document.getElementById('setting-backup')?.addEventListener('click', handleShowBackup);
   document.getElementById('btn-reset-wallet')?.addEventListener('click', handleResetWallet);
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
+  document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
   document.getElementById('explorer-url-save')?.addEventListener('click', handleSaveExplorerUrl);
+  document.getElementById('explorer-url-reset')?.addEventListener('click', handleResetExplorerUrl);
   document.getElementById('setting-nodes')?.addEventListener('click', handleShowNodes);
   document.getElementById('setting-connections')?.addEventListener('click', handleShowConnections);
   document.getElementById('setting-accounts')?.addEventListener('click', handleShowAccounts);
@@ -3292,6 +3294,10 @@ async function handleResetWallet() {
 async function handleShowSettings() {
   showScreen('settings-screen');
   await loadAutolockSetting();
+}
+
+async function handleShowExplorer() {
+  showScreen('explorer-screen');
   await loadExplorerUrl();
 }
 
@@ -3335,6 +3341,14 @@ async function handleSaveExplorerUrl() {
   _explorerUrl = url;
   if (input) input.value = url;
   showToast('Explorer URL saved', 'success');
+}
+
+async function handleResetExplorerUrl() {
+  await chrome.storage.local.remove('explorerUrl');
+  _explorerUrl = DEFAULT_EXPLORER;
+  const input = document.getElementById('explorer-url');
+  if (input) input.value = DEFAULT_EXPLORER;
+  showToast('Explorer reset to default', 'success');
 }
 
 /**

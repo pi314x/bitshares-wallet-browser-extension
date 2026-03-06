@@ -2000,6 +2000,37 @@ body {
   flex-shrink: 0;
 }
 
+/* Explorer / generic settings detail screen */
+.settings-detail-container {
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.settings-detail-description {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.settings-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-detail-row label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.settings-detail-row .settings-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* Developer Documentation */
 .dev-docs-container {
   padding: var(--spacing-md);

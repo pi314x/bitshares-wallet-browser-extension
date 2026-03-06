@@ -762,15 +762,9 @@
             <span>Network Fees</span>
             <span class="settings-arrow">→</span>
           </div>
-          <div class="settings-item settings-item--column">
-            <span>Block Explorer URL</span>
-            <div class="settings-explorer-row">
-              <input id="explorer-url" type="url" class="settings-input"
-                     placeholder="https://btslens.pages.dev"
-                     spellcheck="false" autocomplete="off" />
-              <button id="explorer-url-save" class="btn-save-small">Save</button>
-            </div>
-            <span class="form-hint">Operation links in history open this URL followed by the operation ID.</span>
+          <div class="settings-item" id="setting-explorer">
+            <span>Block Explorer</span>
+            <span class="settings-arrow">→</span>
           </div>
         </div>
         <div class="settings-group">
@@ -1300,6 +1294,25 @@ window.addEventListener(
           </div>
         </div>
         <button id="btn-refresh-fees" class="btn btn-secondary">Refresh Fees</button>
+      </div>
+    </div>
+
+    <!-- Block Explorer Screen -->
+    <div id="explorer-screen" class="screen">
+      <div class="screen-header">
+        <button class="btn-back" data-target="settings-screen">←</button>
+        <h2>Block Explorer</h2>
+      </div>
+      <div class="settings-detail-container">
+        <p class="settings-detail-description">Operation IDs in your transaction history will link to this explorer. Leave empty to restore the default.</p>
+        <div class="settings-detail-row">
+          <label for="explorer-url">Explorer URL</label>
+          <input id="explorer-url" type="url" class="settings-input"
+                 placeholder="https://btslens.pages.dev"
+                 spellcheck="false" autocomplete="off" />
+        </div>
+        <button id="explorer-url-save" class="btn btn-primary">Save</button>
+        <button id="explorer-url-reset" class="btn btn-secondary">Reset to Default</button>
       </div>
     </div>
 
