@@ -1863,6 +1863,18 @@ body {
   opacity: 0.7;
 }
 
+.history-txid--link {
+  display: inline-block;
+  text-decoration: none;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.history-txid--link:hover {
+  color: var(--primary);
+  opacity: 1;
+}
+
 .history-amount {
   text-align: right;
 }
@@ -1944,6 +1956,48 @@ body {
 
 .settings-arrow {
   color: var(--text-muted);
+}
+
+.settings-item--column {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.settings-explorer-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.settings-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  min-width: 0;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.btn-save-small {
+  background: var(--gradient-primary);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Developer Documentation */
