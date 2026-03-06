@@ -1157,13 +1157,12 @@ export class CryptoUtils {
     const toPublicPoint = ECPoint.fromCompressed(toPublicKeyBytes);
 
     // Generate nonce if not provided.
-    // Use timestamp (ms) in the upper 48 bits + 16 random bits to minimise
-    // collision risk while keeping the 64-bit nonce space.
+    // Use 64 fully random bits — this avoids any collision risk even when
+    // multiple memos are sent within the same millisecond (the old
+    // timestamp-seeded 16-bit design had a 1/65 536 collision chance per ms).
     if (nonce === null) {
-      const ts = BigInt(Date.now());
-      const randBytes = crypto.getRandomValues(new Uint8Array(2));
-      const rand = BigInt(randBytes[0]) << 8n | BigInt(randBytes[1]);
-      nonce = (ts << 16n) | rand;
+      const randBytes = crypto.getRandomValues(new Uint8Array(8));
+      nonce = randBytes.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n);
     }
 
     // Compute shared secret: S = fromPrivateKey * toPublicKey
@@ -1425,7 +1424,6 @@ export async function runSelfTests() {
 
   // Test 4: Sign and recover with known private key
   // Private key = 1, public key = G
-  const testPrivKey = bigIntToBytes(1n, 32);
   const testHash = await sha256(new Uint8Array([1, 2, 3, 4]));
   console.log('Test 4: Sign with priv=1, recover should give G');
   console.log('  G compressed:', bytesToHex(G.toCompressed()));

@@ -69,9 +69,9 @@ export class WalletManager {
         // Try to restore session encryption key if needed
         if (!this._sessionEncryptionKey && result.persistedSessionKey) {
           try {
-            this._sessionEncryptionKey = new Uint8Array(
-              base64ToBytes(result.persistedSessionKey)
-            );
+            const decoded = new Uint8Array(base64ToBytes(result.persistedSessionKey));
+            if (decoded.length !== 32) throw new Error('invalid session key length');
+            this._sessionEncryptionKey = decoded;
           } catch (e) {
             resolve(false);
             return;
@@ -186,9 +186,9 @@ export class WalletManager {
         // Try to restore session encryption key from storage (when auto-lock disabled)
         if (!this._sessionEncryptionKey && result.persistedSessionKey) {
           try {
-            this._sessionEncryptionKey = new Uint8Array(
-              base64ToBytes(result.persistedSessionKey)
-            );
+            const decoded = new Uint8Array(base64ToBytes(result.persistedSessionKey));
+            if (decoded.length !== 32) throw new Error('invalid session key length');
+            this._sessionEncryptionKey = decoded;
           } catch (e) {
             // Failed to restore key
             resolve(false);
@@ -1373,11 +1373,9 @@ export class WalletManager {
           const memoBytes = encoder.encode(memo);
           const memoHex = Array.from(memoBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-          // Generate unique nonce: timestamp (ms) in upper 48 bits + 16 random bits
-          const ts = BigInt(Date.now());
-          const randBytes = crypto.getRandomValues(new Uint8Array(2));
-          const rand = BigInt(randBytes[0]) << 8n | BigInt(randBytes[1]);
-          const nonce = ((ts << 16n) | rand).toString();
+          // Generate nonce: 64 fully random bits (avoids same-ms collision risk)
+          const randBytes = crypto.getRandomValues(new Uint8Array(8));
+          const nonce = randBytes.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n).toString();
 
           // BitShares requires full memo_data structure
           memoObject = {
