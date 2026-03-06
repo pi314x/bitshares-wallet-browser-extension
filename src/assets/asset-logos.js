@@ -30,17 +30,50 @@ export const ASSET_LOGOS = {
   'EOS':          'https://cryptologos.cc/logos/eos-eos-logo.svg?v=040',
   'XMR':          'https://cryptologos.cc/logos/monero-xmr-logo.svg?v=040',
 
-  // ── BitShares Honest / bridge assets ──────────────────────────────────
-  // Add bridged / gateway prefixed variants here, e.g.:
-  // 'GDEX.BTC':  'https://cryptologos.cc/logos/bitcoin-btc-logo.svg?v=040',
+  // ── Additional assets ─────────────────────────────────────────────────
+  // Add any token not resolvable via gateway prefix stripping here, e.g.:
   // 'HONEST.USD': '<url>',
 };
 
 /**
+ * Known BitShares gateway prefixes.
+ * Assets like XBTSX.BTC, GDEX.ETH, RUDEX.USDT are bridged versions of the
+ * base asset — strip the prefix and look up the underlying token's logo.
+ */
+const GATEWAY_PREFIXES = new Set([
+  'XBTSX', 'GDEX', 'RUDEX', 'HONEST', 'BINANCE',
+  'OPEN', 'BRIDGE', 'DEEX', 'COSS', 'SPARKDEX',
+  'BLOCKTRADES', 'BTWTY', 'TRADE', 'TWENTIX', 'BRDG',
+]);
+
+/**
  * Returns the logo URL for the given symbol, or null if none is configured.
- * @param {string} symbol  e.g. 'BTS', 'USDT'
+ *
+ * Resolution order:
+ *   1. Direct match in ASSET_LOGOS  (e.g. 'BTS', 'USDT')
+ *   2. Strip a known gateway prefix and look up the base symbol
+ *      (e.g. 'XBTSX.BTC' → 'BTC', 'GDEX.ETH' → 'ETH')
+ *   3. null — caller renders the letter-circle fallback
+ *
+ * @param {string} symbol  e.g. 'BTS', 'XBTSX.BTC'
  * @returns {string|null}
  */
 export function getAssetLogo(symbol) {
-  return ASSET_LOGOS[symbol?.toUpperCase()] ?? null;
+  if (!symbol) return null;
+  const upper = symbol.toUpperCase();
+
+  // 1. Direct match
+  if (ASSET_LOGOS[upper]) return ASSET_LOGOS[upper];
+
+  // 2. Gateway-prefix strip
+  const dot = upper.indexOf('.');
+  if (dot !== -1) {
+    const prefix = upper.slice(0, dot);
+    const base   = upper.slice(dot + 1);
+    if (GATEWAY_PREFIXES.has(prefix) && ASSET_LOGOS[base]) {
+      return ASSET_LOGOS[base];
+    }
+  }
+
+  return null;
 }
