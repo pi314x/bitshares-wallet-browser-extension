@@ -2252,6 +2252,13 @@
       const DONATION_ACCOUNT = 'buy-me-a-coffee';
 
       const MAINNET_CHAIN_ID = '4018d7844c78f6a6c41c6a552b898022310fc5dec06da467ee7905a8dad512c8';
+      const TESTNET_CHAIN_ID  = '39f5e2ede1f8bc1a3a54a7914414e3779e33193f1f5693510e73cb7a87617447';
+
+      function networkName(chainId) {
+        if (chainId === MAINNET_CHAIN_ID) return 'BitShares Mainnet';
+        if (chainId === TESTNET_CHAIN_ID)  return 'BitShares Testnet';
+        return 'an unknown network';
+      }
 
       const LOGO_CDN = 'https://raw.githubusercontent.com/pi314x/bitshares-wallet-browser-extension/master/src/assets/logos';
 
@@ -2376,56 +2383,65 @@
           btn.textContent = 'Connecting…';
           status.style.display = 'none';
 
+          function showErr(msg) {
+            btn.disabled = false;
+            btn.textContent = 'Connect Wallet';
+            status.textContent = msg;
+            status.className = 'coffee-status coffee-status--err';
+            status.style.display = 'block';
+          }
+
           try {
-            // Check lock state before connecting so we can give a targeted message
+            // 1. Check lock state — give an immediate message instead of waiting for timeout
             try {
               const lockState = await wallet.request('isLocked', {});
               if (lockState && lockState.locked) {
-                btn.disabled = false;
-                btn.textContent = 'Connect Wallet';
-                status.textContent = '🔒 Your wallet is locked. Please open the BitShares extension and unlock it first.';
-                status.className = 'coffee-status coffee-status--err';
-                status.style.display = 'block';
+                showErr('🔒 Your wallet is locked. Please open the BitShares extension and unlock it first.');
                 return;
               }
-            } catch (_) { /* extension may not support isLocked — continue */ }
+            } catch (_) { /* older extension build — continue */ }
 
+            // 2. Check network BEFORE opening the approval popup — no point asking the
+            //    user to approve a connection they can't use on mainnet.
+            try {
+              const preChainId = await wallet.getChainId();
+              if (preChainId !== MAINNET_CHAIN_ID) {
+                showErr('🌐 Wrong network: your wallet is connected to ' + networkName(preChainId) + '. Please switch to BitShares Mainnet in the extension and try again.');
+                return;
+              }
+            } catch (_) { /* chain ID not available yet — will verify after connect */ }
+
+            // 3. Request connection approval from the user
             await wallet.connect({ app: 'BitShares Wallet – Support' });
 
-            // Mainnet-only check
+            // 4. Re-verify chain ID after connect (user could have switched mid-flow)
             const chainId = await wallet.getChainId();
             if (chainId !== MAINNET_CHAIN_ID) {
-              btn.disabled = false;
-              btn.textContent = 'Connect Wallet';
-              status.textContent = '⚠ Please switch to BitShares mainnet in the wallet.';
-              status.className = 'coffee-status coffee-status--err';
-              status.style.display = 'block';
+              showErr('🌐 Wrong network: your wallet is connected to ' + networkName(chainId) + '. Please switch to BitShares Mainnet in the extension and try again.');
               return;
             }
 
-            // Fetch detailed balances (symbol + formatted amount)
+            // 5. Fetch balances and show the send form
             const bal = await wallet.request('getBalance', {});
             populateAssets(bal.balances || []);
             status.style.display = 'none';
             document.getElementById('coffee-connect-step').style.display = 'none';
             document.getElementById('coffee-send-step').style.display = 'block';
           } catch (err) {
-            btn.disabled = false;
-            btn.textContent = 'Connect Wallet';
             const msg = err.message || '';
             if (msg.toLowerCase().includes('locked')) {
-              status.textContent = '🔒 Your wallet is locked. Please open the BitShares extension and unlock it first.';
+              showErr('🔒 Your wallet is locked. Please open the BitShares extension and unlock it first.');
             } else if (msg.toLowerCase().includes('rejected') || msg.toLowerCase().includes('denied')) {
-              status.textContent = '✗ Connection rejected. Please try again and click Approve in the wallet popup.';
+              showErr('✗ Connection rejected. Please try again and click Approve in the wallet popup.');
             } else if (msg.toLowerCase().includes('timed out')) {
-              status.textContent = '⏱ No response from wallet. Make sure it\'s unlocked and click the extension icon to approve.';
+              showErr('⏱ No response from wallet. Make sure it\'s unlocked and click the extension icon to approve.');
+            } else if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('chain')) {
+              showErr('🌐 ' + msg);
             } else if (msg) {
-              status.textContent = '✗ ' + msg;
+              showErr('✗ ' + msg);
             } else {
-              status.textContent = '✗ Could not connect. Make sure your wallet is installed and unlocked.';
+              showErr('✗ Could not connect. Make sure your wallet is installed and unlocked.');
             }
-            status.className = 'coffee-status coffee-status--err';
-            status.style.display = 'block';
           }
         });
 
