@@ -9,6 +9,7 @@ import { BitSharesAPI } from '../lib/bitshares-api.js';
 import { CryptoUtils } from '../lib/crypto-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
+import { initLogoCache } from '../assets/logo-cache.js';
 import { renderIdenticonToCanvas } from '../lib/identicon.js';
 
 // Global state
@@ -214,6 +215,14 @@ async function initializeApp() {
   try {
     // Initialize wallet manager
     walletManager = new WalletManager();
+
+    // Start logo cache — loads stored data URLs into memory, then checks the
+    // manifest in the background; calls updateAssetsList() if new logos arrive.
+    initLogoCache(() => {
+      if (document.getElementById('assets-list')?.children.length > 0) {
+        updateAssetsList();
+      }
+    }).catch(() => {});
 
     // Load explorer URL early so history items are linked on first render
     const explorerResult = await chrome.storage.local.get(['explorerUrl']);
@@ -1330,7 +1339,7 @@ async function createHistoryItem(operation) {
   const op = operation.op;
   const opType = op[0];
   const opData = op[1];
-  const txId = operation.id || ''; // Transaction ID like 1.11.xxx
+  const txId = operation.trx_id || ''; // 40-char hex transaction hash (returned by most nodes)
 
   // Use data attribute for raw account ID (avoids "(Watch Only)" suffix issue)
   const currentAccount = document.getElementById('account-id')?.dataset?.accountId || document.getElementById('account-id')?.textContent;
@@ -2418,14 +2427,12 @@ async function createHistoryItem(operation) {
     }
   }
 
-  // Click the entire row to open in block explorer
+  // Click the entire row to open in block explorer (only when we have a real tx hash)
   if (txId) {
     item.style.cursor = 'pointer';
     item.title = 'Open in block explorer';
-    item.addEventListener('click', (e) => {
-      // Don't double-fire if the user somehow clicks a nested link
-      if (e.target.closest('a')) return;
-      chrome.tabs.create({ url: `${_explorerUrl}/${txId}` });
+    item.addEventListener('click', () => {
+      chrome.tabs.create({ url: `${_explorerUrl}/transaction/${txId}` });
     });
   }
 
@@ -3357,7 +3364,11 @@ async function handleResetExplorerUrl() {
  */
 function explorerLink(txId) {
   if (!txId) return '';
-  return `<span class="history-txid">${escapeHtml(txId)}</span>`;
+  // Show first 8 + last 4 chars of the hash with a click hint
+  const short = txId.length > 12
+    ? `${txId.slice(0, 8)}…${txId.slice(-4)} ↗`
+    : escapeHtml(txId);
+  return `<span class="history-txid">${short}</span>`;
 }
 
 // === Node Management ===

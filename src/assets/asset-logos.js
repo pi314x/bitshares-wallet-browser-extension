@@ -3,16 +3,21 @@
  *
  * Resolution order (see getAssetLogo):
  *   1. Bundled file inside the extension  (src/assets/logos/<SYMBOL>.png)
- *   2. Own-repo CDN                       (CORE_CDN_BASE/<SYMBOL>.png)
- *   3. null → caller renders letter-circle fallback immediately
+ *   2. Local cache (data URL stored by logo-cache.js after bulk download)
+ *   3. Own-repo CDN fallback              (CORE_CDN_BASE/<SYMBOL>.png)
+ *      — only for symbols listed in CDN_KNOWN, avoids 404 noise
+ *   4. null → caller renders letter-circle immediately
  *
  * To add a logo:
- *   a) Drop a PNG into src/assets/logos/  (e.g. USDT.png)
- *   b) Add the symbol to CDN_KNOWN below  (or BUNDLED for core assets)
- *   c) Push to master — the CDN URL is auto-constructed from CORE_CDN_BASE
+ *   a) Drop a PNG into src/assets/logos/
+ *   b) Add the symbol to CDN_KNOWN below
+ *   c) Add the symbol to logos-manifest.json and bump "version"
+ *   d) Push to master
  *
  * Naming convention: uppercase symbol, e.g. BTS.png, USDT.png, XBTSX.STH.png
  */
+
+import { getCachedLogo } from './logo-cache.js';
 
 /**
  * Raw CDN base URL pointing to the logos folder in this repository.
@@ -137,12 +142,17 @@ export function getAssetLogo(symbol) {
     return chrome.runtime.getURL(`src/assets/logos/${upper}.png`);
   }
 
-  // 2. Own-repo CDN — only for symbols known to have a file
-  //    Prevents 404 requests for every unlisted asset symbol.
+  // 2. Local cache — data URL stored by logo-cache.js after bulk download
+  const cached = getCachedLogo(upper);
+  if (cached) return cached;
+
+  // 3. Own-repo CDN fallback — only for symbols known to have a file.
+  //    Used before the local cache is populated (first run / cold start).
+  //    Prevents 404 noise for unlisted symbols.
   if (CDN_KNOWN.has(upper)) {
     return `${CORE_CDN_BASE}/${upper}.png`;
   }
 
-  // 3. No logo — caller renders letter-circle immediately
+  // 4. No logo — caller renders letter-circle immediately
   return null;
 }
