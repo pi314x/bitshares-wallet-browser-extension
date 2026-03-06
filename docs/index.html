@@ -226,7 +226,7 @@
     .btn-primary:hover {
       opacity: 0.9;
       transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(0, 212, 170, 0.25);
+      box-shadow: 0 4px 14px rgba(0, 212, 170, 0.12);
       color: #fff;
     }
 
@@ -476,6 +476,7 @@
     }
 
     .btn-coffee {
+      cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 10px;
@@ -484,7 +485,7 @@
       font-weight: 700;
       font-size: 16px;
       padding: 14px 32px;
-      border-radius: 50px;
+      border-radius: 12px;
       text-decoration: none;
       transition: transform 0.2s, box-shadow 0.2s;
       box-shadow: 0 4px 24px rgba(245,166,35,0.35);
@@ -492,7 +493,7 @@
 
     .btn-coffee:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 32px rgba(245,166,35,0.5);
+      box-shadow: 0 4px 16px rgba(245,166,35,0.25);
     }
 
     .btn-coffee--sm {
@@ -542,7 +543,7 @@
     .coffee-input {
       width: 90px;
       padding: 10px 12px;
-      border-radius: 10px;
+      border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.3);
       background: rgba(255,255,255,0.12);
       color: #fff;
@@ -558,7 +559,7 @@
 
     .coffee-asset-select {
       padding: 10px 12px;
-      border-radius: 10px;
+      border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.3);
       background: rgba(255,255,255,0.12);
       color: #fff;
@@ -1375,7 +1376,7 @@
             <rect x="20" y="440" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="467" fill="#f1f5f9" font-size="13" font-family="sans-serif">Network Fees</text><text x="324" y="467" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
             <!-- About -->
             <text x="24" y="506" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">ABOUT</text>
-            <rect x="266" y="494" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="509" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.6.0</text>
+            <rect x="266" y="494" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="509" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.7.0</text>
           </svg></div>
           <h4>Settings</h4>
           <p>Customize your wallet</p>
@@ -1810,26 +1811,29 @@
       <div class="support-inner">
         <div class="support-icon">☕</div>
         <h2>Support the Developer</h2>
-        <p>This wallet is free, open-source, and built by one developer in their spare time.<br>
-           If it saves you time or helps you trade on BitShares, a coffee goes a long way.</p>
+        <p>Free, open-source, and built with passion. If it saves you time and helps you build or trade on BitShares, consider buying a coffee.</p>
 
         <!-- Wallet detected: payment form -->
         <div id="coffee-wallet-form" style="display:none">
-          <p class="coffee-account-hint">Sending to BitShares account <strong>buy-me-a-coffee</strong></p>
-          <div class="coffee-form-row">
-            <input type="number" id="coffee-amount" value="5" min="0.001" step="0.001"
-                   class="coffee-input" aria-label="Amount">
-            <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset">
-              <option value="BTS">BTS</option>
-            </select>
-            <button id="coffee-send-btn" class="btn-coffee">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                <path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/>
-              </svg>
-              Send ☕
+          <p class="coffee-account-hint">Sending to BitShares account <strong id="copy-donation-name" title="Click to copy" style="cursor:pointer">buy-me-a-coffee</strong></p>
+
+          <!-- Step 1: connect / approve -->
+          <div id="coffee-connect-step">
+            <button id="coffee-connect-btn" class="btn-coffee">
+              Connect Wallet
             </button>
           </div>
-          <p id="coffee-status" class="coffee-status" style="display:none"></p>
+
+          <!-- Step 2: form (shown after approval) -->
+          <div id="coffee-send-step" style="display:none">
+            <div class="coffee-form-row">
+              <select id="coffee-asset" class="coffee-asset-select" aria-label="Asset"></select>
+              <input type="number" id="coffee-amount" placeholder="Amount" min="0.001" step="0.001"
+                     class="coffee-input" aria-label="Amount">
+              <button id="coffee-send-btn" class="btn-coffee btn-coffee--sm">Send ☕</button>
+            </div>
+            <p id="coffee-status" class="coffee-status" style="display:none"></p>
+          </div>
         </div>
 
         <!-- Wallet not detected -->
@@ -1858,14 +1862,14 @@
             </defs>
             <path d="M40 32 L40 96 L72 96 C88 96 96 84 96 72 C96 62 90 54 80 52 C88 50 92 42 92 34 C92 22 84 32 72 32 L40 32 Z M52 44 L68 44 C76 44 80 48 80 54 C80 60 76 64 68 64 L52 64 L52 44 Z M52 72 L72 72 C80 72 84 76 84 82 C84 88 80 84 72 84 L52 84 L52 72 Z" fill="url(#fGrad)"/>
           </svg>
-          BitShares Wallet v0.6.0 &middot; MIT License
+          BitShares Wallet v0.7.0 &middot; MIT License
         </div>
         <div class="footer-links">
           <a href="https://github.com/pi314x/bitshares-wallet-browser-extension" target="_blank">GitHub</a>
           <a href="https://t.me/BitSharesDEV" target="_blank">Telegram</a>
           <a href="https://bitshares.org" target="_blank">BitShares.org</a>
           <a href="https://bitsharestalk.org" target="_blank">Bitsharestalk.org</a>
-          <a href="#support" class="footer-coffee">☕ buy-me-a-coffee</a>
+          <a href="#support">☕ buy-me-a-coffee</a>
         </div>
       </div>
     </div>
@@ -2069,66 +2073,71 @@
     (function () {
       const DONATION_ACCOUNT = 'buy-me-a-coffee';
 
+      function populateAssets(balances) {
+        const sel = document.getElementById('coffee-asset');
+        sel.innerHTML = '';
+        const bts = balances.find(function (b) { return (b.asset || b.symbol) === 'BTS'; });
+        const rest = balances.filter(function (b) { return (b.asset || b.symbol) !== 'BTS'; });
+        const sorted = bts ? [bts].concat(rest) : rest;
+        if (sorted.length === 0) sorted.push({ asset: 'BTS', balance: 0 });
+        sorted.forEach(function (b) {
+          const sym = b.asset || b.symbol || 'BTS';
+          const opt = document.createElement('option');
+          opt.value = sym;
+          opt.textContent = sym + ' (' + parseFloat(b.balance || 0).toFixed(2) + ')';
+          sel.appendChild(opt);
+        });
+      }
+
       function showWalletForm(wallet) {
         document.getElementById('coffee-no-wallet').style.display = 'none';
-        const form = document.getElementById('coffee-wallet-form');
-        form.style.display = 'block';
+        document.getElementById('coffee-wallet-form').style.display = 'block';
 
-        // Try to pre-populate asset selector from wallet balances
-        wallet.checkConnection().then(function (conn) {
-          if (conn.connected) return wallet.getAccount().then(function () {
-            return wallet.transfer; // no-op; just verify connected
-          });
-        }).catch(function () { /* not connected yet — populate on send */ });
+        document.getElementById('coffee-connect-btn').addEventListener('click', async function () {
+          const btn = this;
+          btn.disabled = true;
+          btn.textContent = 'Connecting…';
+
+          try {
+            const conn = await wallet.connect({ app: 'BitShares Wallet – Support' });
+            populateAssets(conn.balances || []);
+            document.getElementById('coffee-connect-step').style.display = 'none';
+            document.getElementById('coffee-send-step').style.display = 'block';
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Connect Wallet';
+          }
+        });
 
         document.getElementById('coffee-send-btn').addEventListener('click', async function () {
-          const btn = document.getElementById('coffee-send-btn');
+          const btn = this;
           const status = document.getElementById('coffee-status');
           const amount = parseFloat(document.getElementById('coffee-amount').value);
           const asset  = document.getElementById('coffee-asset').value || 'BTS';
 
-          if (!amount || amount <= 0) return;
+          if (!amount || amount <= 0) {
+            status.textContent = 'Please enter an amount';
+            status.className = 'coffee-status coffee-status--err';
+            status.style.display = 'block';
+            return;
+          }
 
           btn.disabled = true;
-          btn.textContent = 'Connecting…';
+          btn.textContent = 'Sending…';
           status.style.display = 'none';
 
           try {
-            // Connect (shows approval popup if not already connected)
-            const conn = await wallet.connect({ app: 'BitShares Wallet – Support' });
-
-            // Populate asset selector from balances (first connect)
-            if (conn.balances && conn.balances.length > 0) {
-              const sel = document.getElementById('coffee-asset');
-              const current = sel.value;
-              sel.innerHTML = '';
-              conn.balances.forEach(function (b) {
-                const sym = b.asset || b.symbol || 'BTS';
-                const opt = document.createElement('option');
-                opt.value = sym;
-                opt.textContent = sym + ' (' + parseFloat(b.balance).toFixed(2) + ')';
-                if (sym === current) opt.selected = true;
-                sel.appendChild(opt);
-              });
-            }
-
-            btn.textContent = 'Sending…';
-            await wallet.transfer({
-              to:     DONATION_ACCOUNT,
-              amount: amount,
-              asset:  document.getElementById('coffee-asset').value || 'BTS',
-              memo:   'Coffee ☕'
-            });
-
+            await wallet.transfer({ to: DONATION_ACCOUNT, amount: amount, asset: asset, memo: 'Coffee ☕' });
             status.textContent = '✓ Sent — thank you so much! ☕';
             status.className   = 'coffee-status coffee-status--ok';
             status.style.display = 'block';
-            btn.textContent = '☕ Send another';
+            btn.textContent = 'Send ☕';
+            document.getElementById('coffee-amount').value = '';
           } catch (err) {
             status.textContent = '✗ ' + (err.message || 'Transfer cancelled');
             status.className   = 'coffee-status coffee-status--err';
             status.style.display = 'block';
-            btn.textContent = '☕ Send';
+            btn.textContent = 'Send ☕';
           }
           btn.disabled = false;
         });
@@ -2144,6 +2153,20 @@
           showWalletForm(window.bitsharesWallet);
         }, { once: true });
       }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        const el = document.getElementById('copy-donation-name');
+        if (!el) return;
+        const p = el.closest('p');
+        const origHtml = p.innerHTML;
+        p.addEventListener('click', function (e) {
+          if (e.target.id !== 'copy-donation-name') return;
+          navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
+            p.innerHTML = 'BitShares account <strong>buy-me-a-coffee</strong> copied!';
+            setTimeout(function () { p.innerHTML = origHtml; }, 1500);
+          });
+        });
+      });
 
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

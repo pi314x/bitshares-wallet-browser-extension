@@ -131,6 +131,9 @@ function setupEventListeners() {
   // Settings
   document.getElementById('setting-backup')?.addEventListener('click', handleShowBackup);
   document.getElementById('btn-reset-wallet')?.addEventListener('click', handleResetWallet);
+  document.getElementById('copy-donation-account')?.addEventListener('click', () => {
+    navigator.clipboard.writeText('buy-me-a-coffee').then(() => showToast('Copied!', 'success'));
+  });
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
   document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
   document.getElementById('explorer-url-save')?.addEventListener('click', handleSaveExplorerUrl);
@@ -294,29 +297,42 @@ async function testAllNodesInBackground() {
     await Promise.all(allNodes.map(node => testNode(node)));
     console.log('Background node testing complete');
 
-    // Find fastest online node
-    let fastestNode = null;
-    let fastestLatency = Infinity;
+    // Determine target node: preferred node takes priority over fastest
+    const { preferredNode } = await chrome.storage.local.get(['preferredNode']);
+    let targetNode = null;
 
-    for (const [node, status] of nodeStatuses) {
-      if (status.online && status.latency < fastestLatency) {
-        fastestLatency = status.latency;
-        fastestNode = node;
+    if (preferredNode) {
+      const preferredStatus = nodeStatuses.get(preferredNode);
+      if (preferredStatus?.online) {
+        targetNode = preferredNode;
+        console.log(`Using preferred node: ${preferredNode}`);
+      } else {
+        console.log(`Preferred node offline, falling back to fastest`);
       }
     }
 
-    // Connect to fastest node if found and not already connected
-    if (fastestNode && (!btsAPI || !btsAPI.isConnected || btsAPI.currentNode !== fastestNode)) {
-      console.log(`Connecting to fastest node: ${fastestNode} (${fastestLatency}ms)`);
+    if (!targetNode) {
+      let fastestLatency = Infinity;
+      for (const [node, status] of nodeStatuses) {
+        if (status.online && status.latency < fastestLatency) {
+          fastestLatency = status.latency;
+          targetNode = node;
+        }
+      }
+    }
+
+    // Connect to target node if found and not already connected
+    if (targetNode && (!btsAPI || !btsAPI.isConnected || btsAPI.currentNode !== targetNode)) {
+      console.log(`Connecting to node: ${targetNode}`);
       try {
         if (btsAPI) {
           await btsAPI.disconnect();
         }
-        btsAPI = new BitSharesAPI([fastestNode]);
+        btsAPI = new BitSharesAPI([targetNode]);
         await btsAPI.connect();
-        console.log('Connected to fastest node');
+        console.log('Connected to node');
       } catch (e) {
-        console.warn('Failed to connect to fastest node, falling back to default:', e);
+        console.warn('Failed to connect to target node, falling back to default:', e);
       }
     }
   } catch (error) {
@@ -1339,12 +1355,9 @@ async function createHistoryItem(operation) {
   const op = operation.op;
   const opType = op[0];
   const opData = op[1];
-  const txId    = operation.trx_id || ''; // 40-char hex hash (returned by some nodes)
-  const blockNum = operation.block_num  || 0;
-  // Explorer target: prefer tx hash, fall back to block number (always present)
-  const explorerTarget = txId
-    ? `${_explorerUrl}/transaction/${txId}`
-    : (blockNum ? `${_explorerUrl}/block/${blockNum}` : null);
+  const txId    = operation.trx_id   || ''; // 40-char hex hash (returned by some nodes)
+  const blockNum = operation.block_num || 0;
+  const trxInBlock = operation.trx_in_block ?? -1;
 
   // Use data attribute for raw account ID (avoids "(Watch Only)" suffix issue)
   const currentAccount = document.getElementById('account-id')?.dataset?.accountId || document.getElementById('account-id')?.textContent;
@@ -2433,11 +2446,36 @@ async function createHistoryItem(operation) {
   }
 
   // Click the entire row to open in block explorer
-  if (explorerTarget) {
+  if (blockNum > 0) {
     item.style.cursor = 'pointer';
     item.title = 'Open in block explorer';
-    item.addEventListener('click', () => {
-      chrome.tabs.create({ url: explorerTarget });
+    item.addEventListener('click', async () => {
+      // Virtual ops (trx_in_block = 65535) have no real transaction — go straight to block
+      const isVirtual = trxInBlock < 0 || trxInBlock >= 65535;
+
+      let trxHash = txId; // Method 1: already in operation data (some nodes include it)
+
+      if (!trxHash && !isVirtual) {
+        // Method 2: get_objects on the operation id — some nodes embed trx_id here
+        try {
+          const objs = await btsAPI.call(btsAPI.apiIds.database, 'get_objects', [[operation.id]]);
+          trxHash = objs?.[0]?.trx_id || '';
+        } catch { /* node may not support or may not include trx_id */ }
+      }
+
+      if (!trxHash && !isVirtual) {
+        // Method 3: get_block — standard; block.transaction_ids[trx_in_block] = tx hash
+        try {
+          const block = await btsAPI.call(btsAPI.apiIds.database, 'get_block', [blockNum]);
+          trxHash = block?.transaction_ids?.[trxInBlock] || '';
+        } catch { /* node unavailable or block not found */ }
+      }
+
+      const url = trxHash
+        ? `${_explorerUrl}/transaction/${trxHash}`
+        : `${_explorerUrl}/block/${blockNum}`;
+
+      chrome.tabs.create({ url });
     });
   }
 
@@ -3440,9 +3478,12 @@ async function loadNodesList() {
   const savedNodes = await getSavedNodesForNetwork(network);
   const allNodes = [...new Set([...defaultNodes, ...savedNodes])];
 
+  const { preferredNode } = await chrome.storage.local.get(['preferredNode']);
+
   for (const node of allNodes) {
     const isCustom = !defaultNodes.includes(node);
     const isActive = btsAPI && btsAPI.currentNode === node;
+    const isPinned = preferredNode === node;
     const status = nodeStatuses.get(node);
 
     const nodeItem = document.createElement('div');
@@ -3470,6 +3511,7 @@ async function loadNodesList() {
         <div class="node-status ${statusClass}">${escapeHtml(statusText)}</div>
       </div>
       <div class="node-actions-inline">
+        <button class="node-btn pin${isPinned ? ' pinned' : ''}" title="${isPinned ? 'Remove preferred node' : 'Set as preferred node'}" data-node="${escapeHtml(node)}">📌</button>
         <button class="node-btn connect" title="Connect to this node" data-node="${escapeHtml(node)}">⚡</button>
         ${isCustom ? `<button class="node-btn remove" title="Remove node" data-node="${escapeHtml(node)}">✕</button>` : ''}
       </div>
@@ -3479,6 +3521,10 @@ async function loadNodesList() {
   }
 
   // Add event listeners
+  nodesList.querySelectorAll('.node-btn.pin').forEach(btn => {
+    btn.addEventListener('click', () => handlePinNode(btn.dataset.node));
+  });
+
   nodesList.querySelectorAll('.node-btn.connect').forEach(btn => {
     btn.addEventListener('click', () => handleConnectToNode(btn.dataset.node));
   });
@@ -3560,6 +3606,18 @@ async function handleAddNode() {
 
   // Test the new node
   await testNode(nodeUrl);
+  await loadNodesList();
+}
+
+async function handlePinNode(nodeUrl) {
+  const { preferredNode } = await chrome.storage.local.get(['preferredNode']);
+  if (preferredNode === nodeUrl) {
+    await chrome.storage.local.remove('preferredNode');
+    showToast('Preferred node cleared — fastest node will be used', 'info');
+  } else {
+    await chrome.storage.local.set({ preferredNode: nodeUrl });
+    showToast('Preferred node set — will use on next startup', 'success');
+  }
   await loadNodesList();
 }
 
