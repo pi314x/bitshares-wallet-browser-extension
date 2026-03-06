@@ -270,6 +270,27 @@ if (connected) {
 }
 ```
 
+#### Checking Lock State
+
+Before calling `connect()` you can check whether the wallet is currently
+locked so you can show a targeted message instead of waiting for the
+60-second connection timeout:
+
+```javascript
+const { locked } = await window.bitsharesWallet.request('isLocked', {});
+
+if (locked) {
+  // Tell the user to open the extension and unlock it first
+  showError('Your wallet is locked. Please open the BitShares extension and unlock it.');
+} else {
+  const { account, balances } = await window.bitsharesWallet.connect();
+}
+```
+
+`isLocked` never throws — it always returns `{ locked: boolean }`.
+This makes it safe to call before any interaction that requires an
+unlocked wallet (connect, transfer, signTransaction, getBalance, etc.).
+
 #### Verifying the Chain ID
 
 Always verify the chain ID before submitting transactions to make sure
