@@ -463,9 +463,13 @@ On tag push (`git tag v1.0.0 && git push origin v1.0.0`), GitHub Actions automat
 
 ## Support the Project
 
-If this wallet saves you time or helps you trade on BitShares, consider buying me a coffee ☕
+If this wallet saves you time or helps you trade on BitShares, consider sending a coffee ☕
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/bitshares-wallet-browser-extension)
+Send any amount of BTS (or any asset) directly on-chain to the BitShares account:
+
+> **`buy-me-a-coffee`**
+
+You can also use the [wallet website](https://pi314x.github.io/bitshares-wallet-browser-extension/) — if the extension is installed, a one-click send form is shown right on the page.
 
 ## Contributing
 
