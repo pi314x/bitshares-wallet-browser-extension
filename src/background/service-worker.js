@@ -351,6 +351,7 @@ class BackgroundService {
     });
 
     port.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError; // consume bfcache / navigation disconnect — suppresses "Unchecked runtime.lastError" warning
       if (tabId) {
         this.contentPorts.delete(tabId);
       }
