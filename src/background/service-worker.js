@@ -405,6 +405,9 @@ class BackgroundService {
         return { connected: false, account: null };
       }
 
+      case 'isLocked':
+        return { locked: !(await this.walletManager.isUnlocked()) };
+
       case 'signMessage':
         return await this.handleSignMessage(origin, params, id, tabId);
 
