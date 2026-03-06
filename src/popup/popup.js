@@ -1172,8 +1172,8 @@ async function updateAssetsList(balances) {
     // Star button toggles favourite — does not navigate
     assetItem.querySelector('.asset-fav-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
+      const btn = e.currentTarget; // capture before first await — currentTarget is nullified post-dispatch
       const newFavs = await toggleFavouriteAsset(asset.symbol);
-      const btn = e.currentTarget;
       const nowFav = newFavs.has(asset.symbol);
       btn.classList.toggle('asset-fav-btn--active', nowFav);
       btn.title = nowFav ? 'Remove from favourites' : 'Add to favourites';
