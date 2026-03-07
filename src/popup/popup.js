@@ -246,6 +246,11 @@ function setupEventListeners() {
 
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener(handleBackgroundMessage);
+
+  // Upgrade asset <select> elements to logo-aware custom pickers
+  initAssetPicker('send-asset');
+  initAssetPicker('swap-from-asset');
+  initAssetPicker('swap-to-asset');
 }
 
 // Initialize the application
@@ -3208,6 +3213,7 @@ async function handleShowSend(preselectedAssetId = null) {
     const assetSelect = document.getElementById('send-asset');
     if (assetSelect) {
       assetSelect.value = preselectedAssetId;
+      refreshAssetPicker('send-asset');
       updateSendAvailableBalance();
     }
   }
@@ -3254,6 +3260,128 @@ async function loadSendAssets() {
   } catch (error) {
     console.error('Failed to load send assets:', error);
   }
+}
+
+// ── Asset Picker ─────────────────────────────────────────────────────────────
+// Upgrades a native <select> to a logo-aware custom dropdown.
+// All existing code that reads/writes the <select> continues to work unchanged;
+// the picker wraps the element, hides it, and observes mutations to re-render.
+
+const _assetPickers = new Map(); // selectId → renderBtn fn
+
+function refreshAssetPicker(selectId) {
+  _assetPickers.get(selectId)?.();
+}
+
+function initAssetPicker(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select || select.dataset.pickerInit) return;
+  select.dataset.pickerInit = '1';
+
+  // Wrap
+  const wrapper = document.createElement('div');
+  wrapper.className = 'asset-picker';
+  select.parentNode.insertBefore(wrapper, select);
+  wrapper.appendChild(select);
+  select.style.display = 'none';
+
+  // Trigger button
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'asset-picker-btn';
+  btn.setAttribute('aria-haspopup', 'listbox');
+  btn.setAttribute('aria-expanded', 'false');
+  wrapper.insertBefore(btn, select);
+
+  // Dropdown list
+  const list = document.createElement('div');
+  list.className = 'asset-picker-list';
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  wrapper.insertBefore(list, select);
+
+  function buildIcon(symbol) {
+    const logoUrl = getAssetLogo(symbol);
+    if (logoUrl) {
+      const img = document.createElement('img');
+      img.className = 'ap-icon';
+      img.src = logoUrl;
+      img.alt = symbol;
+      img.addEventListener('error', () => {
+        const fb = document.createElement('div');
+        fb.className = 'ap-icon ap-icon--text';
+        fb.textContent = symbol.slice(0, 3);
+        img.replaceWith(fb);
+      }, { once: true });
+      return img;
+    }
+    const div = document.createElement('div');
+    div.className = 'ap-icon ap-icon--text';
+    div.textContent = symbol.slice(0, 3);
+    return div;
+  }
+
+  function renderBtn() {
+    btn.innerHTML = '';
+    const opt = select.options[select.selectedIndex];
+    if (opt && opt.value) {
+      const sym = (opt.dataset.symbol || opt.textContent.split(' ')[0]).toUpperCase();
+      btn.appendChild(buildIcon(sym));
+      const label = document.createElement('span');
+      label.className = 'ap-label';
+      label.textContent = opt.textContent;
+      btn.appendChild(label);
+    } else {
+      const label = document.createElement('span');
+      label.className = 'ap-label ap-placeholder';
+      label.textContent = opt?.textContent || 'Select asset';
+      btn.appendChild(label);
+    }
+    const arrow = document.createElement('span');
+    arrow.className = 'ap-arrow';
+    arrow.textContent = '▾';
+    btn.appendChild(arrow);
+  }
+
+  function renderList() {
+    list.innerHTML = '';
+    for (const opt of select.options) {
+      if (!opt.value) continue;
+      const item = document.createElement('div');
+      item.className = 'ap-item' + (opt.value === select.value ? ' ap-item--active' : '');
+      item.setAttribute('role', 'option');
+      const sym = (opt.dataset.symbol || opt.textContent.split(' ')[0]).toUpperCase();
+      item.appendChild(buildIcon(sym));
+      const label = document.createElement('span');
+      label.className = 'ap-label';
+      label.textContent = opt.textContent;
+      item.appendChild(label);
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        select.value = opt.value;
+        closeList();
+        renderBtn();
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      list.appendChild(item);
+    }
+  }
+
+  function openList() { renderList(); list.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.classList.add('open'); }
+  function closeList() { list.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('open'); }
+
+  btn.addEventListener('click', (e) => { e.stopPropagation(); list.hidden ? openList() : closeList(); });
+  btn.addEventListener('blur', () => setTimeout(closeList, 150));
+  document.addEventListener('click', (e) => { if (!wrapper.contains(e.target)) closeList(); });
+  wrapper.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeList(); });
+
+  // Re-render button when options change (innerHTML replaced by loadSendAssets etc.)
+  new MutationObserver(renderBtn).observe(select, { childList: true });
+  // Re-render when value changes via change event
+  select.addEventListener('change', renderBtn);
+
+  renderBtn();
+  _assetPickers.set(selectId, renderBtn);
 }
 
 function updateSendAvailableBalance() {
@@ -6236,6 +6364,8 @@ function handleSwapDirection() {
     // Swap the values
     fromSelect.value = toValue;
     toSelect.value = fromValue;
+    refreshAssetPicker('swap-from-asset');
+    refreshAssetPicker('swap-to-asset');
 
     // Trigger change events
     handleSwapFromAssetChange({ target: fromSelect });
