@@ -45,8 +45,6 @@ const BUNDLED = new Set([
  * Example: after adding src/assets/logos/USDT.png → add 'USDT' below.
  */
 const CDN_KNOWN = new Set([
-  // Core BitShares assets
-  'USDT',
   // IOB gateway
   'IOB.XLM',
   'IOB.XRP',
