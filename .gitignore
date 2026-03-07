@@ -7,6 +7,8 @@ dist-firefox/
 *.zip
 *.crx
 *.pem
+package/
+package-firefox/
 
 # IDE
 .idea/
