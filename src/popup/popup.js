@@ -1128,7 +1128,7 @@ async function loadDashboard(forceReconnect = false) {
     if (avatarEl) {
       const hashBytes = await CryptoUtils.sha256(account.name);
       const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      jdenticon.updateSvg(avatarEl, hashHex);
+      window.jdenticon?.updateSvg(avatarEl, hashHex);
     }
 
     // Load balances
@@ -2878,7 +2878,7 @@ async function loadAccountsList() {
       </div>
     `;
     accountsList.appendChild(item);
-    jdenticon.updateSvg(item.querySelector('.account-item-avatar'), hashes[i]);
+    window.jdenticon?.updateSvg(item.querySelector('.account-item-avatar'), hashes[i]);
   }
 
   // Network chip: click to move account between mainnet and testnet
@@ -3206,7 +3206,7 @@ async function handleShowSend(preselectedAssetId = null) {
     if (fromAvatar) {
       const hashBytes = await CryptoUtils.sha256(account.name);
       const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      jdenticon.updateSvg(fromAvatar, hashHex);
+      window.jdenticon?.updateSvg(fromAvatar, hashHex);
     }
   }
 
@@ -3510,7 +3510,7 @@ async function updateReceiveScreenDisplay() {
   if (identiconEl) {
     const hashBytes = await CryptoUtils.sha256(account.name);
     const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    jdenticon.updateSvg(identiconEl, hashHex);
+    window.jdenticon?.updateSvg(identiconEl, hashHex);
   }
 }
 
@@ -5766,7 +5766,7 @@ async function loadAddressBook() {
           <div class="contact-badge">Wallet</div>
         `;
         contactsList.appendChild(item);
-        jdenticon.updateSvg(item.querySelector('.contact-avatar'), walletHashes[i]);
+        window.jdenticon?.updateSvg(item.querySelector('.contact-avatar'), walletHashes[i]);
       }
     }
   }
@@ -5798,7 +5798,7 @@ async function loadAddressBook() {
         </div>
       `;
       contactsList.appendChild(item);
-      jdenticon.updateSvg(item.querySelector('.contact-avatar'), contactHashes[i]);
+      window.jdenticon?.updateSvg(item.querySelector('.contact-avatar'), contactHashes[i]);
     }
 
     // Add delete event listeners
