@@ -1347,7 +1347,7 @@
           View Source
         </a>
         <a href="#support" class="btn-coffee btn-coffee--sm">
-          ☕ Buy me a coffee
+          🍺 Buy me a beer
         </a>
       </div>
     </div>
@@ -1977,9 +1977,9 @@
   <section class="support" id="support">
     <div class="container">
       <div class="support-inner">
-        <div class="support-icon">☕</div>
+        <div class="support-icon">🍺</div>
         <h2>Support the Developer</h2>
-        <p>Free, open-source, and built with passion. If it saves you time and helps you build or trade on BitShares, consider buying a coffee.</p>
+        <p>Free, open-source, and built with passion. If it saves you time and helps you build or trade on BitShares, consider buying a beer.</p>
 
         <!-- Wallet detected: payment form -->
         <div id="coffee-wallet-form" style="display:none">
@@ -2005,7 +2005,7 @@
               <input type="hidden" id="coffee-asset" value="BTS">
               <input type="number" id="coffee-amount" placeholder="Amount" min="0.001" step="0.001"
                      class="coffee-input" aria-label="Amount">
-              <button id="coffee-send-btn" class="btn-coffee btn-coffee--sm">Send ☕</button>
+              <button id="coffee-send-btn" class="btn-coffee btn-coffee--sm">Send 🍺</button>
             </div>
           </div>
 
@@ -2015,10 +2015,10 @@
           <!-- Step 3: thank you (shown after successful payment) -->
           <div id="coffee-thanks-step" style="display:none">
             <div class="coffee-thanks">
-              <div class="coffee-thanks-icon">☕</div>
+              <div class="coffee-thanks-icon">🍺</div>
               <p class="coffee-thanks-msg" id="coffee-thanks-msg"></p>
               <p class="coffee-thanks-sub">You're keeping the blockchain warm. Cheers! 🍻</p>
-              <button id="coffee-send-another" class="btn-coffee btn-coffee--sm" style="margin-top:16px">Send another ☕</button>
+              <button id="coffee-send-another" class="btn-coffee btn-coffee--sm" style="margin-top:16px">Send another 🍺</button>
             </div>
           </div>
         </div>
@@ -2027,7 +2027,7 @@
         <div id="coffee-no-wallet">
           <p class="coffee-account-hint">
             Send any amount to BitShares account:<br>
-            <code class="bts-account-tag" id="no-wallet-account-tag" title="Click to copy" style="cursor:pointer">buy-me-a-coffee</code>
+            <code class="bts-account-tag" id="no-wallet-account-tag" title="Click to copy" style="cursor:pointer">buy-me-a-beer</code>
           </p>
           <p class="coffee-hint-small">Install the BitShares Wallet extension to send directly from this page.</p>
         </div>
@@ -2056,7 +2056,7 @@
           <a href="https://t.me/BitSharesDEV" target="_blank">Telegram</a>
           <a href="https://bitshares.org" target="_blank">BitShares.org</a>
           <a href="https://bitsharestalk.org" target="_blank">Bitsharestalk.org</a>
-          <a href="#support">☕ buy-me-a-coffee</a>
+          <a href="#support">🍺 buy-me-a-beer</a>
         </div>
       </div>
     </div>
@@ -2258,7 +2258,7 @@
 
     // ── Support / Coffee payment form ────────────────────────────────────
     (function () {
-      const DONATION_ACCOUNT = 'buy-me-a-coffee';
+      const DONATION_ACCOUNT = 'buy-me-a-beer';
 
       const MAINNET_CHAIN_ID = '4018d7844c78f6a6c41c6a552b898022310fc5dec06da467ee7905a8dad512c8';
       const TESTNET_CHAIN_ID  = '39f5e2ede1f8bc1a3a54a7914414e3779e33193f1f5693510e73cb7a87617447';
@@ -2472,10 +2472,10 @@
           status.style.display = 'none';
 
           try {
-            await wallet.transfer({ to: DONATION_ACCOUNT, amount: amount, asset: asset, memo: 'Coffee ☕' });
+            await wallet.transfer({ to: DONATION_ACCOUNT, amount: amount, asset: asset, memo: 'Beer 🍺' });
             document.getElementById('coffee-send-step').style.display = 'none';
             document.getElementById('coffee-thanks-msg').textContent =
-              'Thanks a lot for the ' + amount + ' ' + asset + ' coffee!';
+              'Thanks a lot for the ' + amount + ' ' + asset + ' beer!';
             document.getElementById('coffee-thanks-step').style.display = 'block';
             document.getElementById('coffee-amount').value = '';
           } catch (err) {
@@ -2491,7 +2491,7 @@
           document.getElementById('coffee-thanks-step').style.display = 'none';
           document.getElementById('coffee-send-step').style.display = 'block';
           document.getElementById('coffee-send-btn').disabled = false;
-          document.getElementById('coffee-send-btn').textContent = 'Send ☕';
+          document.getElementById('coffee-send-btn').textContent = 'Send 🍺';
         });
       }
 
@@ -2507,15 +2507,15 @@
       }
 
       document.addEventListener('DOMContentLoaded', function () {
-        // Copy "buy-me-a-coffee" tag in the wallet-connected section
+        // Copy "buy-me-a-beer" tag in the no-wallet section
         const el = document.getElementById('copy-donation-name');
         if (el) {
           const p = el.closest('p');
           const origHtml = p.innerHTML;
           p.addEventListener('click', function (e) {
             if (e.target.id !== 'copy-donation-name') return;
-            navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
-              p.innerHTML = 'BitShares account <strong>buy-me-a-coffee</strong> copied!';
+            navigator.clipboard.writeText('buy-me-a-beer').then(function () {
+              p.innerHTML = 'BitShares account <strong>buy-me-a-beer</strong> copied!';
               setTimeout(function () { p.innerHTML = origHtml; }, 1500);
             });
           });
@@ -2525,7 +2525,7 @@
         const noWalletTag = document.getElementById('no-wallet-account-tag');
         if (noWalletTag) {
           noWalletTag.addEventListener('click', function () {
-            navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
+            navigator.clipboard.writeText('buy-me-a-beer').then(function () {
               const orig = noWalletTag.textContent;
               noWalletTag.textContent = '✓ Copied!';
               setTimeout(function () { noWalletTag.textContent = orig; }, 1500);
