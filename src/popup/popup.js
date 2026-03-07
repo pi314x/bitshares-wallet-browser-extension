@@ -12,6 +12,18 @@ import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
 import { renderIdenticonToCanvas } from '../lib/identicon.js';
 
+// Firefox MV2 compat: chrome.storage.local is callback-only in Firefox; proxy to browser.storage.local
+// which is fully Promise-based. Callers that pass an explicit callback still work.
+if (typeof browser !== 'undefined' && browser.storage?.local) {
+  const _bsl = browser.storage.local;
+  chrome.storage.local = {
+    get:    (k, cb) => cb ? _bsl.get(k).then(cb)          : _bsl.get(k),
+    set:    (o, cb) => cb ? _bsl.set(o).then(() => cb())   : _bsl.set(o),
+    remove: (k, cb) => cb ? _bsl.remove(k).then(() => cb()): _bsl.remove(k),
+    clear:  (cb)    => cb ? _bsl.clear().then(() => cb())   : _bsl.clear(),
+  };
+}
+
 // Global state
 let walletManager = null;
 let btsAPI = null;

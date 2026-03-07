@@ -6,6 +6,17 @@
 import { WalletManager } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 
+// Firefox MV2 compat: proxy chrome.storage.local through browser.storage.local (Promise-based)
+if (typeof browser !== 'undefined' && browser.storage?.local) {
+  const _bsl = browser.storage.local;
+  chrome.storage.local = {
+    get:    (k, cb) => cb ? _bsl.get(k).then(cb)          : _bsl.get(k),
+    set:    (o, cb) => cb ? _bsl.set(o).then(() => cb())   : _bsl.set(o),
+    remove: (k, cb) => cb ? _bsl.remove(k).then(() => cb()): _bsl.remove(k),
+    clear:  (cb)    => cb ? _bsl.clear().then(() => cb())   : _bsl.clear(),
+  };
+}
+
 // Default nodes per network (mirrors popup.js DEFAULT_NODES)
 const DEFAULT_NODES = {
   mainnet: [
