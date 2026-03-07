@@ -24,6 +24,8 @@ if (typeof browser !== 'undefined') {
     if (typeof last === 'function') return _origSend(...args); // explicit callback — leave as-is
     return browser.runtime.sendMessage(...args);
   };
+  // chrome.action (MV3) → chrome.browserAction (MV2)
+  if (!chrome.action && chrome.browserAction) chrome.action = chrome.browserAction;
 }
 
 // Default nodes per network (mirrors popup.js DEFAULT_NODES)
