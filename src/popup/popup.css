@@ -397,6 +397,36 @@ body {
   gap: var(--spacing-md);
 }
 
+.send-from-account {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+}
+
+.send-from-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.send-from-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.send-from-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .form-section-label {
   font-size: 11px;
   font-weight: 600;
@@ -2938,9 +2968,19 @@ body {
   gap: var(--spacing-sm);
 }
 
+.account-item-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-color);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
 .account-item {
   display: flex;
   align-items: center;
+  gap: var(--spacing-sm);
   justify-content: space-between;
   padding: var(--spacing-md);
   background: var(--bg-card);

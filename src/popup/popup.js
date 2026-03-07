@@ -2851,12 +2851,20 @@ async function loadAccountsList() {
 
   accountsList.innerHTML = '';
 
-  for (const account of accounts) {
+  // Pre-compute SHA256 hashes for all accounts (jdenticon expects hex hash)
+  const hashes = await Promise.all(accounts.map(async (account) => {
+    const bytes = await CryptoUtils.sha256(account.name);
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  }));
+
+  for (let i = 0; i < accounts.length; i++) {
+    const account = accounts[i];
     const accountNetwork = account.network || 'mainnet';
     const isCurrentNetwork = accountNetwork === network;
     const item = document.createElement('div');
     item.className = `account-item${account.isActive && isCurrentNetwork ? ' active' : ''}${account.watchOnly ? ' watch-only' : ''}${!isCurrentNetwork ? ' other-network' : ''}`;
     item.innerHTML = `
+      <svg class="account-item-avatar" width="36" height="36"></svg>
       <div class="account-item-info">
         <div class="account-item-name">${escapeHtml(account.name)}</div>
         <div class="account-item-id">${escapeHtml(account.id)}</div>
@@ -2870,6 +2878,7 @@ async function loadAccountsList() {
       </div>
     `;
     accountsList.appendChild(item);
+    jdenticon.updateSvg(item.querySelector('.account-item-avatar'), hashes[i]);
   }
 
   // Network chip: click to move account between mainnet and testnet
@@ -3188,6 +3197,18 @@ async function handleShowSend(preselectedAssetId = null) {
   }
 
   showScreen('send-screen');
+
+  // Update "From" account bar
+  if (account) {
+    const fromName = document.getElementById('send-from-name');
+    if (fromName) fromName.textContent = account.name;
+    const fromAvatar = document.getElementById('send-from-avatar');
+    if (fromAvatar) {
+      const hashBytes = await CryptoUtils.sha256(account.name);
+      const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      jdenticon.updateSvg(fromAvatar, hashHex);
+    }
+  }
 
   // Clear recipient field and status
   const sendToInput = document.getElementById('send-to');
