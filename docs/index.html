@@ -532,18 +532,6 @@
       margin-top: 8px;
     }
 
-    .btn-copy-addr {
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.25);
-      color: #fff;
-      border-radius: 8px;
-      padding: 8px 20px;
-      font-size: 14px;
-      cursor: pointer;
-      margin-bottom: 12px;
-      transition: background 0.2s;
-    }
-    .btn-copy-addr:hover { background: rgba(255,255,255,0.22); }
 
     .coffee-form-row {
       display: flex;
@@ -2036,9 +2024,8 @@
         <div id="coffee-no-wallet">
           <p class="coffee-account-hint">
             Send any amount to BitShares account:
-            <code class="bts-account-tag">buy-me-a-coffee</code>
+            <code class="bts-account-tag" id="no-wallet-account-tag" title="Click to copy" style="cursor:pointer">buy-me-a-coffee</code>
           </p>
-          <button id="copy-bts-address-btn" class="btn-copy-addr">Copy account name</button>
           <p class="coffee-hint-small">Install the BitShares Wallet extension to send directly from this page.</p>
         </div>
       </div>
@@ -2517,25 +2504,28 @@
       }
 
       document.addEventListener('DOMContentLoaded', function () {
+        // Copy "buy-me-a-coffee" tag in the wallet-connected section
         const el = document.getElementById('copy-donation-name');
-        if (!el) return;
-        const p = el.closest('p');
-        const origHtml = p.innerHTML;
-        p.addEventListener('click', function (e) {
-          if (e.target.id !== 'copy-donation-name') return;
-          navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
-            p.innerHTML = 'BitShares account <strong>buy-me-a-coffee</strong> copied!';
-            setTimeout(function () { p.innerHTML = origHtml; }, 1500);
-          });
-        });
-
-        // Copy button shown when wallet is not installed
-        const copyBtn = document.getElementById('copy-bts-address-btn');
-        if (copyBtn) {
-          copyBtn.addEventListener('click', function () {
+        if (el) {
+          const p = el.closest('p');
+          const origHtml = p.innerHTML;
+          p.addEventListener('click', function (e) {
+            if (e.target.id !== 'copy-donation-name') return;
             navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
-              copyBtn.textContent = '✓ Copied!';
-              setTimeout(function () { copyBtn.textContent = 'Copy account name'; }, 2000);
+              p.innerHTML = 'BitShares account <strong>buy-me-a-coffee</strong> copied!';
+              setTimeout(function () { p.innerHTML = origHtml; }, 1500);
+            });
+          });
+        }
+
+        // Copy account name by clicking the tag in the no-wallet section
+        const noWalletTag = document.getElementById('no-wallet-account-tag');
+        if (noWalletTag) {
+          noWalletTag.addEventListener('click', function () {
+            navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
+              const orig = noWalletTag.textContent;
+              noWalletTag.textContent = '✓ Copied!';
+              setTimeout(function () { noWalletTag.textContent = orig; }, 1500);
             });
           });
         }
