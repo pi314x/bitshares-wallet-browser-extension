@@ -1368,22 +1368,13 @@ export class WalletManager {
 
         // Only create memo if both accounts have memo keys
         if (fromMemoKey && toMemoKey && fromMemoKey.length > 10 && toMemoKey.length > 10) {
-          // Convert memo string to hex-encoded bytes
-          const encoder = new TextEncoder();
-          const memoBytes = encoder.encode(memo);
-          const memoHex = Array.from(memoBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-
-          // Generate nonce: 64 fully random bits (avoids same-ms collision risk)
-          const randBytes = crypto.getRandomValues(new Uint8Array(8));
-          const nonce = randBytes.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n).toString();
-
-          // BitShares requires full memo_data structure
-          memoObject = {
-            from: fromMemoKey,
-            to: toMemoKey,
-            nonce: nonce,
-            message: memoHex
-          };
+          const memoPrivateKey = keys.memo?.privateKey;
+          if (!memoPrivateKey) {
+            console.warn('Cannot encrypt memo: sender memo private key not available');
+          } else {
+            // ECIES-encrypt the memo using the sender's memo private key and recipient's memo public key
+            memoObject = await CryptoUtils.encryptMemo(memo, memoPrivateKey, toMemoKey);
+          }
         } else {
           console.warn('Cannot send memo: one or both accounts missing memo key');
         }
@@ -1438,20 +1429,18 @@ export class WalletManager {
         throw new Error('Invalid transaction format: expected { operations: [...] } or [[opType, opData], ...]');
       }
 
-      // Determine the signing account using three cascading strategies:
-      //  1. Caller-provided accountId (from connection metadata)
-      //  2. Account ID found inside the transaction's own operations (most reliable —
-      //     works even when connection metadata is missing or stale)
-      //  3. Currently active account (last resort)
+      // Determine the signing account.
+      // The connected accountId (from the dApp's approval) is the authority boundary —
+      // the transaction must only be signed by that account, never by another wallet account
+      // that the dApp forged via fields like 'from' inside the transaction body.
       let resolvedId = accountId;
 
       if (!resolvedId) {
-        // Parse operations: each op is either [opType, opData] or a plain object
+        // No caller-provided account: infer from operation fields (last resort for UI-initiated tx)
         const ops = tx.operations || [];
         for (const op of ops) {
           const opData = Array.isArray(op) ? op[1] : op;
           if (!opData || typeof opData !== 'object') continue;
-          // Fields that identify the authorising account across common op types
           for (const field of ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account']) {
             const val = opData[field];
             if (typeof val === 'string' && /^1\.2\.\d+$/.test(val)) {
@@ -1460,6 +1449,21 @@ export class WalletManager {
             }
           }
           if (resolvedId) break;
+        }
+      } else {
+        // Caller provided an accountId (dApp connection). Verify the transaction does not
+        // reference a *different* account in its operations — if it does, the dApp is trying
+        // to escalate privileges by signing with an account it was never connected to.
+        const ops = tx.operations || [];
+        for (const op of ops) {
+          const opData = Array.isArray(op) ? op[1] : op;
+          if (!opData || typeof opData !== 'object') continue;
+          for (const field of ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account']) {
+            const val = opData[field];
+            if (typeof val === 'string' && /^1\.2\.\d+$/.test(val) && val !== accountId) {
+              throw new Error(`Transaction references account ${val} but the dApp is only connected to ${accountId}`);
+            }
+          }
         }
       }
 

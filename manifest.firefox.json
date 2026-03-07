@@ -4,7 +4,7 @@
   "version": "0.7.0",
   "description": "A secure BitShares blockchain wallet extension - Sign transactions, manage keys, and interact with dApps",
   "author": "BitShares Community",
-  "homepage_url": "https://bitshares.org",
+  "homepage_url": "https://pi314x.github.io/bitshares-wallet-browser-extension/#",
 
   "browser_specific_settings": {
     "gecko": {
@@ -40,7 +40,7 @@
       "matches": ["<all_urls>"],
       "js": ["src/content/inject.js"],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": false
     }
   ],
 

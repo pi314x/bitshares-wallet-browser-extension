@@ -4,7 +4,7 @@
   "version": "0.7.0",
   "description": "A secure BitShares blockchain wallet extension for Chrome - Sign transactions, manage keys, and interact with dApps",
   "author": "BitShares Community",
-  "homepage_url": "https://bitshares.org",
+  "homepage_url": "https://pi314x.github.io/bitshares-wallet-browser-extension/#",
   
   "icons": {
     "16": "src/assets/icons/icon16.png",

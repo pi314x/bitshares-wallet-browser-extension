@@ -2562,6 +2562,11 @@ async function createHistoryItem(operation) {
         ? `${_explorerUrl}/transaction/${trxHash}`
         : `${_explorerUrl}/block/${blockNum}`;
 
+      // Only open https:// URLs — prevents javascript:/data: injection via storage
+      if (!url.startsWith('https://')) {
+        showToast('Invalid explorer URL (must be https://)', 'error');
+        return;
+      }
       chrome.tabs.create({ url });
     });
   }
@@ -3622,6 +3627,16 @@ async function handleSaveExplorerUrl() {
   let testnetUrl = (testnetInput?.value || '').trim().replace(/\/+$/, '');
   if (!mainnetUrl) mainnetUrl = DEFAULT_EXPLORER_MAINNET;
 
+  // Reject non-https URLs
+  if (mainnetUrl && !mainnetUrl.startsWith('https://')) {
+    showToast('Mainnet explorer URL must start with https://', 'error');
+    return;
+  }
+  if (testnetUrl && !testnetUrl.startsWith('https://')) {
+    showToast('Testnet explorer URL must start with https://', 'error');
+    return;
+  }
+
   await chrome.storage.local.set({ explorerUrl: mainnetUrl, explorerUrlTestnet: testnetUrl });
 
   if (mainnetInput) mainnetInput.value = mainnetUrl;
@@ -4099,36 +4114,6 @@ async function handleCopyReceiveAccount() {
 
 let pendingDappRequest = null;
 
-function handleDappReject() {
-  if (pendingDappRequest) {
-    chrome.runtime.sendMessage({
-      type: 'DAPP_RESPONSE',
-      requestId: pendingDappRequest.id,
-      approved: false
-    });
-  }
-  pendingDappRequest = null;
-  hideModal('dapp-connect-modal');
-}
-
-async function handleDappConnect() {
-  if (pendingDappRequest) {
-    const account = await walletManager.getCurrentAccount();
-    chrome.runtime.sendMessage({
-      type: 'DAPP_RESPONSE',
-      requestId: pendingDappRequest.id,
-      approved: true,
-      account: {
-        name: account.name,
-        id: account.id
-      }
-    });
-  }
-  pendingDappRequest = null;
-  hideModal('dapp-connect-modal');
-  showToast('Site connected!', 'success');
-}
-
 // === Background Message Handler ===
 
 function handleBackgroundMessage(message, sender, sendResponse) {
@@ -4254,6 +4239,14 @@ async function checkPendingApproval() {
   try {
     const result = await chrome.storage.local.get(['pendingApproval']);
     if (!result.pendingApproval) return;
+
+    // Clear stale entries that were never resolved (e.g. after a crash)
+    const TEN_MINUTES = 10 * 60 * 1000;
+    if (result.pendingApproval.timestamp && Date.now() - result.pendingApproval.timestamp > TEN_MINUTES) {
+      await chrome.storage.local.remove(['pendingApproval']);
+      await chrome.action.setBadgeText({ text: '' });
+      return;
+    }
 
     const { requestId, type, origin, params } = result.pendingApproval;
     const currentNetwork = document.getElementById('network-select')?.value || 'mainnet';

@@ -527,7 +527,8 @@ class BackgroundService {
 
   async handleGetAccount(origin) {
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const account = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, account?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -537,7 +538,6 @@ class BackgroundService {
       throw new Error('Wallet is locked');
     }
 
-    const account = await this.walletManager.getCurrentAccount();
     return {
       name: account.name,
       id: account.id
@@ -545,16 +545,17 @@ class BackgroundService {
   }
 
   async handleSignRequest(origin, params, messageId, tabId) {
-    // Rate-limit: reject if there's already a pending request from this origin
+    // Rate-limit: reject if there's already any pending request from this origin
     for (const [, req] of this.pendingRequests) {
-      if (req.origin === origin && (req.type === 'transaction' || req.type === 'transfer')) {
+      if (req.origin === origin) {
         throw new Error('A request from this site is already pending approval');
       }
     }
 
     // Verify connection for current network
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const currentAccount = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, currentAccount?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -598,16 +599,17 @@ class BackgroundService {
   }
 
   async handleTransferRequest(origin, params, messageId, tabId) {
-    // Rate-limit: reject if there's already a pending request from this origin
+    // Rate-limit: reject if there's already any pending request from this origin
     for (const [, req] of this.pendingRequests) {
-      if (req.origin === origin && (req.type === 'transaction' || req.type === 'transfer')) {
+      if (req.origin === origin) {
         throw new Error('A request from this site is already pending approval');
       }
     }
 
     // Verify connection for current network
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const currentAccount = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, currentAccount?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -675,7 +677,8 @@ class BackgroundService {
   async handleGetBalance(origin, params) {
     // Verify connection on current network
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const account = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, account?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -684,9 +687,6 @@ class BackgroundService {
     if (!isUnlocked) {
       throw new Error('Wallet is locked');
     }
-
-    // Get account
-    const account = await this.walletManager.getCurrentAccount();
 
     // Get balance for specific asset or all balances
     const assetFilter = params?.asset;
@@ -732,9 +732,17 @@ class BackgroundService {
   }
 
   async handleSignMessage(origin, params, messageId, tabId) {
+    // Rate-limit: reject if there's already any pending request from this origin
+    for (const [, req] of this.pendingRequests) {
+      if (req.origin === origin) {
+        throw new Error('A request from this site is already pending approval');
+      }
+    }
+
     // Verify connection on current network
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const currentAccount = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, currentAccount?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -783,9 +791,17 @@ class BackgroundService {
   }
 
   async handleSwapRequest(origin, params, messageId, tabId) {
+    // Rate-limit: reject if there's already any pending request from this origin
+    for (const [, req] of this.pendingRequests) {
+      if (req.origin === origin) {
+        throw new Error('A request from this site is already pending approval');
+      }
+    }
+
     // Verify connection on current network
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const currentAccount = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, currentAccount?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -828,9 +844,17 @@ class BackgroundService {
   }
 
   async handleLimitOrderRequest(origin, params, messageId, tabId) {
+    // Rate-limit: reject if there's already any pending request from this origin
+    for (const [, req] of this.pendingRequests) {
+      if (req.origin === origin) {
+        throw new Error('A request from this site is already pending approval');
+      }
+    }
+
     // Verify connection on current network
     const network = await this.getCurrentNetwork();
-    const isConnected = await this.walletManager.isSiteConnected(origin, null, network);
+    const currentAccount = await this.walletManager.getCurrentAccount();
+    const isConnected = await this.walletManager.isSiteConnected(origin, currentAccount?.id, network);
     if (!isConnected) {
       throw new Error('Not connected');
     }
@@ -892,7 +916,8 @@ class BackgroundService {
         network: pendingNetwork,
         params: request?.params || {},
         messageId: request?.messageId,
-        tabId: request?.tabId
+        tabId: request?.tabId,
+        timestamp: Date.now()
       }
     });
 
