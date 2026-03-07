@@ -490,11 +490,11 @@ On tag push (`git tag v1.0.0 && git push origin v1.0.0`), GitHub Actions automat
 
 ## Support the Project
 
-If this wallet saves you time or helps you trade on BitShares, consider sending a coffee ☕
+If this wallet saves you time or helps you trade on BitShares, consider buying a beer 🍺
 
 Send any amount of BTS (or any asset) directly on-chain to the BitShares account:
 
-> **`buy-me-a-coffee`**
+> **`buy-me-a-beer`**
 
 You can also use the [wallet website](https://pi314x.github.io/bitshares-wallet-browser-extension/) — if the extension is installed, a one-click send form is shown right on the page.
 
