@@ -2562,6 +2562,7 @@ body {
 
 .contact-info {
   flex: 1;
+  min-width: 0;
 }
 
 .contact-name {
@@ -2897,6 +2898,9 @@ body {
 }
 
 .address-book-modal-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   padding: var(--spacing-md);
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
@@ -3008,6 +3012,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .account-item-name {

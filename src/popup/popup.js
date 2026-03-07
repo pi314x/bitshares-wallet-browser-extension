@@ -5907,9 +5907,12 @@ async function showAddressBookForSend() {
   if (otherWalletAccounts.length > 0) {
     modalContent += '<div class="address-book-section-header">My Accounts</div>';
     modalContent += otherWalletAccounts.map(acc => `
-      <div class="address-book-modal-item wallet-account" data-account="${acc.name}">
-        <div class="contact-name">${acc.name}</div>
-        <div class="contact-account">${acc.accountId || acc.id}</div>
+      <div class="address-book-modal-item wallet-account" data-account="${escapeHtml(acc.name)}">
+        <svg class="contact-avatar" width="32" height="32"></svg>
+        <div class="contact-info">
+          <div class="contact-name">${escapeHtml(acc.name)}</div>
+          <div class="contact-account">${escapeHtml(acc.accountId || acc.id)}</div>
+        </div>
       </div>
     `).join('');
   }
@@ -5918,9 +5921,12 @@ async function showAddressBookForSend() {
   if (contacts.length > 0) {
     modalContent += '<div class="address-book-section-header">Contacts</div>';
     modalContent += contacts.map(c => `
-      <div class="address-book-modal-item" data-account="${c.account}">
-        <div class="contact-name">${c.name}</div>
-        <div class="contact-account">${c.account}</div>
+      <div class="address-book-modal-item" data-account="${escapeHtml(c.account)}">
+        <svg class="contact-avatar" width="32" height="32"></svg>
+        <div class="contact-info">
+          <div class="contact-name">${escapeHtml(c.name)}</div>
+          <div class="contact-account">${escapeHtml(c.account)}</div>
+        </div>
       </div>
     `).join('');
   }
@@ -5942,6 +5948,16 @@ async function showAddressBookForSend() {
   `;
 
   document.body.appendChild(modal);
+
+  // Render jdenticon for each item (must be in DOM first)
+  for (const item of modal.querySelectorAll('.address-book-modal-item')) {
+    const svgEl = item.querySelector('.contact-avatar');
+    if (svgEl && item.dataset.account) {
+      const bytes = await CryptoUtils.sha256(item.dataset.account);
+      const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      window.jdenticon?.updateSvg(svgEl, hex);
+    }
+  }
 
   // Add event listeners
   modal.querySelector('.modal-close').addEventListener('click', () => {
