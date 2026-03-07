@@ -12,6 +12,11 @@ import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
 import { renderIdenticonToCanvas } from '../lib/identicon.js';
 
+// Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
+{ const l = document.createElement('link'); l.rel = 'stylesheet';
+  l.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap';
+  document.head.appendChild(l); }
+
 // Firefox MV2 compat: chrome.* APIs are callback-only; proxy through browser.* (Promise-based)
 if (typeof browser !== 'undefined') {
   if (browser.storage?.local) {
