@@ -12,15 +12,23 @@ import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
 import { renderIdenticonToCanvas } from '../lib/identicon.js';
 
-// Firefox MV2 compat: chrome.storage.local is callback-only in Firefox; proxy to browser.storage.local
-// which is fully Promise-based. Callers that pass an explicit callback still work.
-if (typeof browser !== 'undefined' && browser.storage?.local) {
-  const _bsl = browser.storage.local;
-  chrome.storage.local = {
-    get:    (k, cb) => cb ? _bsl.get(k).then(cb)          : _bsl.get(k),
-    set:    (o, cb) => cb ? _bsl.set(o).then(() => cb())   : _bsl.set(o),
-    remove: (k, cb) => cb ? _bsl.remove(k).then(() => cb()): _bsl.remove(k),
-    clear:  (cb)    => cb ? _bsl.clear().then(() => cb())   : _bsl.clear(),
+// Firefox MV2 compat: chrome.* APIs are callback-only; proxy through browser.* (Promise-based)
+if (typeof browser !== 'undefined') {
+  if (browser.storage?.local) {
+    const _bsl = browser.storage.local;
+    chrome.storage.local = {
+      get:    (k, cb) => cb ? _bsl.get(k).then(cb)          : _bsl.get(k),
+      set:    (o, cb) => cb ? _bsl.set(o).then(() => cb())   : _bsl.set(o),
+      remove: (k, cb) => cb ? _bsl.remove(k).then(() => cb()): _bsl.remove(k),
+      clear:  (cb)    => cb ? _bsl.clear().then(() => cb())   : _bsl.clear(),
+    };
+  }
+  // sendMessage returns undefined in Firefox MV2 — proxy to browser.runtime.sendMessage
+  const _origSend = chrome.runtime.sendMessage.bind(chrome.runtime);
+  chrome.runtime.sendMessage = (...args) => {
+    const last = args[args.length - 1];
+    if (typeof last === 'function') return _origSend(...args); // explicit callback — leave as-is
+    return browser.runtime.sendMessage(...args);
   };
 }
 
