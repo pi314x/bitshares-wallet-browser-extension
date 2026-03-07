@@ -16,8 +16,10 @@ import { renderIdenticonToCanvas } from '../lib/identicon.js';
 let walletManager = null;
 let btsAPI = null;
 
-const DEFAULT_EXPLORER = 'https://btslens.pages.dev';
-let _explorerUrl = DEFAULT_EXPLORER; // cached after first load
+const DEFAULT_EXPLORER_MAINNET = 'https://btslens.pages.dev';
+const DEFAULT_EXPLORER_TESTNET = ''; // no default testnet explorer
+const DEFAULT_EXPLORER = DEFAULT_EXPLORER_MAINNET; // backwards-compat alias
+let _explorerUrl = DEFAULT_EXPLORER_MAINNET; // active explorer for current network
 let currentScreen = 'loading-screen';
 let isLocked = true;
 
@@ -228,13 +230,15 @@ async function initializeApp() {
       }
     }).catch(() => {});
 
-    // Load explorer URL early so history items are linked on first render
-    const explorerResult = await chrome.storage.local.get(['explorerUrl']);
-    _explorerUrl = (explorerResult.explorerUrl || DEFAULT_EXPLORER).replace(/\/+$/, '');
-
     // Restore saved network selection before any API calls
     const savedNetworkResult = await chrome.storage.local.get(['selectedNetwork']);
     const savedNetwork = savedNetworkResult.selectedNetwork || 'mainnet';
+
+    // Load explorer URL early so history items are linked on first render
+    const explorerResult = await chrome.storage.local.get(['explorerUrl', 'explorerUrlTestnet']);
+    _explorerUrl = savedNetwork === 'testnet'
+      ? (explorerResult.explorerUrlTestnet ?? DEFAULT_EXPLORER_TESTNET).replace(/\/+$/, '')
+      : (explorerResult.explorerUrl || DEFAULT_EXPLORER_MAINNET).replace(/\/+$/, '');
     const networkSelect = document.getElementById('network-select');
     if (networkSelect) networkSelect.value = savedNetwork;
     const welcomeNetworkSelect = document.getElementById('welcome-network-select');
@@ -2509,6 +2513,14 @@ async function createHistoryItem(operation) {
         } catch { /* node unavailable or block not found */ }
       }
 
+      if (!_explorerUrl) {
+        // No explorer configured — copy the transaction/block ID to clipboard
+        const toCopy = trxHash || String(blockNum);
+        await navigator.clipboard.writeText(toCopy).catch(() => {});
+        showToast('Copied to clipboard (no explorer set)', 'info');
+        return;
+      }
+
       const url = trxHash
         ? `${_explorerUrl}/transaction/${trxHash}`
         : `${_explorerUrl}/block/${blockNum}`;
@@ -3343,6 +3355,12 @@ async function handleNetworkChange(e) {
   await new Promise(resolve => chrome.storage.local.set({ selectedNetwork: network }, resolve));
   updateNetworkBadges(network);
 
+  // Refresh active explorer URL for the new network
+  const exResult = await chrome.storage.local.get(['explorerUrl', 'explorerUrlTestnet']);
+  _explorerUrl = network === 'testnet'
+    ? (exResult.explorerUrlTestnet ?? DEFAULT_EXPLORER_TESTNET).replace(/\/+$/, '')
+    : (exResult.explorerUrl || DEFAULT_EXPLORER_MAINNET).replace(/\/+$/, '');
+
   try {
     showToast(`Switching to ${network}...`, 'info');
 
@@ -3423,30 +3441,49 @@ async function handleAutolockChange(e) {
 // === Explorer URL ===
 
 async function loadExplorerUrl() {
-  const result = await chrome.storage.local.get(['explorerUrl']);
-  _explorerUrl = result.explorerUrl || DEFAULT_EXPLORER;
-  const input = document.getElementById('explorer-url');
-  if (input) input.value = _explorerUrl;
+  const result = await chrome.storage.local.get(['explorerUrl', 'explorerUrlTestnet']);
+  const mainnetUrl = (result.explorerUrl || DEFAULT_EXPLORER_MAINNET).replace(/\/+$/, '');
+  const testnetUrl = (result.explorerUrlTestnet ?? DEFAULT_EXPLORER_TESTNET).replace(/\/+$/, '');
+
+  const mainnetInput = document.getElementById('explorer-url-mainnet');
+  const testnetInput = document.getElementById('explorer-url-testnet');
+  if (mainnetInput) mainnetInput.value = mainnetUrl;
+  if (testnetInput) testnetInput.value = testnetUrl;
+
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  _explorerUrl = network === 'testnet' ? testnetUrl : mainnetUrl;
 }
 
 async function handleSaveExplorerUrl() {
-  const input = document.getElementById('explorer-url');
-  let url = (input?.value || '').trim();
-  if (!url) url = DEFAULT_EXPLORER;
-  // Strip trailing slash for consistent concatenation
-  url = url.replace(/\/+$/, '');
-  await chrome.storage.local.set({ explorerUrl: url });
-  _explorerUrl = url;
-  if (input) input.value = url;
-  showToast('Explorer URL saved', 'success');
+  const mainnetInput = document.getElementById('explorer-url-mainnet');
+  const testnetInput = document.getElementById('explorer-url-testnet');
+
+  let mainnetUrl = (mainnetInput?.value || '').trim().replace(/\/+$/, '');
+  let testnetUrl = (testnetInput?.value || '').trim().replace(/\/+$/, '');
+  if (!mainnetUrl) mainnetUrl = DEFAULT_EXPLORER_MAINNET;
+
+  await chrome.storage.local.set({ explorerUrl: mainnetUrl, explorerUrlTestnet: testnetUrl });
+
+  if (mainnetInput) mainnetInput.value = mainnetUrl;
+
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  _explorerUrl = network === 'testnet' ? testnetUrl : mainnetUrl;
+
+  showToast('Explorer URLs saved', 'success');
 }
 
 async function handleResetExplorerUrl() {
-  await chrome.storage.local.remove('explorerUrl');
-  _explorerUrl = DEFAULT_EXPLORER;
-  const input = document.getElementById('explorer-url');
-  if (input) input.value = DEFAULT_EXPLORER;
-  showToast('Explorer reset to default', 'success');
+  await chrome.storage.local.remove(['explorerUrl', 'explorerUrlTestnet']);
+
+  const mainnetInput = document.getElementById('explorer-url-mainnet');
+  const testnetInput = document.getElementById('explorer-url-testnet');
+  if (mainnetInput) mainnetInput.value = DEFAULT_EXPLORER_MAINNET;
+  if (testnetInput) testnetInput.value = DEFAULT_EXPLORER_TESTNET;
+
+  const network = document.getElementById('network-select')?.value || 'mainnet';
+  _explorerUrl = network === 'testnet' ? DEFAULT_EXPLORER_TESTNET : DEFAULT_EXPLORER_MAINNET;
+
+  showToast('Explorers reset to defaults', 'success');
 }
 
 /**
@@ -3456,12 +3493,13 @@ async function handleResetExplorerUrl() {
  * (which opens the detail modal) is not triggered.
  */
 function explorerLink(txId, blockNum) {
+  const arrow = _explorerUrl ? ' ↗' : ' 📋';
   if (txId) {
-    const short = `${txId.slice(0, 8)}…${txId.slice(-4)} ↗`;
+    const short = `${txId.slice(0, 8)}…${txId.slice(-4)}${arrow}`;
     return `<span class="history-txid">${short}</span>`;
   }
   if (blockNum) {
-    return `<span class="history-txid">#${blockNum} ↗</span>`;
+    return `<span class="history-txid">#${blockNum}${arrow}</span>`;
   }
   return '';
 }

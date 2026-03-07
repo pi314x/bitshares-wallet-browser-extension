@@ -184,6 +184,12 @@ npm run build:all
 
 Output goes to `dist/` (Chrome/Brave) and `dist-firefox/` (Firefox).
 
+After building, load the extension:
+- **Chrome/Brave**: "Load unpacked" → select the `dist/` folder
+- **Firefox**: `about:debugging#/runtime/this-firefox` → "Load Temporary Add-on" → select `dist-firefox/manifest.json`
+
+> **Firefox note**: Firefox reads `manifest.json` in whichever directory you load. The root source directory contains the Chrome MV3 manifest and will fail with *"background.service_worker is currently disabled"*. Always load from the built `dist-firefox/` directory.
+
 ## Project Structure
 
 ```

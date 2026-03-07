@@ -1312,15 +1312,21 @@ window.addEventListener(
         <h2>Block Explorer</h2>
       </div>
       <div class="settings-detail-container">
-        <p class="settings-detail-description">Operation IDs in your transaction history will link to this explorer. Leave empty to restore the default.</p>
+        <p class="settings-detail-description">Transaction IDs in your history will link to these explorers. Leave empty to disable — clicking a transaction will copy its ID to clipboard instead.</p>
         <div class="settings-detail-row">
-          <label for="explorer-url">Explorer URL</label>
-          <input id="explorer-url" type="url" class="settings-input"
+          <label for="explorer-url-mainnet">Mainnet Explorer</label>
+          <input id="explorer-url-mainnet" type="url" class="settings-input"
                  placeholder="https://btslens.pages.dev"
                  spellcheck="false" autocomplete="off" />
         </div>
+        <div class="settings-detail-row">
+          <label for="explorer-url-testnet">Testnet Explorer</label>
+          <input id="explorer-url-testnet" type="url" class="settings-input"
+                 placeholder="None (copies to clipboard)"
+                 spellcheck="false" autocomplete="off" />
+        </div>
         <button id="explorer-url-save" class="btn btn-primary">Save</button>
-        <button id="explorer-url-reset" class="btn btn-secondary">Reset to Default</button>
+        <button id="explorer-url-reset" class="btn btn-secondary">Reset to Defaults</button>
       </div>
     </div>
 

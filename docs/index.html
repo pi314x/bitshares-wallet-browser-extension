@@ -532,6 +532,19 @@
       margin-top: 8px;
     }
 
+    .btn-copy-addr {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff;
+      border-radius: 8px;
+      padding: 8px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-bottom: 12px;
+      transition: background 0.2s;
+    }
+    .btn-copy-addr:hover { background: rgba(255,255,255,0.22); }
+
     .coffee-form-row {
       display: flex;
       align-items: center;
@@ -1010,6 +1023,11 @@
       .footer-content {
         flex-direction: column;
         text-align: center;
+      }
+      .footer-links {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
       }
     }
 
@@ -2020,6 +2038,7 @@
             Send any amount to BitShares account:
             <code class="bts-account-tag">buy-me-a-coffee</code>
           </p>
+          <button id="copy-bts-address-btn" class="btn-copy-addr">Copy account name</button>
           <p class="coffee-hint-small">Install the BitShares Wallet extension to send directly from this page.</p>
         </div>
       </div>
@@ -2509,6 +2528,17 @@
             setTimeout(function () { p.innerHTML = origHtml; }, 1500);
           });
         });
+
+        // Copy button shown when wallet is not installed
+        const copyBtn = document.getElementById('copy-bts-address-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', function () {
+            navigator.clipboard.writeText('buy-me-a-coffee').then(function () {
+              copyBtn.textContent = '✓ Copied!';
+              setTimeout(function () { copyBtn.textContent = 'Copy account name'; }, 2000);
+            });
+          });
+        }
       });
 
       if (document.readyState === 'loading') {
