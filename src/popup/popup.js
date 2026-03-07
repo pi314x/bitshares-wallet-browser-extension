@@ -32,6 +32,11 @@ if (typeof browser !== 'undefined') {
   };
   // chrome.action (MV3) → chrome.browserAction (MV2)
   if (!chrome.action && chrome.browserAction) chrome.action = chrome.browserAction;
+  // chrome.tabs.query returns undefined in Firefox MV2 — proxy to browser.tabs.query
+  if (browser.tabs?.query) {
+    const _origQuery = chrome.tabs.query.bind(chrome.tabs);
+    chrome.tabs.query = (q, cb) => cb ? _origQuery(q, cb) : browser.tabs.query(q);
+  }
 }
 
 // Global state
