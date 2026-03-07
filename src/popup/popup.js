@@ -10,7 +10,7 @@ import { CryptoUtils } from '../lib/crypto-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
-import { updateSvg as jdenticonUpdateSvg } from './jdenticon.mjs';
+import { updateSvg as jdenticonUpdateSvg } from '../lib/jdenticon.js';
 
 // Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
 { const l = document.createElement('link'); l.rel = 'stylesheet';

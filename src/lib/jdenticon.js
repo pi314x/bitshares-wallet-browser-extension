@@ -1396,4 +1396,4 @@ const version = "3.3.0";
 const bundle = "browser-esm";
 
 export { bundle, configure, drawIcon, toSvg, update, updateCanvas, updateSvg, version };
-//# sourceMappingURL=jdenticon-module.mjs.map
+
