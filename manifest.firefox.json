@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "BitShares Wallet",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A secure BitShares blockchain wallet extension - Sign transactions, manage keys, and interact with dApps",
   "author": "BitShares Community",
   "homepage_url": "https://pi314x.github.io/bitshares-wallet-browser-extension/#",
@@ -9,7 +9,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "bitshares-wallet@bitshares.org",
-      "strict_min_version": "109.0",
+      "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": ["none"],
         "optional": []
