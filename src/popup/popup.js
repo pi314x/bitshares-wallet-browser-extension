@@ -10,7 +10,7 @@ import { CryptoUtils } from '../lib/crypto-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
-import { renderIdenticonToCanvas } from '../lib/identicon.js';
+// jdenticon loaded via <script> tag in popup.html (window.jdenticon)
 
 // Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
 { const l = document.createElement('link'); l.rel = 'stylesheet';
@@ -1123,10 +1123,10 @@ async function loadDashboard(forceReconnect = false) {
     accountIdEl.textContent = isWatchOnly ? `${account.id} (Watch Only)` : account.id;
     accountIdEl.dataset.accountId = account.id; // Store raw ID for comparisons
 
-    // Update avatar with identicon
-    const avatarCanvas = document.getElementById('account-avatar');
-    if (avatarCanvas) {
-      await renderIdenticonToCanvas(avatarCanvas, account.name);
+    // Update avatar with jdenticon
+    const avatarEl = document.getElementById('account-avatar');
+    if (avatarEl) {
+      jdenticon.updateSvg(avatarEl, account.name);
     }
 
     // Load balances
@@ -3482,16 +3482,10 @@ async function updateReceiveScreenDisplay() {
     accountIdEl.textContent = account.id || 'Loading...';
   }
 
-  // Render avatar
-  const avatarCanvas = document.getElementById('receive-avatar');
-  if (avatarCanvas) {
-    await renderIdenticonToCanvas(avatarCanvas, account.name);
-  }
-
   // Render large identicon
-  const identiconCanvas = document.getElementById('receive-identicon');
-  if (identiconCanvas) {
-    await renderIdenticonToCanvas(identiconCanvas, account.name);
+  const identiconEl = document.getElementById('receive-identicon');
+  if (identiconEl) {
+    jdenticon.updateSvg(identiconEl, account.name);
   }
 }
 

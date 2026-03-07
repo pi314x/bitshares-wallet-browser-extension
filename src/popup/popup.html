@@ -391,7 +391,7 @@
       
       <div class="account-card">
         <div class="account-info">
-          <canvas class="account-avatar" id="account-avatar" width="80" height="80"></canvas>
+          <svg class="account-avatar" id="account-avatar" width="80" height="80" data-jdenticon-value=""></svg>
           <div class="account-details">
             <div class="account-selector-wrapper">
               <select id="account-selector" class="account-selector">
@@ -498,7 +498,7 @@
           </div>
         </div>
         <div class="receive-identicon-wrapper">
-          <canvas id="receive-identicon" class="receive-identicon" width="240" height="240"></canvas>
+          <svg id="receive-identicon" class="receive-identicon" width="240" height="240" data-jdenticon-value=""></svg>
           <button class="btn btn-secondary" id="btn-copy-receive-account" title="Copy Account Name">
             <span class="btn-icon">📋</span> Copy to Clipboard
           </button>
@@ -1334,6 +1334,7 @@ window.addEventListener(
     <div id="toast-container" class="toast-container"></div>
   </div>
 
+  <script src="../lib/jdenticon.min.js"></script>
   <script src="popup.js" type="module"></script>
 </body>
 </html>
