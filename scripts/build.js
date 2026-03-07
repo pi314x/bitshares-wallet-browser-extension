@@ -20,7 +20,7 @@ const SHARED_FILES = [
   'src/lib/bip39-wordlist.js',
   'src/lib/crypto-utils.js',
   'src/lib/qr-generator.js',
-  'src/lib/identicon.js',
+  'src/lib/jdenticon.js',
   'src/background/service-worker.js',
   'src/content/inject.js',
   'src/content/inpage.js'
