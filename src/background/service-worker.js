@@ -406,6 +406,15 @@ class BackgroundService {
     }
 
     const origin = sender?.origin || sender?.url;
+
+    // Only allow HTTPS origins (plus localhost for dev/testing)
+    if (!origin ||
+        (!/^https:\/\//.test(origin) &&
+         !/^http:\/\/localhost(:\d+)?(\/|$)/.test(origin) &&
+         !/^http:\/\/127\.0\.0\.1(:\d+)?(\/|$)/.test(origin))) {
+      throw new Error('Connections from non-HTTPS origins are not supported');
+    }
+
     const tabId = sender?.tab?.id;
     const { method, params, id } = message;
 

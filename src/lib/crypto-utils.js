@@ -1046,7 +1046,7 @@ export class CryptoUtils {
    * @param {string} password - User password
    * @param {string} saltBase64 - Base64-encoded salt (optional, for backwards compatibility)
    */
-  static async deriveKey(password, saltBase64 = null) {
+  static async deriveKey(password, saltBase64 = null, iterations = 600000) {
     const encoder = new TextEncoder();
 
     // Use provided salt or fall back to legacy fixed salt for backwards compatibility
@@ -1070,7 +1070,7 @@ export class CryptoUtils {
       {
         name: 'PBKDF2',
         salt: salt,
-        iterations: 100000,
+        iterations: iterations,
         hash: 'SHA-256'
       },
       keyMaterial,

@@ -369,6 +369,7 @@ export class WalletManager {
         name: name,
         encrypted: encryptedData,
         salt: salt,
+        pbkdf2Iterations: 600000,
         publicKeys: {
           active: keys.active.publicKey,
           owner: keys.owner.publicKey,
@@ -453,6 +454,7 @@ export class WalletManager {
         name: 'Imported Wallet',
         encrypted: encryptedData,
         salt: salt,
+        pbkdf2Iterations: 600000,
         publicKeys: {
           active: keys.active.publicKey,
           owner: keys.owner?.publicKey,
@@ -570,7 +572,7 @@ export class WalletManager {
             if (!wallet) { resolve(); return; }
 
             const salt = this._getWalletSalt(wallet);
-            const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+            const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(wallet));
             const encryptedAccountData = await CryptoUtils.encrypt(
               { keys: this.decryptedKeys },
               encryptionKey
@@ -733,7 +735,7 @@ export class WalletManager {
           try {
             const password = await this.getStoredPassword();
             const salt = this._getWalletSalt(wallet);
-            const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+            const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(wallet));
             const decrypted = await CryptoUtils.decrypt(wallet.encrypted, encryptionKey);
             accounts = decrypted.accounts || [];
           } catch (e) {
@@ -769,6 +771,14 @@ export class WalletManager {
    */
   _getWalletSalt(wallet) {
     return wallet?.salt || null; // null for legacy wallets
+  }
+
+  /**
+   * Get the PBKDF2 iteration count stored with the wallet.
+   * Older wallets don't have this field — they used 100,000 iterations.
+   */
+  _getWalletIterations(wallet) {
+    return wallet?.pbkdf2Iterations || 100000;
   }
 
   /**
@@ -811,14 +821,44 @@ export class WalletManager {
           try {
             const wallet = result.wallet;
             const salt = this._getWalletSalt(wallet);
-            const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+            const walletIterations = this._getWalletIterations(wallet);
+            const encryptionKey = await CryptoUtils.deriveKey(password, salt, walletIterations);
             const decrypted = await CryptoUtils.decrypt(wallet.encrypted, encryptionKey);
 
             this.currentWallet = wallet;
             this.decryptedKeys = decrypted.keys;
             this.isUnlockedState = true;
 
-            // Store password hash temporarily for session
+            // Silently migrate old wallets (100K → 600K PBKDF2 iterations).
+            // Re-encrypts all wallet data with the stronger key on first unlock.
+            if (walletIterations < 600000) {
+              try {
+                const newKey = await CryptoUtils.deriveKey(password, salt, 600000);
+                wallet.encrypted = await CryptoUtils.encrypt(decrypted, newKey);
+                wallet.pbkdf2Iterations = 600000;
+                // Re-encrypt per-account key blobs stored separately
+                const accountIds = wallet.accounts?.map(a => a.id) || [];
+                if (accountIds.length > 0) {
+                  const storageKeys = accountIds.map(id => `accountKeys_${id}`);
+                  const akResult = await new Promise(r => chrome.storage.local.get(storageKeys, r));
+                  const updates = {};
+                  for (const key of storageKeys) {
+                    if (akResult[key]) {
+                      const raw = await CryptoUtils.decrypt(akResult[key], encryptionKey);
+                      updates[key] = await CryptoUtils.encrypt(raw, newKey);
+                    }
+                  }
+                  if (Object.keys(updates).length > 0) {
+                    await new Promise(r => chrome.storage.local.set(updates, r));
+                  }
+                }
+                await this.saveWallet(wallet);
+              } catch (migErr) {
+                console.error('PBKDF2 migration failed (non-fatal):', migErr);
+              }
+            }
+
+            // Store password for session
             await this.storeSessionPassword(password);
 
             // Load saved auto-lock duration and start timer
@@ -1055,10 +1095,12 @@ export class WalletManager {
 
         // Key verification complete - no debug logging in production
 
-        if (!activeMatches && !ownerMatches && !memoMatches) {
-          // Provide more helpful error message
+        if (!activeMatches && !ownerMatches) {
+          // Require at least an active or owner key match — memo-only match is
+          // insufficient to prove account ownership and would allow importing
+          // an account using only a shared/exposed memo key.
           throw new Error(
-            'Password does not match this account. None of the generated keys match the on-chain active, owner, or memo authority.'
+            'Password does not match this account. The generated keys do not match the on-chain active or owner authority.'
           );
         }
       }
@@ -1077,7 +1119,7 @@ export class WalletManager {
             const salt = this._getWalletSalt(wallet);
 
             // Get encryption key from wallet password
-            const encryptionKey = await CryptoUtils.deriveKey(walletPassword, salt);
+            const encryptionKey = await CryptoUtils.deriveKey(walletPassword, salt, this._getWalletIterations(wallet));
 
             // Encrypt the account's keys and credentials so they can be retrieved later
             const encryptedAccountData = await CryptoUtils.encrypt({
@@ -1258,7 +1300,7 @@ export class WalletManager {
 
         try {
           const salt = this._getWalletSalt(result.wallet);
-          const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+          const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(result.wallet));
           await CryptoUtils.decrypt(result.wallet.encrypted, encryptionKey);
           resolve(true);
         } catch (e) {
@@ -1298,7 +1340,7 @@ export class WalletManager {
             }
             const password = await this.getStoredPassword();
             const salt = this._getWalletSalt(wallet);
-            const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+            const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(wallet));
             const decrypted = await CryptoUtils.decrypt(
               result[`accountKeys_${accountId}`],
               encryptionKey
@@ -1332,7 +1374,7 @@ export class WalletManager {
         try {
           const password = await this.getStoredPassword();
           const salt = this._getWalletSalt(result.wallet);
-          const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+          const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(result.wallet));
           const decrypted = await CryptoUtils.decrypt(result.wallet.encrypted, encryptionKey);
           resolve(decrypted.brainkey);
         } catch (error) {
@@ -1482,6 +1524,34 @@ export class WalletManager {
             if (typeof val === 'string' && /^1\.2\.\d+$/.test(val) && val !== accountId) {
               throw new Error(`Transaction references account ${val} but the dApp is only connected to ${accountId}`);
             }
+          }
+        }
+      }
+
+      // Operation-type whitelist for dApp-initiated transactions.
+      // Only allow operations the wallet explicitly understands and that cannot
+      // drain funds or mutate account authorities in unexpected ways.
+      // Internal (non-dApp) transactions skip this check (accountId is null).
+      if (accountId) {
+        const ALLOWED_OP_TYPES = new Set([
+          0,  // transfer
+          1,  // limit_order_create
+          2,  // limit_order_cancel
+          3,  // call_order_update
+          63  // liquidity_pool_exchange
+        ]);
+        const OP_NAMES = {
+          0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
+          3: 'call_order_update', 63: 'liquidity_pool_exchange'
+        };
+        for (const op of tx.operations) {
+          const opType = Array.isArray(op) ? op[0] : (typeof op.type === 'number' ? op.type : null);
+          if (opType !== null && !ALLOWED_OP_TYPES.has(opType)) {
+            const allowed = [...ALLOWED_OP_TYPES].map(t => `${t}(${OP_NAMES[t]})`).join(', ');
+            throw new Error(
+              `Operation type ${opType} is not permitted from dApp requests. ` +
+              `Allowed operations: ${allowed}.`
+            );
           }
         }
       }
@@ -1834,8 +1904,8 @@ export class WalletManager {
           const wallet = result.wallet;
           const salt = this._getWalletSalt(wallet);
 
-          // Verify current password by trying to decrypt
-          const currentKey = await CryptoUtils.deriveKey(currentPassword, salt);
+          // Verify current password using existing iteration count
+          const currentKey = await CryptoUtils.deriveKey(currentPassword, salt, this._getWalletIterations(wallet));
           let decrypted;
           try {
             decrypted = await CryptoUtils.decrypt(wallet.encrypted, currentKey);
@@ -1845,12 +1915,30 @@ export class WalletManager {
             return;
           }
 
-          // Re-encrypt with new password using same salt
-          const newKey = await CryptoUtils.deriveKey(newPassword, salt);
+          // Re-encrypt with new password at 600K iterations
+          const newKey = await CryptoUtils.deriveKey(newPassword, salt, 600000);
           const newEncrypted = await CryptoUtils.encrypt(decrypted, newKey);
 
-          // Update wallet
+          // Re-encrypt all per-account key blobs
+          const accountIds = wallet.accounts?.map(a => a.id) || [];
+          const storageKeys = accountIds.map(id => `accountKeys_${id}`);
+          if (storageKeys.length > 0) {
+            const akResult = await new Promise(r => chrome.storage.local.get(storageKeys, r));
+            const updates = {};
+            for (const key of storageKeys) {
+              if (akResult[key]) {
+                const raw = await CryptoUtils.decrypt(akResult[key], currentKey);
+                updates[key] = await CryptoUtils.encrypt(raw, newKey);
+              }
+            }
+            if (Object.keys(updates).length > 0) {
+              await new Promise(r => chrome.storage.local.set(updates, r));
+            }
+          }
+
+          // Update wallet with new ciphertext and upgraded iteration count
           wallet.encrypted = newEncrypted;
+          wallet.pbkdf2Iterations = 600000;
           await this.saveWallet(wallet);
 
           // Update session password
@@ -1888,7 +1976,7 @@ export class WalletManager {
           const salt = this._getWalletSalt(wallet);
 
           // Verify password by decrypting main wallet
-          const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+          const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(wallet));
           let decrypted;
           try {
             decrypted = await CryptoUtils.decrypt(wallet.encrypted, encryptionKey);
@@ -1975,7 +2063,7 @@ export class WalletManager {
           const salt = this._getWalletSalt(wallet);
 
           // Verify password by decrypting
-          const encryptionKey = await CryptoUtils.deriveKey(password, salt);
+          const encryptionKey = await CryptoUtils.deriveKey(password, salt, this._getWalletIterations(wallet));
           let decrypted;
           try {
             decrypted = await CryptoUtils.decrypt(wallet.encrypted, encryptionKey);
