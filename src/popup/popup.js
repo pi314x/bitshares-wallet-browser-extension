@@ -10,7 +10,7 @@ import { CryptoUtils } from '../lib/crypto-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
-// jdenticon loaded via <script> tag in popup.html (window.jdenticon)
+import { updateSvg as jdenticonUpdateSvg } from './jdenticon.mjs';
 
 // Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
 { const l = document.createElement('link'); l.rel = 'stylesheet';
@@ -1128,7 +1128,7 @@ async function loadDashboard(forceReconnect = false) {
     if (avatarEl) {
       const hashBytes = await CryptoUtils.sha256(account.name);
       const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      window.jdenticon?.updateSvg(avatarEl, hashHex);
+      jdenticonUpdateSvg(avatarEl, hashHex);
     }
 
     // Load balances
@@ -2878,7 +2878,7 @@ async function loadAccountsList() {
       </div>
     `;
     accountsList.appendChild(item);
-    window.jdenticon?.updateSvg(item.querySelector('.account-item-avatar'), hashes[i]);
+    jdenticonUpdateSvg(item.querySelector('.account-item-avatar'), hashes[i]);
   }
 
   // Network chip: click to move account between mainnet and testnet
@@ -3206,7 +3206,7 @@ async function handleShowSend(preselectedAssetId = null) {
     if (fromAvatar) {
       const hashBytes = await CryptoUtils.sha256(account.name);
       const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      window.jdenticon?.updateSvg(fromAvatar, hashHex);
+      jdenticonUpdateSvg(fromAvatar, hashHex);
     }
   }
 
@@ -3510,7 +3510,7 @@ async function updateReceiveScreenDisplay() {
   if (identiconEl) {
     const hashBytes = await CryptoUtils.sha256(account.name);
     const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    window.jdenticon?.updateSvg(identiconEl, hashHex);
+    jdenticonUpdateSvg(identiconEl, hashHex);
   }
 }
 
@@ -5766,7 +5766,7 @@ async function loadAddressBook() {
           <div class="contact-badge">Wallet</div>
         `;
         contactsList.appendChild(item);
-        window.jdenticon?.updateSvg(item.querySelector('.contact-avatar'), walletHashes[i]);
+        jdenticonUpdateSvg(item.querySelector('.contact-avatar'), walletHashes[i]);
       }
     }
   }
@@ -5798,7 +5798,7 @@ async function loadAddressBook() {
         </div>
       `;
       contactsList.appendChild(item);
-      window.jdenticon?.updateSvg(item.querySelector('.contact-avatar'), contactHashes[i]);
+      jdenticonUpdateSvg(item.querySelector('.contact-avatar'), contactHashes[i]);
     }
 
     // Add delete event listeners
@@ -5955,7 +5955,7 @@ async function showAddressBookForSend() {
     if (svgEl && item.dataset.account) {
       const bytes = await CryptoUtils.sha256(item.dataset.account);
       const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-      window.jdenticon?.updateSvg(svgEl, hex);
+      jdenticonUpdateSvg(svgEl, hex);
     }
   }
 
