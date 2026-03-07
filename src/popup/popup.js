@@ -5748,10 +5748,17 @@ async function loadAddressBook() {
       walletHeader.textContent = 'My Accounts';
       contactsList.appendChild(walletHeader);
 
-      for (const account of nonWatchOnlyAccounts) {
+      const walletHashes = await Promise.all(nonWatchOnlyAccounts.map(async (account) => {
+        const bytes = await CryptoUtils.sha256(account.name);
+        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      }));
+
+      for (let i = 0; i < nonWatchOnlyAccounts.length; i++) {
+        const account = nonWatchOnlyAccounts[i];
         const item = document.createElement('div');
         item.className = 'contact-item wallet-account';
         item.innerHTML = `
+          <svg class="contact-avatar" width="32" height="32"></svg>
           <div class="contact-info">
             <div class="contact-name">${escapeHtml(account.name)}</div>
             <div class="contact-account">${escapeHtml(account.accountId || account.id)}</div>
@@ -5759,6 +5766,7 @@ async function loadAddressBook() {
           <div class="contact-badge">Wallet</div>
         `;
         contactsList.appendChild(item);
+        jdenticon.updateSvg(item.querySelector('.contact-avatar'), walletHashes[i]);
       }
     }
   }
@@ -5770,10 +5778,17 @@ async function loadAddressBook() {
     contactsHeader.textContent = 'Contacts';
     contactsList.appendChild(contactsHeader);
 
-    for (const contact of contacts) {
+    const contactHashes = await Promise.all(contacts.map(async (contact) => {
+      const bytes = await CryptoUtils.sha256(contact.account);
+      return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    }));
+
+    for (let i = 0; i < contacts.length; i++) {
+      const contact = contacts[i];
       const item = document.createElement('div');
       item.className = 'contact-item';
       item.innerHTML = `
+        <svg class="contact-avatar" width="32" height="32"></svg>
         <div class="contact-info">
           <div class="contact-name">${escapeHtml(contact.name)}</div>
           <div class="contact-account">${escapeHtml(contact.account)}</div>
@@ -5783,6 +5798,7 @@ async function loadAddressBook() {
         </div>
       `;
       contactsList.appendChild(item);
+      jdenticon.updateSvg(item.querySelector('.contact-avatar'), contactHashes[i]);
     }
 
     // Add delete event listeners
