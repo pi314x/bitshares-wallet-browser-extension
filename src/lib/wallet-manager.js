@@ -68,6 +68,7 @@ export class WalletManager {
 
         // Try to restore session encryption key if needed
         if (!this._sessionEncryptionKey && result.persistedSessionKey) {
+          // Chrome: key was stored in volatile session storage alongside ciphertext
           try {
             const decoded = new Uint8Array(base64ToBytes(result.persistedSessionKey));
             if (decoded.length !== 32) throw new Error('invalid session key length');
@@ -76,6 +77,15 @@ export class WalletManager {
             resolve(false);
             return;
           }
+        } else if (!this._sessionEncryptionKey && !chrome.storage.session) {
+          // Firefox: key lives in background-page memory — ask for it
+          try {
+            const response = await chrome.runtime.sendMessage({ type: 'GET_SESSION_KEY' });
+            if (response?.key) {
+              const decoded = new Uint8Array(response.key);
+              if (decoded.length === 32) this._sessionEncryptionKey = decoded;
+            }
+          } catch (e) { /* background unavailable */ }
         }
 
         // If we have the session key, try to restore the session
@@ -183,17 +193,26 @@ export class WalletManager {
           }
         }
 
-        // Try to restore session encryption key from storage (when auto-lock disabled)
+        // Try to restore session encryption key
         if (!this._sessionEncryptionKey && result.persistedSessionKey) {
+          // Chrome: key stored in volatile session storage
           try {
             const decoded = new Uint8Array(base64ToBytes(result.persistedSessionKey));
             if (decoded.length !== 32) throw new Error('invalid session key length');
             this._sessionEncryptionKey = decoded;
           } catch (e) {
-            // Failed to restore key
             resolve(false);
             return;
           }
+        } else if (!this._sessionEncryptionKey && !chrome.storage.session) {
+          // Firefox: key lives only in background-page memory
+          try {
+            const response = await chrome.runtime.sendMessage({ type: 'GET_SESSION_KEY' });
+            if (response?.key) {
+              const decoded = new Uint8Array(response.key);
+              if (decoded.length === 32) this._sessionEncryptionKey = decoded;
+            }
+          } catch (e) { /* background unavailable */ }
         }
 
         // If we still don't have the session encryption key, we can't restore
@@ -1527,24 +1546,45 @@ export class WalletManager {
     const encryptedPassword = await this._encryptForSession(password, newKey);
 
     return new Promise((resolve) => {
-      // Prefer session storage (cleared on browser close) over local storage.
-      // Firefox MV2 lacks chrome.storage.session — fall back with a warning.
-      const storage = chrome.storage.session || chrome.storage.local;
-      if (!chrome.storage.session) {
-        console.warn('chrome.storage.session unavailable; session key stored in local storage (Firefox MV2 fallback)');
+      if (chrome.storage.session) {
+        // Chrome MV3: chrome.storage.session is volatile (cleared on browser close).
+        // Safe to store both the ciphertext and the encryption key here.
+        const sessionData = {
+          encryptedSessionData: encryptedPassword,
+          unlockTimestamp: Date.now(),
+          autoLockDuration: this.autoLockDuration,
+          persistedSessionKey: bytesToBase64(newKey)
+        };
+        chrome.storage.session.set(sessionData, () => {
+          this._sessionEncryptionKey = newKey;
+          resolve();
+        });
+      } else {
+        // Firefox MV2: chrome.storage.session is unavailable.
+        // SECURITY: storing both the ciphertext and the key in chrome.storage.local
+        // (persistent, on-disk) would make the encryption trivial to break.
+        // Fix: store ONLY the ciphertext in local storage; keep the raw key in
+        // background-page memory via STORE_SESSION_KEY message. The background page
+        // stays alive for the entire browser session (unlike Chrome MV3 service workers).
+        const localData = {
+          encryptedSessionData: encryptedPassword,
+          unlockTimestamp: Date.now(),
+          autoLockDuration: this.autoLockDuration
+          // intentionally no persistedSessionKey
+        };
+        chrome.storage.local.set(localData, () => {
+          this._sessionEncryptionKey = newKey;
+          // Relay key to background page (skip if we ARE the background — _isBackground
+          // flag is set in service-worker.js to avoid sending a message to self).
+          if (!this._isBackground) {
+            chrome.runtime.sendMessage({
+              type: 'STORE_SESSION_KEY',
+              key: Array.from(newKey)
+            }).catch(() => {});
+          }
+          resolve();
+        });
       }
-      const sessionData = {
-        encryptedSessionData: encryptedPassword,
-        unlockTimestamp: Date.now(),
-        autoLockDuration: this.autoLockDuration,
-        persistedSessionKey: bytesToBase64(newKey)
-      };
-
-      storage.set(sessionData, () => {
-        // Commit new key to memory only after the storage write is confirmed.
-        this._sessionEncryptionKey = newKey;
-        resolve();
-      });
     });
   }
 
@@ -1597,39 +1637,69 @@ export class WalletManager {
   }
 
   async getStoredPassword() {
-    // Always read persistedSessionKey fresh from storage.
-    // The popup and the service worker are separate JS contexts, each with their own
-    // WalletManager instance and their own this._sessionEncryptionKey in memory.
-    // When the popup re-unlocks it writes a NEW key to storage; the service worker's
-    // in-memory copy is now stale. Reading the key from storage on every call
-    // guarantees both contexts always decrypt with the correct, current key.
-    return new Promise((resolve, reject) => {
-      const storage = chrome.storage.session || chrome.storage.local;
-      storage.get(['encryptedSessionData', 'persistedSessionKey'], async (result) => {
-        if (!result?.encryptedSessionData || !result?.persistedSessionKey) {
-          reject(new Error('Session expired'));
-          return;
-        }
+    if (chrome.storage.session) {
+      // Chrome MV3: key lives in volatile session storage alongside the ciphertext.
+      // Always re-read from storage so the popup and service worker stay in sync
+      // when the popup re-unlocks and rotates the key.
+      return new Promise((resolve, reject) => {
+        chrome.storage.session.get(['encryptedSessionData', 'persistedSessionKey'], async (result) => {
+          if (!result?.encryptedSessionData || !result?.persistedSessionKey) {
+            reject(new Error('Session expired'));
+            return;
+          }
+          try {
+            const currentKey = new Uint8Array(base64ToBytes(result.persistedSessionKey));
+            this._sessionEncryptionKey = currentKey;
+            const password = await this._decryptFromSession(result.encryptedSessionData);
+            resolve(password);
+          } catch (e) {
+            reject(new Error('Failed to decrypt session data: ' + e.message));
+          }
+        });
+      });
+    } else {
+      // Firefox MV2: key lives only in background-page memory (never written to disk).
+      // Use own in-memory key if available; otherwise ask the background page.
+      return new Promise(async (resolve, reject) => {
         try {
-          // Restore the current key from storage and sync in-memory copy
-          const currentKey = new Uint8Array(
-            base64ToBytes(result.persistedSessionKey)
-          );
-          this._sessionEncryptionKey = currentKey;
-          const password = await this._decryptFromSession(result.encryptedSessionData);
-          resolve(password);
+          if (!this._sessionEncryptionKey) {
+            const response = await chrome.runtime.sendMessage({ type: 'GET_SESSION_KEY' });
+            if (response?.key) {
+              this._sessionEncryptionKey = new Uint8Array(response.key);
+            }
+          }
+          if (!this._sessionEncryptionKey) {
+            reject(new Error('Session expired'));
+            return;
+          }
+          chrome.storage.local.get(['encryptedSessionData'], async (result) => {
+            if (!result?.encryptedSessionData) {
+              reject(new Error('Session expired'));
+              return;
+            }
+            try {
+              const password = await this._decryptFromSession(result.encryptedSessionData);
+              resolve(password);
+            } catch (e) {
+              reject(new Error('Failed to decrypt session data: ' + e.message));
+            }
+          });
         } catch (e) {
-          reject(new Error('Failed to decrypt session data: ' + e.message));
+          reject(new Error('Session expired'));
         }
       });
-    });
+    }
   }
 
   async clearSessionPassword() {
-    // Securely clear the session encryption key
+    // Securely zero and drop the in-memory key
     if (this._sessionEncryptionKey) {
       this._sessionEncryptionKey.fill(0);
       this._sessionEncryptionKey = null;
+    }
+    // In Firefox, also clear the key from background-page memory
+    if (!chrome.storage.session && !this._isBackground) {
+      chrome.runtime.sendMessage({ type: 'STORE_SESSION_KEY', key: null }).catch(() => {});
     }
     return new Promise((resolve) => {
       const storage = chrome.storage.session || chrome.storage.local;

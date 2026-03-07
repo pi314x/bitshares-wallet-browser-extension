@@ -47,6 +47,7 @@ const DEFAULT_NODES = {
 class BackgroundService {
   constructor() {
     this.walletManager = new WalletManager();
+    this.walletManager._isBackground = true; // used by storeSessionPassword to skip self-messaging
     this.api = new BitSharesAPI();
     this.pendingRequests = new Map();
     this.contentPorts = new Map(); // Store ports by tabId for responding after approval
@@ -303,6 +304,24 @@ class BackgroundService {
       case 'RESET_AUTO_LOCK':
         this.resetAutoLock();
         return { success: true };
+
+      // Firefox MV2 session key relay — popup sends key here so it stays in
+      // background-page memory and is never written to persistent storage.
+      case 'STORE_SESSION_KEY':
+        if (message.key) {
+          this.walletManager._sessionEncryptionKey = new Uint8Array(message.key);
+        } else if (this.walletManager._sessionEncryptionKey) {
+          this.walletManager._sessionEncryptionKey.fill(0);
+          this.walletManager._sessionEncryptionKey = null;
+        }
+        return { success: true };
+
+      case 'GET_SESSION_KEY':
+        return {
+          key: this.walletManager._sessionEncryptionKey
+            ? Array.from(this.walletManager._sessionEncryptionKey)
+            : null
+        };
 
       default:
         console.warn('Unknown message type:', type);
