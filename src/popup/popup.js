@@ -1123,10 +1123,12 @@ async function loadDashboard(forceReconnect = false) {
     accountIdEl.textContent = isWatchOnly ? `${account.id} (Watch Only)` : account.id;
     accountIdEl.dataset.accountId = account.id; // Store raw ID for comparisons
 
-    // Update avatar with jdenticon
+    // Update avatar with jdenticon — SHA256 pre-hash matches open-explorer/btslens
     const avatarEl = document.getElementById('account-avatar');
     if (avatarEl) {
-      jdenticon.updateSvg(avatarEl, account.name);
+      const hashBytes = await CryptoUtils.sha256(account.name);
+      const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      jdenticon.updateSvg(avatarEl, hashHex);
     }
 
     // Load balances
@@ -3482,10 +3484,12 @@ async function updateReceiveScreenDisplay() {
     accountIdEl.textContent = account.id || 'Loading...';
   }
 
-  // Render large identicon
+  // Render large identicon — SHA256 pre-hash matches open-explorer/btslens
   const identiconEl = document.getElementById('receive-identicon');
   if (identiconEl) {
-    jdenticon.updateSvg(identiconEl, account.name);
+    const hashBytes = await CryptoUtils.sha256(account.name);
+    const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    jdenticon.updateSvg(identiconEl, hashHex);
   }
 }
 
