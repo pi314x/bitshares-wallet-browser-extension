@@ -34,6 +34,9 @@ export const CORE_CDN_BASE =
  */
 const BUNDLED = new Set([
   'BTS',
+  'EVRAZ',
+  'TWENTIX',
+  'BEOS'
 ]);
 
 /**
@@ -105,6 +108,7 @@ const CDN_KNOWN = new Set([
   'XBTSX.XCH',
   'XBTSX.XRP',
   'XBTSX.ZEC',
+  'XBTSX.USD'
   // Add more symbols here after pushing their PNGs to src/assets/logos/
 ]);
 
