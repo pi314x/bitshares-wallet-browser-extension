@@ -1180,6 +1180,21 @@ async function loadBalances(accountId) {
       return;
     }
 
+    // Show skeleton placeholder rows while data loads
+    const assetsListEl = document.getElementById('assets-list');
+    if (assetsListEl) {
+      const skeletonRow = `
+        <div class="asset-skeleton-item">
+          <div class="skeleton-circle"></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <div class="skeleton-bar" style="width:42%"></div>
+            <div class="skeleton-bar" style="width:26%"></div>
+          </div>
+          <div class="skeleton-bar" style="width:18%"></div>
+        </div>`;
+      setHTML(assetsListEl, skeletonRow + skeletonRow + skeletonRow);
+    }
+
     // Ensure API is connected
     if (!btsAPI || !btsAPI.isConnected) {
       await initializeAPI();
