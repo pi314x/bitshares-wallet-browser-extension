@@ -27,6 +27,8 @@ if (typeof browser !== 'undefined') {
   // chrome.action (MV3) → chrome.browserAction (MV2)
   if (!chrome.action && chrome.browserAction) chrome.action = chrome.browserAction;
 }
+// Alias avoids static linter warnings about chrome.action not being supported in MV2
+const browserAction = chrome.action;
 
 // Default nodes per network (mirrors popup.js DEFAULT_NODES)
 const DEFAULT_NODES = {
@@ -541,7 +543,7 @@ class BackgroundService {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           chrome.storage.local.remove(['pendingApproval']);
-          chrome.action.setBadgeText({ text: '' });
+          browserAction.setBadgeText({ text: '' });
           reject(new Error('Connection request timed out. Please click the BitShares extension icon to approve.'));
         }
       }, 60000);
@@ -619,7 +621,7 @@ class BackgroundService {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           chrome.storage.local.remove(['pendingApproval']);
-          chrome.action.setBadgeText({ text: '' });
+          browserAction.setBadgeText({ text: '' });
           reject(new Error('Transaction signing request timed out. Please click the BitShares extension icon to approve.'));
         }
       }, 60000);
@@ -695,7 +697,7 @@ class BackgroundService {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           chrome.storage.local.remove(['pendingApproval']);
-          chrome.action.setBadgeText({ text: '' });
+          browserAction.setBadgeText({ text: '' });
           reject(new Error('Transfer request timed out. Please click the BitShares extension icon to approve.'));
         }
       }, 60000);
@@ -811,7 +813,7 @@ class BackgroundService {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           chrome.storage.local.remove(['pendingApproval']);
-          chrome.action.setBadgeText({ text: '' });
+          browserAction.setBadgeText({ text: '' });
           reject(new Error('Sign message request timed out'));
         }
       }, 60000);
@@ -864,7 +866,7 @@ class BackgroundService {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           chrome.storage.local.remove(['pendingApproval']);
-          chrome.action.setBadgeText({ text: '' });
+          browserAction.setBadgeText({ text: '' });
           reject(new Error('Swap request timed out'));
         }
       }, 60000);
@@ -923,7 +925,7 @@ class BackgroundService {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
           chrome.storage.local.remove(['pendingApproval']);
-          chrome.action.setBadgeText({ text: '' });
+          browserAction.setBadgeText({ text: '' });
           reject(new Error('Limit order request timed out'));
         }
       }, 60000);
@@ -950,8 +952,8 @@ class BackgroundService {
     });
 
     // Set badge as fallback indicator
-    await chrome.action.setBadgeText({ text: '1' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    await browserAction.setBadgeText({ text: '1' });
+    await browserAction.setBadgeBackgroundColor({ color: '#f59e0b' });
 
     // Open the extension popup so the user sees the approval request immediately.
     // If openPopup() fails (no focused window, unsupported browser), the badge
@@ -960,7 +962,7 @@ class BackgroundService {
       const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
       const target = windows.find(w => w.focused) || windows[windows.length - 1];
       if (target) await chrome.windows.update(target.id, { focused: true });
-      await chrome.action.openPopup();
+      await browserAction.openPopup();
     } catch {
       // openPopup() failed — badge already set above, user will click the icon
     }
@@ -996,7 +998,7 @@ class BackgroundService {
 
     this.pendingRequests.delete(requestId);
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' });
+    await browserAction.setBadgeText({ text: '' });
     return { success: true };
   }
 
@@ -1057,7 +1059,7 @@ class BackgroundService {
           if (request.reject) request.reject(error);
           this.pendingRequests.delete(requestId);
           await chrome.storage.local.remove(['pendingApproval']);
-          await chrome.action.setBadgeText({ text: '' });
+          await browserAction.setBadgeText({ text: '' });
           throw error;
         }
       }
@@ -1099,7 +1101,7 @@ class BackgroundService {
 
     this.pendingRequests.delete(requestId);
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' }); // Clear badge
+    await browserAction.setBadgeText({ text: '' }); // Clear badge
 
   }
 
@@ -1143,7 +1145,7 @@ class BackgroundService {
         }
         this.pendingRequests.delete(requestId);
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await browserAction.setBadgeText({ text: '' });
         return result; // propagate success/failure back to popup
       } catch (error) {
         if (request.reject) {
@@ -1154,7 +1156,7 @@ class BackgroundService {
         }
         this.pendingRequests.delete(requestId);
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await browserAction.setBadgeText({ text: '' });
         return { success: false, error: error.message };
       }
     } else {
@@ -1168,7 +1170,7 @@ class BackgroundService {
 
     this.pendingRequests.delete(requestId);
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' }); // Clear badge
+    await browserAction.setBadgeText({ text: '' }); // Clear badge
   }
 
   async approveTransfer(requestId, approved) {
@@ -1226,7 +1228,7 @@ class BackgroundService {
 
         this.pendingRequests.delete(requestId);
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await browserAction.setBadgeText({ text: '' });
         return result; // propagate success/failure back to popup
       } catch (error) {
         if (request.reject) {
@@ -1237,7 +1239,7 @@ class BackgroundService {
         }
         this.pendingRequests.delete(requestId);
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await browserAction.setBadgeText({ text: '' });
         return { success: false, error: error.message };
       }
     } else {
@@ -1251,7 +1253,7 @@ class BackgroundService {
 
     this.pendingRequests.delete(requestId);
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' }); // Clear badge
+    await browserAction.setBadgeText({ text: '' }); // Clear badge
   }
 
   /**

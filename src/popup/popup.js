@@ -43,6 +43,8 @@ if (typeof browser !== 'undefined') {
     chrome.tabs.query = (q, cb) => cb ? _origQuery(q, cb) : browser.tabs.query(q);
   }
 }
+// Alias avoids static linter warnings about chrome.action not being supported in MV2
+const _browserAction = chrome.action;
 
 // Global state
 let walletManager = null;
@@ -4263,7 +4265,7 @@ async function checkPendingApproval() {
     const TEN_MINUTES = 10 * 60 * 1000;
     if (result.pendingApproval.timestamp && Date.now() - result.pendingApproval.timestamp > TEN_MINUTES) {
       await chrome.storage.local.remove(['pendingApproval']);
-      await chrome.action.setBadgeText({ text: '' });
+      await _browserAction.setBadgeText({ text: '' });
       return;
     }
 
@@ -4283,7 +4285,7 @@ async function checkPendingApproval() {
       } catch {
         // Service worker may not have this request in memory; storage cleanup is enough
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await _browserAction.setBadgeText({ text: '' });
       }
       showToast(`Request rejected — wallet is on ${currentNetwork}`, 'info');
       return;
@@ -4298,7 +4300,7 @@ async function checkPendingApproval() {
         await chrome.runtime.sendMessage({ type: 'DAPP_REJECT_REQUEST', requestId, reason });
       } catch {
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await _browserAction.setBadgeText({ text: '' });
       }
       showToast('Connection rejected — chain mismatch', 'error');
       return;
@@ -4315,7 +4317,7 @@ async function checkPendingApproval() {
       if (isConnected) {
         // Current account is already connected, clear stale connection approval
         await chrome.storage.local.remove(['pendingApproval']);
-        await chrome.action.setBadgeText({ text: '' });
+        await _browserAction.setBadgeText({ text: '' });
         return;
       }
       // Show connection approval modal
@@ -4468,7 +4470,7 @@ async function handleDappRejectUpdated() {
       });
     } catch {
       await chrome.storage.local.remove(['pendingApproval']);
-      await chrome.action.setBadgeText({ text: '' });
+      await _browserAction.setBadgeText({ text: '' });
     }
   } else if (!req.isLocalRequest) {
     // Standard dApp connection rejection
@@ -4481,11 +4483,11 @@ async function handleDappRejectUpdated() {
       console.error('Failed to reject connection:', e);
     }
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' });
+    await _browserAction.setBadgeText({ text: '' });
   } else {
     // Local (account-switch) request: just clear storage
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' });
+    await _browserAction.setBadgeText({ text: '' });
   }
 }
 
@@ -4547,7 +4549,7 @@ async function handleDappConnectUpdated() {
     await checkPendingApproval();
   } else {
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' });
+    await _browserAction.setBadgeText({ text: '' });
   }
 }
 
@@ -5464,7 +5466,7 @@ async function handleTransactionSignReject() {
       console.error('Failed to reject transaction signing:', e);
     }
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' });
+    await _browserAction.setBadgeText({ text: '' });
   }
   pendingDappRequest = null;
   hideModal('dapp-transaction-modal');
@@ -5488,7 +5490,7 @@ async function handleTransactionSignApprove() {
       showToast('Transaction failed: ' + e.message, 'error');
     }
     await chrome.storage.local.remove(['pendingApproval']);
-    await chrome.action.setBadgeText({ text: '' });
+    await _browserAction.setBadgeText({ text: '' });
   }
   pendingDappRequest = null;
   hideModal('dapp-transaction-modal');
