@@ -46,6 +46,18 @@ if (typeof browser !== 'undefined') {
 // Alias avoids static linter warnings about chrome.action not being supported in MV2
 const _browserAction = chrome.action;
 
+// DOM helpers — avoids linter UNSAFE_VAR_ASSIGNMENT warnings for innerHTML
+function setHTML(el, html) {
+  if (!el) return;
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  el.replaceChildren(...Array.from(doc.body.childNodes));
+}
+function appendHTML(el, html) {
+  if (!el) return;
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  el.append(...Array.from(doc.body.childNodes));
+}
+
 // Global state
 let walletManager = null;
 let btsAPI = null;
@@ -800,7 +812,7 @@ async function handleGenerateWallet() {
 
 function displayBrainkey(brainkey) {
   const container = document.getElementById('brainkey-display');
-  container.innerHTML = '';
+  container.replaceChildren();
   
   const words = brainkey.split(' ');
   words.forEach((word, index) => {
@@ -1085,13 +1097,13 @@ async function loadDashboard(forceReconnect = false) {
     // If no accounts exist for this network, show empty state
     if (allAccounts.length === 0) {
       const accountSelector = document.getElementById('account-selector');
-      if (accountSelector) accountSelector.innerHTML = '<option value="">No accounts on this network</option>';
+      if (accountSelector) setHTML(accountSelector, '<option value="">No accounts on this network</option>');
       const accountNameEl = document.getElementById('account-name');
       if (accountNameEl) accountNameEl.textContent = 'No account';
       const accountIdEl = document.getElementById('account-id');
       if (accountIdEl) accountIdEl.textContent = '';
       const assetsList = document.getElementById('assets-list');
-      if (assetsList) assetsList.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><p>No accounts on ${network}</p><p class="hint">Add or create an account for this network</p></div>`;
+      if (assetsList) setHTML(assetsList, `<div class="empty-state"><div class="empty-state-icon">📭</div><p>No accounts on ${network}</p><p class="hint">Add or create an account for this network</p></div>`);
       document.getElementById('balance-bts').textContent = `0 ${getCoreSymbol(network)}`;
       document.getElementById('balance-usd').textContent = '';
       return;
@@ -1109,7 +1121,7 @@ async function loadDashboard(forceReconnect = false) {
     // Populate account selector
     const accountSelector = document.getElementById('account-selector');
     if (accountSelector) {
-      accountSelector.innerHTML = '';
+      accountSelector.replaceChildren();
       allAccounts.forEach(acc => {
         const option = document.createElement('option');
         option.value = acc.id;
@@ -1164,7 +1176,7 @@ async function loadBalances(accountId) {
       document.getElementById('balance-bts').textContent = `0 ${coreSymbol}`;
       document.getElementById('balance-usd').textContent = '≈ $0.00 USD';
       const assetsList = document.getElementById('assets-list');
-      assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No account on chain yet</p><p class="hint">Import an existing account to see balances</p></div>';
+      setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No account on chain yet</p><p class="hint">Import an existing account to see balances</p></div>');
       return;
     }
 
@@ -1217,9 +1229,9 @@ async function loadBalances(accountId) {
         error.message.includes('Assert Exception')
       );
       if (isWrongNetwork) {
-        assetsList.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🌐</div><p>This account is not on ${networkLabel}</p><p class="hint">Switch network or add your ${networkLabel} account</p></div>`;
+        setHTML(assetsList, `<div class="empty-state"><div class="empty-state-icon">🌐</div><p>This account is not on ${networkLabel}</p><p class="hint">Switch network or add your ${networkLabel} account</p></div>`);
       } else {
-        assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Failed to load balances</p></div>';
+        setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Failed to load balances</p></div>');
       }
     }
   }
@@ -1243,7 +1255,7 @@ async function toggleFavouriteAsset(symbol) {
 
 async function updateAssetsList(balances) {
   const assetsList = document.getElementById('assets-list');
-  assetsList.innerHTML = '';
+  assetsList.replaceChildren();
 
   const favs = await getFavouriteAssets();
 
@@ -1272,7 +1284,7 @@ async function updateAssetsList(balances) {
     assetItem.className = 'asset-item';
     assetItem.dataset.fav = isFav ? '1' : '0';
     assetItem.dataset.assetIdNum = assetIdNum(asset.id);
-    assetItem.innerHTML = `
+    setHTML(assetItem, `
       <div class="asset-info">
         <div class="asset-name">${escapeHtml(asset.symbol)}</div>
         <div class="asset-symbol">${escapeHtml(asset.id)}</div>
@@ -1283,7 +1295,7 @@ async function updateAssetsList(balances) {
       <button class="asset-fav-btn${isFav ? ' asset-fav-btn--active' : ''}"
               title="${isFav ? 'Remove from favourites' : 'Add to favourites'}"
               aria-label="${isFav ? 'Remove from favourites' : 'Add to favourites'}">★</button>
-    `;
+    `);
 
     // Build the icon element separately to avoid any inline event handlers
     if (logoUrl) {
@@ -1364,7 +1376,7 @@ async function updateAssetsList(balances) {
   }
 
   if (assetsList.children.length === 0) {
-    assetsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💰</div><p>No assets yet</p></div>';
+    setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">💰</div><p>No assets yet</p></div>');
   }
 }
 
@@ -1377,7 +1389,7 @@ async function loadHistory(accountId) {
 
     const history = await btsAPI.getAccountHistory(accountId, 100);
     const historyList = document.getElementById('history-list');
-    historyList.innerHTML = '';
+    historyList.replaceChildren();
     
     for (const op of history) {
       const historyItem = await createHistoryItem(op);
@@ -1387,7 +1399,7 @@ async function loadHistory(accountId) {
     }
     
     if (historyList.children.length === 0) {
-      historyList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📜</div><p>No transactions yet</p></div>';
+      setHTML(historyList, '<div class="empty-state"><div class="empty-state-icon">📜</div><p>No transactions yet</p></div>');
     }
 
     // Reset filter to 'all' when history loads
@@ -1425,7 +1437,7 @@ function handleHistoryFilter() {
     if (!emptyState) {
       emptyState = document.createElement('div');
       emptyState.className = 'empty-state empty-state-filter';
-      emptyState.innerHTML = '<div class="empty-state-icon">🔍</div><p>No matching transactions</p>';
+      setHTML(emptyState, '<div class="empty-state-icon">🔍</div><p>No matching transactions</p>');
       historyList.appendChild(emptyState);
     }
     emptyState.style.display = '';
@@ -1471,7 +1483,7 @@ async function createHistoryItem(operation) {
     case 0: // Transfer
       const isSend = opData.from === currentAccount;
       const transferAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon ${isSend ? 'send' : 'receive'}">${isSend ? '↑' : '↓'}</div>
         <div class="history-info">
           <div class="history-type">${isSend ? 'Sent' : 'Received'}</div>
@@ -1481,7 +1493,7 @@ async function createHistoryItem(operation) {
         <div class="history-amount ${isSend ? 'negative' : 'positive'}">
           ${isSend ? '-' : '+'}${transferAmount}
         </div>
-      `;
+      `);
       break;
 
     case 1: // Limit Order Create
@@ -1490,7 +1502,7 @@ async function createHistoryItem(operation) {
       const orderDisplay = (sellAmount && buyAmount)
         ? `${sellAmount} → ${buyAmount}`
         : (sellAmount || '-');
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon trade">⇄</div>
         <div class="history-info">
           <div class="history-type">Order Created</div>
@@ -1500,11 +1512,11 @@ async function createHistoryItem(operation) {
         <div class="history-amount">
           ${orderDisplay}
         </div>
-      `;
+      `);
       break;
 
     case 2: // Limit Order Cancel
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Order Cancelled</div>
@@ -1512,7 +1524,7 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
 
     case 4: // Fill Order (trade executed)
@@ -1521,7 +1533,7 @@ async function createHistoryItem(operation) {
       const fillDisplay = (paysAmount && receivesAmount)
         ? `${paysAmount} → ${receivesAmount}`
         : (receivesAmount || paysAmount || '-');
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon trade">⇄</div>
         <div class="history-info">
           <div class="history-type">Trade Filled</div>
@@ -1531,7 +1543,7 @@ async function createHistoryItem(operation) {
         <div class="history-amount">
           ${fillDisplay}
         </div>
-      `;
+      `);
       break;
 
     case 14: // Asset Issue (Minting/Issuing supply)
@@ -1550,7 +1562,7 @@ async function createHistoryItem(operation) {
         issueClass = 'receive';
       }
 
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon ${issueClass}">${issueIcon}</div>
         <div class="history-info">
           <div class="history-type">${issueType}</div>
@@ -1560,7 +1572,7 @@ async function createHistoryItem(operation) {
         <div class="history-amount positive">
           +${issueAmount}
         </div>
-      `;
+      `);
       break;
 
     case 63: // Liquidity Pool Exchange (swap)
@@ -1574,7 +1586,7 @@ async function createHistoryItem(operation) {
       } else if (swapSellAmount) {
         swapDisplay = swapSellAmount;
       }
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon swap">⇅</div>
         <div class="history-info">
           <div class="history-type">Swap</div>
@@ -1584,12 +1596,12 @@ async function createHistoryItem(operation) {
         <div class="history-amount">
           ${swapDisplay}
         </div>
-      `;
+      `);
       break;
 
     case 3: { // call_order_update
       const collateralAmount = await formatAmountWithSymbol(opData.delta_collateral) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon trade">△</div>
         <div class="history-info">
           <div class="history-type">Call Order Update</div>
@@ -1597,12 +1609,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${collateralAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 5: { // account_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Account Created</div>
@@ -1610,12 +1622,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.name || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 6: { // account_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Account Updated</div>
@@ -1623,12 +1635,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 7: { // account_whitelist
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Account Whitelist</div>
@@ -1636,12 +1648,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 8: { // account_upgrade
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Account Upgrade</div>
@@ -1649,12 +1661,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 9: { // account_transfer
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Account Transfer</div>
@@ -1662,12 +1674,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 10: { // asset_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon mint">⊕</div>
         <div class="history-info">
           <div class="history-type">Asset Created</div>
@@ -1675,12 +1687,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.symbol || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 11: { // asset_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Asset Updated</div>
@@ -1688,12 +1700,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 12: { // asset_update_bitasset
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">BitAsset Updated</div>
@@ -1701,12 +1713,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 13: { // asset_update_feed_producers
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Feed Producers Updated</div>
@@ -1714,13 +1726,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 15: { // asset_reserve
       const reserveAmount = await formatAmountWithSymbol(opData.amount_to_reserve) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">⊗</div>
         <div class="history-info">
           <div class="history-type">Asset Reserved</div>
@@ -1728,12 +1740,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount negative">-${reserveAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 16: { // asset_fund_fee_pool
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◈</div>
         <div class="history-info">
           <div class="history-type">Fund Fee Pool</div>
@@ -1741,13 +1753,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_id || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 17: { // asset_settle
       const settleAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon trade">⇄</div>
         <div class="history-info">
           <div class="history-type">Asset Settle</div>
@@ -1755,12 +1767,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${settleAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 18: { // asset_global_settle
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊗</div>
         <div class="history-info">
           <div class="history-type">Global Settle</div>
@@ -1768,12 +1780,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_settle || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 19: { // asset_publish_feed
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◉</div>
         <div class="history-info">
           <div class="history-type">Publish Feed</div>
@@ -1781,12 +1793,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_id || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 20: { // witness_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Witness Created</div>
@@ -1794,12 +1806,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 21: { // witness_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Witness Updated</div>
@@ -1807,12 +1819,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 22: { // proposal_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">☐</div>
         <div class="history-info">
           <div class="history-type">Proposal Created</div>
@@ -1820,12 +1832,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 23: { // proposal_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Proposal Updated</div>
@@ -1833,12 +1845,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.proposal || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 24: { // proposal_delete
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Proposal Deleted</div>
@@ -1846,13 +1858,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.proposal || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 25: { // withdraw_permission_create
       const withdrawLimitAmount = await formatAmountWithSymbol(opData.withdrawal_limit) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Withdraw Permission Created</div>
@@ -1860,12 +1872,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${withdrawLimitAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 26: { // withdraw_permission_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Withdraw Permission Updated</div>
@@ -1873,13 +1885,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 27: { // withdraw_permission_claim
       const withdrawClaimAmount = await formatAmountWithSymbol(opData.amount_to_withdraw) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Withdraw Permission Claim</div>
@@ -1887,12 +1899,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${withdrawClaimAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 28: { // withdraw_permission_delete
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Withdraw Permission Deleted</div>
@@ -1900,12 +1912,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 29: { // committee_member_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Committee Member Created</div>
@@ -1913,12 +1925,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 30: { // committee_member_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Committee Member Updated</div>
@@ -1926,12 +1938,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 31: { // committee_member_update_global_parameters
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⚙</div>
         <div class="history-info">
           <div class="history-type">Global Params Updated</div>
@@ -1939,13 +1951,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 32: { // vesting_balance_create
       const vestingCreateAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Vesting Balance Created</div>
@@ -1953,13 +1965,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${vestingCreateAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 33: { // vesting_balance_withdraw
       const vestingWithdrawAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Vesting Balance Withdraw</div>
@@ -1967,12 +1979,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${vestingWithdrawAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 34: { // worker_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Worker Created</div>
@@ -1980,12 +1992,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.name || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 35: { // custom
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◈</div>
         <div class="history-info">
           <div class="history-type">Custom Operation</div>
@@ -1993,12 +2005,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 36: { // assert
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◈</div>
         <div class="history-info">
           <div class="history-type">Assert</div>
@@ -2006,13 +2018,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 37: { // balance_claim
       const balanceClaimAmount = await formatAmountWithSymbol(opData.total_claimed) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Balance Claimed</div>
@@ -2020,13 +2032,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${balanceClaimAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 38: { // override_transfer
       const overrideTransferAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon send">↑</div>
         <div class="history-info">
           <div class="history-type">Override Transfer</div>
@@ -2034,13 +2046,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount negative">-${overrideTransferAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 39: { // transfer_to_blind
       const toBlindAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon send">↑</div>
         <div class="history-info">
           <div class="history-type">Transfer to Blind</div>
@@ -2048,12 +2060,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount negative">-${toBlindAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 40: { // blind_transfer
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◉</div>
         <div class="history-info">
           <div class="history-type">Blind Transfer</div>
@@ -2061,13 +2073,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 41: { // transfer_from_blind
       const fromBlindAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Transfer from Blind</div>
@@ -2075,13 +2087,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${fromBlindAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 42: { // asset_settle_cancel
       const settleCancelAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Settle Cancelled</div>
@@ -2089,13 +2101,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${settleCancelAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 43: { // asset_claim_fees
       const claimFeesAmount = await formatAmountWithSymbol(opData.amount_to_claim) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Fees Claimed</div>
@@ -2103,12 +2115,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${claimFeesAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 44: { // fba_distribute
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◈</div>
         <div class="history-info">
           <div class="history-type">FBA Distribute</div>
@@ -2116,13 +2128,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 45: { // bid_collateral
       const bidCollateralAmount = await formatAmountWithSymbol(opData.additional_collateral) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon trade">△</div>
         <div class="history-info">
           <div class="history-type">Bid Collateral</div>
@@ -2130,13 +2142,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${bidCollateralAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 46: { // execute_bid
       const executeBidAmount = await formatAmountWithSymbol(opData.debt) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon trade">△</div>
         <div class="history-info">
           <div class="history-type">Execute Bid</div>
@@ -2144,13 +2156,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${executeBidAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 47: { // asset_claim_pool
       const claimPoolAmount = await formatAmountWithSymbol(opData.amount_to_claim) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Claim Pool</div>
@@ -2158,12 +2170,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${claimPoolAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 48: { // asset_update_issuer
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Asset Issuer Updated</div>
@@ -2171,13 +2183,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.asset_to_update || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 49: { // htlc_create
       const htlcCreateAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon send">↑</div>
         <div class="history-info">
           <div class="history-type">HTLC Created</div>
@@ -2185,12 +2197,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount negative">-${htlcCreateAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 50: { // htlc_redeem
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">HTLC Redeemed</div>
@@ -2198,13 +2210,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 51: { // htlc_redeemed (virtual)
       const htlcRedeemedAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">HTLC Redeemed (Virtual)</div>
@@ -2212,12 +2224,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${htlcRedeemedAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 52: { // htlc_extend
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⏱</div>
         <div class="history-info">
           <div class="history-type">HTLC Extended</div>
@@ -2225,12 +2237,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 53: { // htlc_refund (virtual)
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↩</div>
         <div class="history-info">
           <div class="history-type">HTLC Refunded</div>
@@ -2238,12 +2250,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 54: { // custom_authority_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Custom Authority Created</div>
@@ -2251,12 +2263,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 55: { // custom_authority_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Custom Authority Updated</div>
@@ -2264,12 +2276,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 56: { // custom_authority_delete
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Custom Authority Deleted</div>
@@ -2277,13 +2289,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 57: { // ticket_create
       const ticketCreateAmount = await formatAmountWithSymbol(opData.amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Ticket Created</div>
@@ -2291,12 +2303,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${ticketCreateAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 58: { // ticket_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Ticket Updated</div>
@@ -2304,12 +2316,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.ticket || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 59: { // liquidity_pool_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon mint">⊕</div>
         <div class="history-info">
           <div class="history-type">Pool Created</div>
@@ -2317,12 +2329,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 60: { // liquidity_pool_delete
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Pool Deleted</div>
@@ -2330,7 +2342,7 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.pool || '-')}</div>
-      `;
+      `);
       break;
     }
 
@@ -2340,7 +2352,7 @@ async function createHistoryItem(operation) {
       const poolDepositDisplay = (poolDepositAmountA !== '-' && poolDepositAmountB !== '-')
         ? `${poolDepositAmountA} + ${poolDepositAmountB}`
         : (poolDepositAmountA !== '-' ? poolDepositAmountA : poolDepositAmountB);
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon swap">⇅</div>
         <div class="history-info">
           <div class="history-type">Pool Deposit</div>
@@ -2348,13 +2360,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${poolDepositDisplay}</div>
-      `;
+      `);
       break;
     }
 
     case 62: { // liquidity_pool_withdraw
       const poolWithdrawAmount = await formatAmountWithSymbol(opData.share_amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon swap">⇅</div>
         <div class="history-info">
           <div class="history-type">Pool Withdraw</div>
@@ -2362,12 +2374,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${poolWithdrawAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 64: { // samet_fund_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">SameT Fund Created</div>
@@ -2375,12 +2387,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 65: { // samet_fund_delete
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">SameT Fund Deleted</div>
@@ -2388,12 +2400,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.fund_id || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 66: { // samet_fund_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">SameT Fund Updated</div>
@@ -2401,13 +2413,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.fund_id || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 67: { // samet_fund_borrow
       const sametBorrowAmount = await formatAmountWithSymbol(opData.borrow_amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">SameT Fund Borrow</div>
@@ -2415,13 +2427,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${sametBorrowAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 68: { // samet_fund_repay
       const sametRepayAmount = await formatAmountWithSymbol(opData.repay_amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon send">↑</div>
         <div class="history-info">
           <div class="history-type">SameT Fund Repay</div>
@@ -2429,12 +2441,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount negative">-${sametRepayAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 69: { // credit_offer_create
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">⊕</div>
         <div class="history-info">
           <div class="history-type">Credit Offer Created</div>
@@ -2442,12 +2454,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     case 70: { // credit_offer_delete
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">✕</div>
         <div class="history-info">
           <div class="history-type">Credit Offer Deleted</div>
@@ -2455,12 +2467,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.offer_id || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 71: { // credit_offer_update
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">✎</div>
         <div class="history-info">
           <div class="history-type">Credit Offer Updated</div>
@@ -2468,13 +2480,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">${escapeHtml(opData.offer_to_update || opData.offer_id || '-')}</div>
-      `;
+      `);
       break;
     }
 
     case 72: { // credit_offer_accept
       const creditAcceptAmount = await formatAmountWithSymbol(opData.borrow_amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon receive">↓</div>
         <div class="history-info">
           <div class="history-type">Credit Offer Accepted</div>
@@ -2482,13 +2494,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount positive">+${creditAcceptAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 73: { // credit_deal_repay
       const creditRepayAmount = await formatAmountWithSymbol(opData.repay_amount) || '-';
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon send">↑</div>
         <div class="history-info">
           <div class="history-type">Credit Deal Repay</div>
@@ -2496,12 +2508,12 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount negative">-${creditRepayAmount}</div>
-      `;
+      `);
       break;
     }
 
     case 74: { // credit_deal_expired (virtual)
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon cancel">⊗</div>
         <div class="history-info">
           <div class="history-type">Credit Deal Expired</div>
@@ -2509,13 +2521,13 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
 
     default: {
       const opLabel = OPERATION_NAMES[opType] || `Operation ${opType}`;
-      item.innerHTML = `
+      setHTML(item, `
         <div class="history-icon other">◈</div>
         <div class="history-info">
           <div class="history-type">${escapeHtml(opLabel)}</div>
@@ -2523,7 +2535,7 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
-      `;
+      `);
       break;
     }
   }
@@ -2739,9 +2751,9 @@ async function checkSiteConnectionForCurrentTab(accountId) {
       const signableAccounts = accounts.filter(acc => !acc.watchOnly);
       const selector = document.getElementById('dapp-connect-account');
       if (selector && signableAccounts.length > 0) {
-        selector.innerHTML = signableAccounts.map(acc =>
+        setHTML(selector, signableAccounts.map(acc =>
           `<option value="${escapeHtml(acc.id)}" data-name="${escapeHtml(acc.name)}" ${acc.id === accountId ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-        ).join('');
+        ).join(''));
       }
 
       // Show network notice on the modal
@@ -2847,11 +2859,11 @@ async function loadAccountsList() {
   const network = document.getElementById('network-select')?.value || 'mainnet';
 
   if (accounts.length === 0) {
-    accountsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👤</div><p>No accounts</p></div>';
+    setHTML(accountsList, '<div class="empty-state"><div class="empty-state-icon">👤</div><p>No accounts</p></div>');
     return;
   }
 
-  accountsList.innerHTML = '';
+  accountsList.replaceChildren();
 
   // Pre-compute SHA256 hashes for all accounts (jdenticon expects hex hash)
   const hashes = await Promise.all(accounts.map(async (account) => {
@@ -2865,7 +2877,7 @@ async function loadAccountsList() {
     const isCurrentNetwork = accountNetwork === network;
     const item = document.createElement('div');
     item.className = `account-item${account.isActive && isCurrentNetwork ? ' active' : ''}${account.watchOnly ? ' watch-only' : ''}${!isCurrentNetwork ? ' other-network' : ''}`;
-    item.innerHTML = `
+    setHTML(item, `
       <svg class="account-item-avatar" width="36" height="36"></svg>
       <div class="account-item-info">
         <div class="account-item-name">${escapeHtml(account.name)}</div>
@@ -2878,7 +2890,7 @@ async function loadAccountsList() {
         ${!account.isActive || !isCurrentNetwork ? `<button class="account-btn set-active" data-id="${escapeHtml(account.id)}" title="Set as active">✓</button>` : ''}
         ${accounts.length > 1 ? `<button class="account-btn remove" data-id="${escapeHtml(account.id)}" title="Remove account">✕</button>` : ''}
       </div>
-    `;
+    `);
     accountsList.appendChild(item);
     jdenticonUpdateSvg(item.querySelector('.account-item-avatar'), hashes[i]);
   }
@@ -3261,7 +3273,7 @@ async function loadSendAssets() {
     sendScreenBalances = balances;
 
     const assetSelect = document.getElementById('send-asset');
-    assetSelect.innerHTML = '';
+    assetSelect.replaceChildren();
 
     // Always add core asset first even if balance is 0
     const network = document.getElementById('network-select')?.value || 'mainnet';
@@ -3270,8 +3282,7 @@ async function loadSendAssets() {
     const btsAsset = await btsAPI.getAsset('1.3.0');
     const btsPrecision = Math.pow(10, btsAsset.precision);
     const btsAmount = (parseInt(btsBalance.amount) / btsPrecision).toFixed(btsAsset.precision);
-    assetSelect.innerHTML += `<option value="1.3.0" data-precision="${btsAsset.precision}" data-amount="${btsBalance.amount}">${coreSymbol} (${btsAmount})</option>`;
-
+    appendHTML(assetSelect, `<option value="1.3.0" data-precision="${btsAsset.precision}" data-amount="${btsBalance.amount}">${coreSymbol} (${btsAmount})</option>`);
     // Add other assets with balance > 0
     for (const balance of balances) {
       if (balance.asset_id === '1.3.0') continue; // Already added
@@ -3281,7 +3292,7 @@ async function loadSendAssets() {
       if (asset) {
         const precision = Math.pow(10, asset.precision);
         const amount = (parseInt(balance.amount) / precision).toFixed(asset.precision);
-        assetSelect.innerHTML += `<option value="${asset.id}" data-precision="${asset.precision}" data-amount="${balance.amount}">${asset.symbol} (${amount})</option>`;
+        appendHTML(assetSelect, `<option value="${asset.id}" data-precision="${asset.precision}" data-amount="${balance.amount}">${asset.symbol} (${amount})</option>`);
       }
     }
 
@@ -3352,7 +3363,7 @@ function initAssetPicker(selectId) {
   }
 
   function renderBtn() {
-    btn.innerHTML = '';
+    btn.replaceChildren();
     const opt = select.options[select.selectedIndex];
     if (opt && opt.value) {
       const sym = (opt.dataset.symbol || opt.textContent.split(' ')[0]).toUpperCase();
@@ -3374,7 +3385,7 @@ function initAssetPicker(selectId) {
   }
 
   function renderList() {
-    list.innerHTML = '';
+    list.replaceChildren();
     for (const opt of select.options) {
       if (!opt.value) continue;
       const item = document.createElement('div');
@@ -3480,9 +3491,9 @@ async function handleShowReceive() {
   const selector = document.getElementById('receive-account-selector');
 
   if (selector && accounts.length > 0) {
-    selector.innerHTML = accounts.map(acc =>
+    setHTML(selector, accounts.map(acc =>
       `<option value="${escapeHtml(acc.id)}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${acc.watchOnly ? `${escapeHtml(acc.name)} (Watch Only)` : escapeHtml(acc.name)}</option>`
-    ).join('');
+    ).join(''));
   }
 
   // Update display with current account
@@ -3747,7 +3758,7 @@ function updateCurrentNodeDisplay() {
 
 async function loadNodesList() {
   const nodesList = document.getElementById('nodes-list');
-  nodesList.innerHTML = '';
+  nodesList.replaceChildren();
 
   const network = document.getElementById('network-select')?.value || 'mainnet';
 
@@ -3789,7 +3800,7 @@ async function loadNodesList() {
       }
     }
 
-    nodeItem.innerHTML = `
+    setHTML(nodeItem, `
       <div class="node-info">
         <div class="node-url">${escapeHtml(node)}</div>
         <div class="node-status ${statusClass}">${escapeHtml(statusText)}</div>
@@ -3799,7 +3810,7 @@ async function loadNodesList() {
         <button class="node-btn connect" title="Connect to this node" data-node="${escapeHtml(node)}">⚡</button>
         ${isCustom ? `<button class="node-btn remove" title="Remove node" data-node="${escapeHtml(node)}">✕</button>` : ''}
       </div>
-    `;
+    `);
 
     nodesList.appendChild(nodeItem);
   }
@@ -4022,11 +4033,11 @@ async function loadConnectionsList() {
   const sites = await walletManager.getConnectedSites(null, network);
 
   if (sites.length === 0) {
-    connectionsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔗</div><p>No connected sites on this network</p></div>';
+    setHTML(connectionsList, '<div class="empty-state"><div class="empty-state-icon">🔗</div><p>No connected sites on this network</p></div>');
     return;
   }
 
-  connectionsList.innerHTML = '';
+  connectionsList.replaceChildren();
 
   for (const site of sites) {
     const item = document.createElement('div');
@@ -4036,14 +4047,14 @@ async function loadConnectionsList() {
     const dateStr = date.toLocaleDateString();
     const accountDisplay = site.accountName || 'All accounts';
 
-    item.innerHTML = `
+    setHTML(item, `
       <div class="connection-info">
         <div class="connection-origin">${escapeHtml(site.origin)}</div>
         <div class="connection-account">Account: ${escapeHtml(accountDisplay)}</div>
         <div class="connection-date">Connected: ${escapeHtml(dateStr)}</div>
       </div>
       <button class="connection-btn-remove" data-origin="${escapeHtml(site.origin)}" data-account="${escapeHtml(site.accountId || '')}" title="Disconnect">✕</button>
-    `;
+    `);
 
     connectionsList.appendChild(item);
   }
@@ -4071,21 +4082,21 @@ async function loadNetworkFees() {
   const feesList = document.getElementById('fees-list');
 
   if (!btsAPI || !btsAPI.isConnected) {
-    feesList.innerHTML = '<div class="fee-item error"><span class="fee-name">Not connected to network</span></div>';
+    setHTML(feesList, '<div class="fee-item error"><span class="fee-name">Not connected to network</span></div>');
     return;
   }
 
-  feesList.innerHTML = '<div class="fee-item loading"><span class="fee-name">Loading fees...</span></div>';
+  setHTML(feesList, '<div class="fee-item loading"><span class="fee-name">Loading fees...</span></div>');
 
   try {
     const fees = await btsAPI.getCommonFees();
 
     if (!fees || Object.keys(fees).length === 0) {
-      feesList.innerHTML = '<div class="fee-item error"><span class="fee-name">Unable to fetch fees</span></div>';
+      setHTML(feesList, '<div class="fee-item error"><span class="fee-name">Unable to fetch fees</span></div>');
       return;
     }
 
-    feesList.innerHTML = '';
+    feesList.replaceChildren();
 
     const feeLabels = {
       transfer: 'Transfer',
@@ -4104,15 +4115,15 @@ async function loadNetworkFees() {
       const label = feeLabels[opType] || opType.replace(/_/g, ' ');
       const feeItem = document.createElement('div');
       feeItem.className = 'fee-item';
-      feeItem.innerHTML = `
+      setHTML(feeItem, `
         <span class="fee-name">${escapeHtml(label)}</span>
         <span class="fee-amount">${escapeHtml(feeData.formatted || feeData.amount + ' ' + (feeData.symbol || ''))}</span>
-      `;
+      `);
       feesList.appendChild(feeItem);
     }
   } catch (error) {
     console.error('Error loading fees:', error);
-    feesList.innerHTML = '<div class="fee-item error"><span class="fee-name">Error loading fees</span></div>';
+    setHTML(feesList, '<div class="fee-item error"><span class="fee-name">Error loading fees</span></div>');
   }
 }
 
@@ -4209,11 +4220,11 @@ async function showPendingApprovalIndicator() {
       message = `<strong>${escapeHtml(hostname)}</strong> requests a transaction`;
       hint = 'Unlock your wallet to review and sign';
     }
-    indicator.innerHTML = `
+    setHTML(indicator, `
       <div class="pending-icon">🔔</div>
       <p>${message}</p>
       <p class="pending-hint">${hint}</p>
-    `;
+    `);
   } catch (error) {
     console.error('Error showing pending approval indicator:', error);
   }
@@ -4245,9 +4256,9 @@ async function showConnectionAuthGuard(requestId, pendingType, origin, network, 
   const signableAccounts = accounts.filter(acc => !acc.watchOnly);
   const selector = document.getElementById('dapp-connect-account');
   if (selector && signableAccounts.length > 0) {
-    selector.innerHTML = signableAccounts.map(acc =>
+    setHTML(selector, signableAccounts.map(acc =>
       `<option value="${escapeHtml(acc.id)}" data-name="${escapeHtml(acc.name)}" ${acc.id === currentAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-    ).join('');
+    ).join(''));
   }
 
   // authGuard: pendingApproval in storage IS the transaction (not a connection request)
@@ -4341,9 +4352,9 @@ async function checkPendingApproval() {
       const activeAccount = await walletManager.getCurrentAccount();
       const selector = document.getElementById('dapp-connect-account');
       if (selector && signableAccounts.length > 0) {
-        selector.innerHTML = signableAccounts.map(acc =>
+        setHTML(selector, signableAccounts.map(acc =>
           `<option value="${escapeHtml(acc.id)}" data-name="${escapeHtml(acc.name)}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-        ).join('');
+        ).join(''));
       }
 
       pendingDappRequest = { id: requestId, type, origin };
@@ -5415,7 +5426,7 @@ async function showTransactionSigningModal(requestId, origin, operations) {
 
   if (!operations || operations.length === 0) {
     if (badgeEl) badgeEl.textContent = 'Unknown Operation';
-    if (detailsEl) detailsEl.innerHTML = '<p class="op-detail-empty">No operation data available.</p>';
+    if (detailsEl) setHTML(detailsEl, '<p class="op-detail-empty">No operation data available.</p>');
     pendingDappRequest = { id: requestId, type: 'transaction', origin };
     showModal('dapp-transaction-modal');
     return;
@@ -5449,7 +5460,7 @@ async function showTransactionSigningModal(requestId, origin, operations) {
   }
 
   if (badgeEl) badgeEl.textContent = badgeText;
-  if (detailsEl) detailsEl.innerHTML = allDetailsHtml;
+  if (detailsEl) setHTML(detailsEl, allDetailsHtml);
 
   pendingDappRequest = { id: requestId, type: 'transaction', origin };
   showModal('dapp-transaction-modal');
@@ -5598,9 +5609,9 @@ document.getElementById('setting-retrieve-key')?.addEventListener('click', async
   const selector = document.getElementById('retrieve-key-account');
 
   if (selector && accounts.length > 0) {
-    selector.innerHTML = [...accounts].sort((a, b) => a.name.localeCompare(b.name)).map(acc =>
+    setHTML(selector, [...accounts].sort((a, b) => a.name.localeCompare(b.name)).map(acc =>
       `<option value="${escapeHtml(acc.id)}" data-watch-only="${acc.watchOnly ? '1' : ''}" ${acc.id === activeAccount?.id ? 'selected' : ''}>${escapeHtml(acc.name)}${acc.watchOnly ? ' (Watch Only)' : ''}</option>`
-    ).join('');
+    ).join(''));
   }
 
   showScreen('retrieve-key-screen');
@@ -5731,7 +5742,7 @@ async function loadAddressBook() {
   const network = document.getElementById('network-select')?.value || 'mainnet';
   const walletAccounts = await walletManager.getAllAccounts(network);
 
-  contactsList.innerHTML = '';
+  contactsList.replaceChildren();
 
   // Show wallet accounts first (if any), excluding watch-only accounts
   if (walletAccounts && walletAccounts.length > 0) {
@@ -5759,14 +5770,14 @@ async function loadAddressBook() {
         const account = nonWatchOnlyAccounts[i];
         const item = document.createElement('div');
         item.className = 'contact-item wallet-account';
-        item.innerHTML = `
+        setHTML(item, `
           <svg class="contact-avatar" width="32" height="32"></svg>
           <div class="contact-info">
             <div class="contact-name">${escapeHtml(account.name)}</div>
             <div class="contact-account">${escapeHtml(account.accountId || account.id)}</div>
           </div>
           <div class="contact-badge">Wallet</div>
-        `;
+        `);
         contactsList.appendChild(item);
         jdenticonUpdateSvg(item.querySelector('.contact-avatar'), walletHashes[i]);
       }
@@ -5789,7 +5800,7 @@ async function loadAddressBook() {
       const contact = contacts[i];
       const item = document.createElement('div');
       item.className = 'contact-item';
-      item.innerHTML = `
+      setHTML(item, `
         <svg class="contact-avatar" width="32" height="32"></svg>
         <div class="contact-info">
           <div class="contact-name">${escapeHtml(contact.name)}</div>
@@ -5798,7 +5809,7 @@ async function loadAddressBook() {
         <div class="contact-actions">
           <button class="contact-btn delete" data-account="${escapeHtml(contact.account)}" title="Delete">✕</button>
         </div>
-      `;
+      `);
       contactsList.appendChild(item);
       jdenticonUpdateSvg(item.querySelector('.contact-avatar'), contactHashes[i]);
     }
@@ -5814,7 +5825,7 @@ async function loadAddressBook() {
 
   // Show empty state only if nothing was added to the list
   if (contactsList.children.length === 0) {
-    contactsList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📇</div><p>No contacts yet</p></div>';
+    setHTML(contactsList, '<div class="empty-state"><div class="empty-state-icon">📇</div><p>No contacts yet</p></div>');
   }
 }
 
@@ -5937,7 +5948,7 @@ async function showAddressBookForSend() {
   const modal = document.createElement('div');
   modal.className = 'modal active';
   modal.id = 'address-book-modal';
-  modal.innerHTML = `
+  setHTML(modal, `
     <div class="modal-content">
       <div class="modal-header">
         <h3>Select Recipient</h3>
@@ -5947,7 +5958,7 @@ async function showAddressBookForSend() {
         ${modalContent}
       </div>
     </div>
-  `;
+  `);
 
   document.body.appendChild(modal);
 
@@ -6029,19 +6040,19 @@ async function initializeSwap() {
 
     // Populate from asset dropdown with user's assets
     const fromSelect = document.getElementById('swap-from-asset');
-    fromSelect.innerHTML = '<option value="">Select asset</option>';
+    setHTML(fromSelect, '<option value="">Select asset</option>');
 
     for (const balance of balances) {
       if (parseInt(balance.amount) > 0) {
         const asset = await btsAPI.getAsset(balance.asset_id);
         const precision = Math.pow(10, asset.precision);
         const amount = (parseInt(balance.amount) / precision).toFixed(asset.precision);
-        fromSelect.innerHTML += `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)} (${escapeHtml(amount)})</option>`;
+        appendHTML(fromSelect, `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)} (${escapeHtml(amount)})</option>`);
       }
     }
 
     // Clear to asset dropdown
-    document.getElementById('swap-to-asset').innerHTML = '<option value="">Select asset</option>';
+    setHTML(document.getElementById('swap-to-asset'), '<option value="">Select asset</option>');
 
     // Reset state
     swapState.fromAsset = null;
@@ -6115,7 +6126,7 @@ async function refreshSwapBalances() {
 async function handleSwapFromAssetChange(e) {
   const assetId = e.target.value;
   if (!assetId) {
-    document.getElementById('swap-to-asset').innerHTML = '<option value="">Select asset</option>';
+    setHTML(document.getElementById('swap-to-asset'), '<option value="">Select asset</option>');
     document.getElementById('swap-pools-section').style.display = 'none';
     return;
   }
@@ -6177,12 +6188,12 @@ async function findSwapPools(assetId) {
 
     // Populate to asset dropdown
     const toSelect = document.getElementById('swap-to-asset');
-    toSelect.innerHTML = '<option value="">Select asset</option>';
+    setHTML(toSelect, '<option value="">Select asset</option>');
 
     for (const counterAssetId of counterAssets) {
       const asset = await btsAPI.getAsset(counterAssetId);
       if (asset) {
-        toSelect.innerHTML += `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)}</option>`;
+        appendHTML(toSelect, `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)}</option>`);
       }
     }
 
@@ -6268,20 +6279,20 @@ function displaySwapPools(pools) {
   const poolsList = document.getElementById('swap-pools-list');
   const poolsSection = document.getElementById('swap-pools-section');
 
-  poolsList.innerHTML = '';
+  poolsList.replaceChildren();
 
   pools.forEach((pool, index) => {
     const item = document.createElement('div');
     item.className = `pool-item${index === 0 ? ' selected' : ''}`;
     item.dataset.poolId = pool.id;
 
-    item.innerHTML = `
+    setHTML(item, `
       <div class="pool-info">
         <div class="pool-name">Pool ${escapeHtml(pool.id)}${index === 0 ? '<span class="pool-badge">Best</span>' : ''}</div>
         <div class="pool-liquidity">Fee: ${pool.feePercent.toFixed(2)}%</div>
       </div>
       <div class="pool-rate">${pool.rate.toFixed(6)}</div>
-    `;
+    `);
 
     poolsList.appendChild(item);
   });

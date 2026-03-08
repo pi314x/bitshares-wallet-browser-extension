@@ -775,7 +775,10 @@ export async function displayQRCode(elementId, text, options = {}) {
       if (element.tagName === 'IMG') {
         element.src = dataUrl;
       } else {
-        element.innerHTML = `<img src="${dataUrl}" alt="QR Code" />`;
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.alt = 'QR Code';
+        element.replaceChildren(img);
       }
     }
 
