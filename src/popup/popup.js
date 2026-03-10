@@ -63,7 +63,7 @@ let walletManager = null;
 let btsAPI = null;
 
 const DEFAULT_EXPLORER_MAINNET = 'https://btslens.pages.dev';
-const DEFAULT_EXPLORER_TESTNET = ''; // no default testnet explorer
+const DEFAULT_EXPLORER_TESTNET = 'https://blocksights.info?network=testnet'; // no default testnet explorer
 const DEFAULT_EXPLORER = DEFAULT_EXPLORER_MAINNET; // backwards-compat alias
 let _explorerUrl = DEFAULT_EXPLORER_MAINNET; // active explorer for current network
 let currentScreen = 'loading-screen';
