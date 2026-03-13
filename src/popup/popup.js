@@ -194,6 +194,11 @@ function setupEventListeners() {
   document.getElementById('setting-backup')?.addEventListener('click', handleShowBackup);
   document.getElementById('btn-reset-wallet')?.addEventListener('click', handleResetWallet);
   document.getElementById('copy-donation-account')?.addEventListener('click', () => {
+    const network = document.getElementById('network-select')?.value || 'mainnet';
+    if (network !== 'mainnet') {
+      showToast('Switch to mainnet to send a tip', 'error');
+      return;
+    }
     handleShowSend(null, 'buy-me-a-beer');
   });
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
