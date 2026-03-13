@@ -58,6 +58,19 @@ function appendHTML(el, html) {
   el.append(...Array.from(doc.body.childNodes));
 }
 
+const ASSETS_SKELETON_HTML = (() => {
+  const row = `
+    <div class="asset-skeleton-item">
+      <div class="skeleton-circle"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div class="skeleton-bar" style="width:42%"></div>
+        <div class="skeleton-bar" style="width:26%"></div>
+      </div>
+      <div class="skeleton-bar" style="width:18%"></div>
+    </div>`;
+  return row + row + row;
+})();
+
 // Global state
 let walletManager = null;
 let btsAPI = null;
@@ -181,7 +194,7 @@ function setupEventListeners() {
   document.getElementById('setting-backup')?.addEventListener('click', handleShowBackup);
   document.getElementById('btn-reset-wallet')?.addEventListener('click', handleResetWallet);
   document.getElementById('copy-donation-account')?.addEventListener('click', () => {
-    navigator.clipboard.writeText('buy-me-a-coffee').then(() => showToast('Copied!', 'success'));
+    handleShowSend(null, 'buy-me-a-beer');
   });
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
   document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
@@ -1086,6 +1099,10 @@ async function handleLock() {
 
 async function loadDashboard(forceReconnect = false) {
   try {
+    // Show skeleton immediately so the list isn't empty during API connection
+    const assetsListEarly = document.getElementById('assets-list');
+    if (assetsListEarly) setHTML(assetsListEarly, ASSETS_SKELETON_HTML);
+
     // Ensure API is connected before loading data
     if (!btsAPI || !btsAPI.isConnected || forceReconnect) {
       await initializeAPI();
@@ -1182,18 +1199,7 @@ async function loadBalances(accountId) {
 
     // Show skeleton placeholder rows while data loads
     const assetsListEl = document.getElementById('assets-list');
-    if (assetsListEl) {
-      const skeletonRow = `
-        <div class="asset-skeleton-item">
-          <div class="skeleton-circle"></div>
-          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-            <div class="skeleton-bar" style="width:42%"></div>
-            <div class="skeleton-bar" style="width:26%"></div>
-          </div>
-          <div class="skeleton-bar" style="width:18%"></div>
-        </div>`;
-      setHTML(assetsListEl, skeletonRow + skeletonRow + skeletonRow);
-    }
+    if (assetsListEl) setHTML(assetsListEl, ASSETS_SKELETON_HTML);
 
     // Ensure API is connected
     if (!btsAPI || !btsAPI.isConnected) {
@@ -3217,7 +3223,7 @@ async function handleConfirmTransaction() {
 // Store user balances for send screen
 let sendScreenBalances = [];
 
-async function handleShowSend(preselectedAssetId = null) {
+async function handleShowSend(preselectedAssetId = null, prefillRecipient = null) {
   // Check if current account is watch-only
   const account = await walletManager.getCurrentAccount();
   if (account && await walletManager.isWatchOnlyAccount(account.id)) {
@@ -3239,15 +3245,18 @@ async function handleShowSend(preselectedAssetId = null) {
     }
   }
 
-  // Clear recipient field and status
+  // Clear recipient field and status (or prefill if provided)
   const sendToInput = document.getElementById('send-to');
   if (sendToInput) {
-    sendToInput.value = '';
+    sendToInput.value = prefillRecipient || '';
   }
   const sendToStatus = document.getElementById('send-to-status');
   if (sendToStatus) {
     sendToStatus.textContent = '';
     sendToStatus.className = 'input-status';
+  }
+  if (prefillRecipient && sendToInput) {
+    handleRecipientInput({ target: sendToInput });
   }
 
   // Clear amount field
