@@ -1493,7 +1493,8 @@ async function createHistoryItem(operation) {
     2: 'limit_order_cancel',
     4: 'fill_order',
     14: 'asset_issue',
-    63: 'liquidity_pool'
+    63: 'liquidity_pool',
+    77: 'limit_order_update'
   };
   item.dataset.opType = opTypeMap[opType] || 'other';
 
@@ -2547,6 +2548,24 @@ async function createHistoryItem(operation) {
           ${explorerLink(txId, blockNum)}
         </div>
         <div class="history-amount">-</div>
+      `);
+      break;
+    }
+
+    case 77: { // limit_order_update
+      const newBaseAmount  = await formatAmountWithSymbol(opData.new_price?.base);
+      const newQuoteAmount = await formatAmountWithSymbol(opData.new_price?.quote);
+      const priceDisplay = (newBaseAmount && newQuoteAmount)
+        ? `${newBaseAmount} → ${newQuoteAmount}`
+        : '-';
+      setHTML(item, `
+        <div class="history-icon trade">✎</div>
+        <div class="history-info">
+          <div class="history-type">Order Updated</div>
+          <div class="history-date">${formatDate(operation.block_time)}</div>
+          ${explorerLink(txId, blockNum)}
+        </div>
+        <div class="history-amount">${priceDisplay}</div>
       `);
       break;
     }
