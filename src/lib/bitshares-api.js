@@ -834,6 +834,9 @@ export class BitSharesAPI {
           await resolveAssetId(d.amount_to_sell);
           await resolveAssetId(d.min_to_receive);
           break;
+        case 75: // liquidity_pool_update
+          await resolveAccount(d, 'account');
+          break;
         case 76: // credit_deal_update
           await resolveAccount(d, 'borrower');
           break;
@@ -1183,6 +1186,8 @@ serializeOperationData(opType, opData) {
         return this.serializeCreditDealRepayOp(opData);
       case 74: // credit_deal_expired (virtual)
         return this.serializeCreditDealExpiredOp(opData);
+      case 75: // liquidity_pool_update
+        return this.serializeLiquidityPoolUpdateOp(opData);
       case 76: // credit_deal_update
         return this.serializeCreditDealUpdateOp(opData);
       case 77: // limit_order_update
@@ -2767,6 +2772,28 @@ serializeOperationData(opType, opData) {
   }
 
   /**
+   * Serialize liquidity_pool_update operation (op 75)
+   * { fee, account, pool, new_taker_fee_percent (Optional<Uint16>),
+   *   new_withdrawal_fee_percent (Optional<Uint16>), extensions }
+   */
+  serializeLiquidityPoolUpdateOp(op) {
+    const buffers = [];
+    buffers.push(this.serializeAssetAmount(op.fee));
+    buffers.push(this.serializeObjectId(op.account));
+    buffers.push(this.serializeObjectId(op.pool));
+    buffers.push(this.serializeOptional(
+      op.new_taker_fee_percent ?? null,
+      v => this.writeUint16LE(v)
+    ));
+    buffers.push(this.serializeOptional(
+      op.new_withdrawal_fee_percent ?? null,
+      v => this.writeUint16LE(v)
+    ));
+    buffers.push(this.encodeVarint(0)); // extensions
+    return this.concatBytes(buffers);
+  }
+
+  /**
    * Serialize samet_fund_create operation (op 64)
    * { fee, owner_account, asset_type, balance, fee_rate, extensions }
    */
@@ -3209,6 +3236,7 @@ serializeOperationData(opType, opData) {
       'credit_offer_accept': 72,
       'credit_deal_repay': 73,
       'credit_deal_expired': 74,
+      'liquidity_pool_update': 75,
       'credit_deal_update': 76,
       'limit_order_update': 77
     };
