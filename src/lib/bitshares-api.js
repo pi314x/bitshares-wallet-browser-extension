@@ -797,21 +797,12 @@ export class BitSharesAPI {
       if (!d.fee.asset_id) d.fee.asset_id = '1.3.0';
       await resolveAssetId(d.fee);
 
-      // All operations: recursively normalise any field named "extensions" or "on_fill"
-      // that a dApp sends as {} instead of [].  BitShares nodes reject {} where [] is expected
-      // ("Invalid cast from object_type to Array").
-      const normaliseArrayFields = (obj) => {
-        if (!obj || typeof obj !== 'object') return;
-        if (Array.isArray(obj)) { obj.forEach(normaliseArrayFields); return; }
-        for (const key of Object.keys(obj)) {
-          if ((key === 'extensions' || key === 'on_fill') && !Array.isArray(obj[key])) {
-            obj[key] = [];
-          } else {
-            normaliseArrayFields(obj[key]);
-          }
-        }
-      };
-      normaliseArrayFields(d);
+      // Top-level only: normalise extensions/on_fill {} -> [] on the operation data object.
+      // Only touch the direct fields of d — do NOT recurse into nested structures, because
+      // some nested fields (e.g. inner op extensions in proposal_create) may legitimately
+      // use a struct {} format on certain node versions.
+      if (d.extensions !== undefined && !Array.isArray(d.extensions)) d.extensions = [];
+      if (d.on_fill    !== undefined && !Array.isArray(d.on_fill))    d.on_fill    = [];
 
       switch (opType) {
         case 0: // transfer
