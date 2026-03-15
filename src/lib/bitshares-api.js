@@ -948,11 +948,19 @@ export class BitSharesAPI {
 
     // 4. Broadcast
     console.log('[BTS] broadcasting tx:', JSON.stringify(signedTx, null, 2));
-    const result = await this.call(
-      this.apiIds.network,
-      'broadcast_transaction_with_callback',
-      [this.callId, signedTx]
-    );
+    let result;
+    try {
+      result = await this.call(
+        this.apiIds.network,
+        'broadcast_transaction_with_callback',
+        [this.callId, signedTx]
+      );
+    } catch (broadcastErr) {
+      // Re-throw with the operation JSON attached so it's visible in the dApp
+      // console (inpage.js propagates the message string back to the page).
+      const opsJson = JSON.stringify(signedTx.operations, null, 2);
+      throw new Error(`${broadcastErr.message}\n\n[ops JSON for diagnosis]:\n${opsJson}`);
+    }
     return result;
   }
 
