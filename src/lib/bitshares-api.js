@@ -853,6 +853,13 @@ export class BitSharesAPI {
           await resolveAssetId(d.amount_to_sell);
           await resolveAssetId(d.min_to_receive);
           break;
+        case 22: // proposal_create — normalise proposed_ops to op_wrapper format {op:[type,data]}
+          if (Array.isArray(d.proposed_ops)) {
+            d.proposed_ops = d.proposed_ops.map(item =>
+              Array.isArray(item) ? { op: item } : item
+            );
+          }
+          break;
         case 75: // liquidity_pool_update
           await resolveAccount(d, 'account');
           break;
@@ -2135,11 +2142,12 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeAssetAmount(op.fee));
     buffers.push(this.serializeObjectId(op.fee_paying_account));
     buffers.push(this.serializeTimestamp(op.expiration_time));
-    // proposed_ops: array of op_wrapper { op: [type, data] }
+    // proposed_ops: array of op_wrapper { op: [type, data] } or bare [type, data]
     const proposedOps = op.proposed_ops || [];
     buffers.push(this.encodeVarint(proposedOps.length));
     for (const wrapper of proposedOps) {
-      const [opType, opData] = wrapper.op;
+      const inner = Array.isArray(wrapper) ? wrapper : wrapper.op;
+      const [opType, opData] = inner;
       buffers.push(this.encodeVarint(opType));
       buffers.push(this.serializeOperationData(opType, opData));
     }
