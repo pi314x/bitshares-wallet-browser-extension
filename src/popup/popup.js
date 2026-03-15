@@ -2552,6 +2552,19 @@ async function createHistoryItem(operation) {
       break;
     }
 
+    case 75: { // liquidity_pool_update
+      setHTML(item, `
+        <div class="history-icon swap">⇅</div>
+        <div class="history-info">
+          <div class="history-type">Pool Updated</div>
+          <div class="history-date">${formatDate(operation.block_time)}</div>
+          ${explorerLink(txId, blockNum)}
+        </div>
+        <div class="history-amount">${escapeHtml(opData.pool || '-')}</div>
+      `);
+      break;
+    }
+
     case 76: { // credit_deal_update
       const autoRepayLabels = { 0: 'Disabled', 1: 'On Repay', 2: 'On Fill' };
       const autoRepayLabel = autoRepayLabels[opData.auto_repay] ?? String(opData.auto_repay ?? '-');

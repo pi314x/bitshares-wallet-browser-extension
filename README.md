@@ -51,7 +51,7 @@ The wallet supports signing all 75 BitShares blockchain operation types, not jus
 | Vesting | vesting_balance_create, vesting_balance_withdraw |
 | Withdraw Permissions | withdraw_permission_create, withdraw_permission_update, withdraw_permission_claim, withdraw_permission_delete |
 | Custom / Misc | custom, assert, fba_distribute |
-| Liquidity Pools | liquidity_pool_create, liquidity_pool_delete, liquidity_pool_deposit, liquidity_pool_withdraw, liquidity_pool_exchange |
+| Liquidity Pools | liquidity_pool_create, liquidity_pool_delete, liquidity_pool_deposit, liquidity_pool_withdraw, liquidity_pool_exchange, liquidity_pool_update |
 | Tickets | ticket_create, ticket_update |
 | HTLC | htlc_create, htlc_redeem, htlc_redeemed, htlc_extend, htlc_refund |
 | Custom Authority | custom_authority_create, custom_authority_update, custom_authority_delete |
