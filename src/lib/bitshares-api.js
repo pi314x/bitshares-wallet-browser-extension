@@ -834,6 +834,9 @@ export class BitSharesAPI {
           await resolveAssetId(d.amount_to_sell);
           await resolveAssetId(d.min_to_receive);
           break;
+        case 76: // credit_deal_update
+          await resolveAccount(d, 'borrower');
+          break;
         case 77: // limit_order_update
           await resolveAccount(d, 'seller');
           if (d.new_price) {
@@ -1180,6 +1183,8 @@ serializeOperationData(opType, opData) {
         return this.serializeCreditDealRepayOp(opData);
       case 74: // credit_deal_expired (virtual)
         return this.serializeCreditDealExpiredOp(opData);
+      case 76: // credit_deal_update
+        return this.serializeCreditDealUpdateOp(opData);
       case 77: // limit_order_update
         return this.serializeLimitOrderUpdateOp(opData);
       default:
@@ -2965,6 +2970,20 @@ serializeOperationData(opType, opData) {
   }
 
   /**
+   * Serialize credit_deal_update operation (op 76)
+   * { fee, borrower, deal_id, auto_repay, extensions }
+   */
+  serializeCreditDealUpdateOp(op) {
+    const buffers = [];
+    buffers.push(this.serializeAssetAmount(op.fee));
+    buffers.push(this.serializeObjectId(op.borrower));
+    buffers.push(this.serializeObjectId(op.deal_id));
+    buffers.push(this.writeUint8(op.auto_repay ?? 0));
+    buffers.push(this.encodeVarint(0)); // extensions
+    return this.concatBytes(buffers);
+  }
+
+  /**
    * Serialize credit_deal_expired operation (op 74) - virtual
    * { fee, deal_id, offer_id, offer_owner, borrower, unpaid_amount, collateral, fee_rate }
    */
@@ -3190,6 +3209,7 @@ serializeOperationData(opType, opData) {
       'credit_offer_accept': 72,
       'credit_deal_repay': 73,
       'credit_deal_expired': 74,
+      'credit_deal_update': 76,
       'limit_order_update': 77
     };
 
