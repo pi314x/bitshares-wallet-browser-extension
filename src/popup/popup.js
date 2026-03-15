@@ -2552,6 +2552,21 @@ async function createHistoryItem(operation) {
       break;
     }
 
+    case 76: { // credit_deal_update
+      const autoRepayLabels = { 0: 'Disabled', 1: 'On Repay', 2: 'On Fill' };
+      const autoRepayLabel = autoRepayLabels[opData.auto_repay] ?? String(opData.auto_repay ?? '-');
+      setHTML(item, `
+        <div class="history-icon other">✎</div>
+        <div class="history-info">
+          <div class="history-type">Credit Deal Updated</div>
+          <div class="history-date">${formatDate(operation.block_time)}</div>
+          ${explorerLink(txId, blockNum)}
+        </div>
+        <div class="history-amount">Auto-repay: ${escapeHtml(autoRepayLabel)}</div>
+      `);
+      break;
+    }
+
     case 77: { // limit_order_update
       const newBaseAmount  = await formatAmountWithSymbol(opData.new_price?.base);
       const newQuoteAmount = await formatAmountWithSymbol(opData.new_price?.quote);

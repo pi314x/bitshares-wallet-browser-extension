@@ -55,7 +55,7 @@ The wallet supports signing all 75 BitShares blockchain operation types, not jus
 | Tickets | ticket_create, ticket_update |
 | HTLC | htlc_create, htlc_redeem, htlc_redeemed, htlc_extend, htlc_refund |
 | Custom Authority | custom_authority_create, custom_authority_update, custom_authority_delete |
-| Credit | credit_offer_create, credit_offer_delete, credit_offer_update, credit_offer_accept, credit_deal_repay, credit_deal_expired |
+| Credit | credit_offer_create, credit_offer_delete, credit_offer_update, credit_offer_accept, credit_deal_repay, credit_deal_expired, credit_deal_update |
 | Samet Fund | samet_fund_create, samet_fund_delete, samet_fund_update, samet_fund_borrow, samet_fund_repay |
 
 #### Human-Readable Operation Display
