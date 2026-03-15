@@ -917,7 +917,7 @@ export class BitSharesAPI {
       ref_block_prefix: refBlockPrefix,
       expiration,
       operations: tx.operations,
-      extensions: tx.extensions || [],
+      extensions: Array.isArray(tx.extensions) ? tx.extensions : [],
       signatures: []
     };
 
