@@ -794,6 +794,11 @@ export class BitSharesAPI {
       // All operations: normalise fee asset_id
       await resolveAssetId(d.fee);
 
+      // All operations: ensure array fields that dApps sometimes send as {} are normalised to [].
+      // BitShares nodes reject {} where [] is expected ("Invalid cast from object_type to Array").
+      if (d.extensions !== undefined && !Array.isArray(d.extensions)) d.extensions = [];
+      if (d.on_fill    !== undefined && !Array.isArray(d.on_fill))    d.on_fill    = [];
+
       switch (opType) {
         case 0: // transfer
           await resolveAccount(d, 'from');
