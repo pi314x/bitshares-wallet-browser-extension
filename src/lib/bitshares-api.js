@@ -797,12 +797,22 @@ export class BitSharesAPI {
       if (!d.fee.asset_id) d.fee.asset_id = '1.3.0';
       await resolveAssetId(d.fee);
 
-      // Top-level only: normalise extensions/on_fill {} -> [] on the operation data object.
-      // Only touch the direct fields of d — do NOT recurse into nested structures, because
-      // some nested fields (e.g. inner op extensions in proposal_create) may legitimately
-      // use a struct {} format on certain node versions.
-      if (d.extensions !== undefined && !Array.isArray(d.extensions)) d.extensions = [];
-      if (d.on_fill    !== undefined && !Array.isArray(d.on_fill))    d.on_fill    = [];
+      // Normalise extensions/on_fill {} -> [] on this operation and any inner operations
+      // (proposed_ops inside proposal_create). All known BitShares operations use flat_set
+      // for these fields, which serialises as [] not {}.
+      const normaliseOpArrayFields = (opData) => {
+        if (!opData || typeof opData !== 'object' || Array.isArray(opData)) return;
+        if (opData.extensions !== undefined && !Array.isArray(opData.extensions)) opData.extensions = [];
+        if (opData.on_fill    !== undefined && !Array.isArray(opData.on_fill))    opData.on_fill    = [];
+        // Recurse into proposed_ops inner operations only
+        if (Array.isArray(opData.proposed_ops)) {
+          for (const wrapper of opData.proposed_ops) {
+            const innerData = Array.isArray(wrapper) ? wrapper[1] : wrapper?.op?.[1];
+            if (innerData) normaliseOpArrayFields(innerData);
+          }
+        }
+      };
+      normaliseOpArrayFields(d);
 
       switch (opType) {
         case 0: // transfer

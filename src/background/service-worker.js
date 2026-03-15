@@ -592,7 +592,10 @@ class BackgroundService {
 
     const isUnlocked = await this.walletManager.isUnlocked();
     if (!isUnlocked) {
-      throw new Error('Wallet is locked');
+      // Open the popup so the user sees the lock screen and can unlock
+      await browserAction.setBadgeText({ text: '🔒' }).catch(() => {});
+      try { await chrome.action.openPopup(); } catch (_) {}
+      throw new Error('Wallet is locked — please unlock the BitShares Wallet extension and try again');
     }
 
     // Create pending request
