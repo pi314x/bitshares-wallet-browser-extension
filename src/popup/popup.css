@@ -1109,6 +1109,31 @@ body {
   color: var(--text-secondary);
 }
 
+.asset-search-wrap {
+  margin-bottom: var(--spacing-sm);
+}
+
+.asset-search {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.asset-search:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.asset-search::placeholder {
+  color: var(--text-secondary);
+}
+
 .assets-list {
   display: flex;
   flex-direction: column;

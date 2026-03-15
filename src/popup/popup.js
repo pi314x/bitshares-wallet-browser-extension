@@ -159,6 +159,7 @@ function setupEventListeners() {
   document.getElementById('btn-copy-receive-account')?.addEventListener('click', handleCopyReceiveAccount);
   document.getElementById('btn-history')?.addEventListener('click', handleShowHistory);
   document.getElementById('history-filter-select')?.addEventListener('change', handleHistoryFilter);
+  document.getElementById('asset-search')?.addEventListener('input', handleAssetSearch);
   document.getElementById('btn-swap')?.addEventListener('click', handleShowSwap);
   document.getElementById('network-select')?.addEventListener('change', handleNetworkChange);
   document.getElementById('welcome-network-select')?.addEventListener('change', (e) => {
@@ -1282,6 +1283,8 @@ async function toggleFavouriteAsset(symbol) {
 async function updateAssetsList(balances) {
   const assetsList = document.getElementById('assets-list');
   assetsList.replaceChildren();
+  const searchInput = document.getElementById('asset-search');
+  if (searchInput) searchInput.value = '';
 
   const favs = await getFavouriteAssets();
 
@@ -1470,6 +1473,17 @@ function handleHistoryFilter() {
   } else if (emptyState) {
     emptyState.style.display = 'none';
   }
+}
+
+function handleAssetSearch() {
+  const query = document.getElementById('asset-search')?.value.trim().toLowerCase() || '';
+  const assetsList = document.getElementById('assets-list');
+  if (!assetsList) return;
+  assetsList.querySelectorAll('.asset-item').forEach(item => {
+    const symbol = item.querySelector('.asset-name')?.textContent.toLowerCase() || '';
+    const id = item.querySelector('.asset-symbol')?.textContent.toLowerCase() || '';
+    item.style.display = (!query || symbol.includes(query) || id.includes(query)) ? '' : 'none';
+  });
 }
 
 async function createHistoryItem(operation) {
