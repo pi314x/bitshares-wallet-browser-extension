@@ -32,9 +32,9 @@ A secure browser extension for the BitShares blockchain - similar to MetaMask bu
 - Transaction fee calculation
 - Confirmation modal for all transactions
 
-### Full Operation Signing (All 75 BitShares Operations)
+### Full Operation Signing (All 78 BitShares Operations)
 
-The wallet supports signing all 75 BitShares blockchain operation types, not just transfers. Every operation shows a human-readable confirmation dialog before signing.
+The wallet supports signing all 78 BitShares blockchain operation types, not just transfers. Every operation shows a human-readable confirmation dialog before signing.
 
 #### Supported Operation Categories
 
