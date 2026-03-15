@@ -794,10 +794,21 @@ export class BitSharesAPI {
       // All operations: normalise fee asset_id
       await resolveAssetId(d.fee);
 
-      // All operations: ensure array fields that dApps sometimes send as {} are normalised to [].
-      // BitShares nodes reject {} where [] is expected ("Invalid cast from object_type to Array").
-      if (d.extensions !== undefined && !Array.isArray(d.extensions)) d.extensions = [];
-      if (d.on_fill    !== undefined && !Array.isArray(d.on_fill))    d.on_fill    = [];
+      // All operations: recursively normalise any field named "extensions" or "on_fill"
+      // that a dApp sends as {} instead of [].  BitShares nodes reject {} where [] is expected
+      // ("Invalid cast from object_type to Array").
+      const normaliseArrayFields = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (Array.isArray(obj)) { obj.forEach(normaliseArrayFields); return; }
+        for (const key of Object.keys(obj)) {
+          if ((key === 'extensions' || key === 'on_fill') && !Array.isArray(obj[key])) {
+            obj[key] = [];
+          } else {
+            normaliseArrayFields(obj[key]);
+          }
+        }
+      };
+      normaliseArrayFields(d);
 
       switch (opType) {
         case 0: // transfer
@@ -925,7 +936,7 @@ export class BitSharesAPI {
     const signedTx = await this.signTransaction(freshTx, privateKeyWIF);
 
     // 4. Broadcast
-    console.debug('[BTS] broadcasting tx:', JSON.stringify(signedTx, null, 2));
+    console.log('[BTS] broadcasting tx:', JSON.stringify(signedTx, null, 2));
     const result = await this.call(
       this.apiIds.network,
       'broadcast_transaction_with_callback',
