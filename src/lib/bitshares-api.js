@@ -834,6 +834,16 @@ export class BitSharesAPI {
           await resolveAssetId(d.amount_to_sell);
           await resolveAssetId(d.min_to_receive);
           break;
+        case 77: // limit_order_update
+          await resolveAccount(d, 'seller');
+          if (d.new_price) {
+            await resolveAssetId(d.new_price.base);
+            await resolveAssetId(d.new_price.quote);
+          }
+          if (d.delta_amount_to_sell) {
+            await resolveAssetId(d.delta_amount_to_sell);
+          }
+          break;
         default:
           // For any unknown op: resolve a top-level "account" field if present
           if (d.account) await resolveAccount(d, 'account');
@@ -1170,6 +1180,8 @@ serializeOperationData(opType, opData) {
         return this.serializeCreditDealRepayOp(opData);
       case 74: // credit_deal_expired (virtual)
         return this.serializeCreditDealExpiredOp(opData);
+      case 77: // limit_order_update
+        return this.serializeLimitOrderUpdateOp(opData);
       default:
         console.warn(`Unknown operation type ${opType}, using generic serialization`);
         return this.serializeGenericOp(opData);
@@ -1321,6 +1333,58 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeObjectId(op.order));
 
     // extensions
+    buffers.push(this.encodeVarint(0));
+
+    return this.concatBytes(buffers);
+  }
+
+  /**
+   * Serialize limit_order_update operation (op 77)
+   * Fields mirror Limit_order_update GrapheneObject from python-bitshares:
+   *   fee, seller, order,
+   *   new_price (Optional<Price>),
+   *   delta_amount_to_sell (Optional<Asset>),
+   *   new_expiration (Optional<time_point_sec>),
+   *   on_fill (Optional<Array>),
+   *   extensions (Set)
+   */
+  serializeLimitOrderUpdateOp(op) {
+    const buffers = [];
+
+    // fee
+    buffers.push(this.serializeAssetAmount(op.fee));
+
+    // seller (account id)
+    buffers.push(this.serializeObjectId(op.seller));
+
+    // order (limit_order id, 1.7.x)
+    buffers.push(this.serializeObjectId(op.order));
+
+    // new_price (Optional<Price>)
+    buffers.push(this.serializeOptional(
+      op.new_price ?? null,
+      p => this.serializePrice(p)
+    ));
+
+    // delta_amount_to_sell (Optional<Asset>)
+    buffers.push(this.serializeOptional(
+      op.delta_amount_to_sell ?? null,
+      a => this.serializeAssetAmount(a)
+    ));
+
+    // new_expiration (Optional<time_point_sec>)
+    buffers.push(this.serializeOptional(
+      op.new_expiration ?? null,
+      ts => this.serializeTimestamp(ts)
+    ));
+
+    // on_fill (Optional<Array>) — always present per the graphene class,
+    // even when empty: 0x01 + varint(0)
+    const onFill = op.on_fill ?? [];
+    buffers.push(new Uint8Array([1])); // Optional present
+    buffers.push(this.encodeVarint(onFill.length)); // empty array in practice
+
+    // extensions (Set — always empty)
     buffers.push(this.encodeVarint(0));
 
     return this.concatBytes(buffers);
@@ -3125,7 +3189,8 @@ serializeOperationData(opType, opData) {
       'credit_offer_update': 71,
       'credit_offer_accept': 72,
       'credit_deal_repay': 73,
-      'credit_deal_expired': 74
+      'credit_deal_expired': 74,
+      'limit_order_update': 77
     };
 
     return operations[operationType] ?? 0;
