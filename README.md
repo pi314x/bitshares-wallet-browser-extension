@@ -42,7 +42,7 @@ The wallet supports signing all 75 BitShares blockchain operation types, not jus
 |----------|-----------|
 | Account | account_create, account_update, account_upgrade, account_whitelist, account_transfer |
 | Assets | asset_create, asset_update, asset_update_bitasset, asset_update_feed_producers, asset_issue, asset_reserve, asset_fund_fee_pool, asset_settle, asset_global_settle, asset_publish_feed, asset_claim_fees, asset_update_issuer, asset_claim_pool |
-| Trading (DEX) | limit_order_create, limit_order_cancel, call_order_update, fill_order, bid_collateral, execute_bid |
+| Trading (DEX) | limit_order_create, limit_order_cancel, limit_order_update, call_order_update, fill_order, bid_collateral, execute_bid |
 | Transfers | transfer, transfer_to_blind, transfer_from_blind, blind_transfer, override_transfer, balance_claim, asset_settle_cancel |
 | Proposals | proposal_create, proposal_update, proposal_delete |
 | Witnesses | witness_create, witness_update |
@@ -64,6 +64,7 @@ The signing confirmation dialog renders each operation in a readable format with
 
 - **Transfer**: Shows From / To / Amount / Memo
 - **Limit Order Create**: Shows Account / Sell Amount / Buy Amount / Expiration
+- **Limit Order Update**: Shows Order ID / New Price / New Expiration
 - **Account Create**: Shows Name / Registrar / Referrer / Keys
 - **Asset Create**: Shows Symbol / Precision / Max Supply / Issuer
 
