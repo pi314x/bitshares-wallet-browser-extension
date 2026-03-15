@@ -791,7 +791,10 @@ export class BitSharesAPI {
         }
       };
 
-      // All operations: normalise fee asset_id
+      // All operations: ensure fee is a valid asset object
+      if (!d.fee || typeof d.fee !== 'object') d.fee = { amount: 0, asset_id: '1.3.0' };
+      if (d.fee.amount === undefined || d.fee.amount === null) d.fee.amount = 0;
+      if (!d.fee.asset_id) d.fee.asset_id = '1.3.0';
       await resolveAssetId(d.fee);
 
       // All operations: recursively normalise any field named "extensions" or "on_fill"
@@ -3049,13 +3052,8 @@ serializeOperationData(opType, opData) {
    */
   serializeAssetAmount(assetAmount) {
     const buffers = [];
-
-    // amount (int64)
-    buffers.push(this.writeInt64LE(assetAmount.amount));
-
-    // asset_id
-    buffers.push(this.serializeObjectId(assetAmount.asset_id));
-
+    buffers.push(this.writeInt64LE(assetAmount?.amount ?? 0));
+    buffers.push(this.serializeObjectId(assetAmount?.asset_id ?? '1.3.0'));
     return this.concatBytes(buffers);
   }
 
