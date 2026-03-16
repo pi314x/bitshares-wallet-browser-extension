@@ -812,6 +812,12 @@ export class BitSharesAPI {
             if (sub.extensions !== undefined && !Array.isArray(sub.extensions)) sub.extensions = [];
           }
         }
+        // Prediction market assets require global_settle (0x20) in issuer_permissions.
+        // Apply here so it also covers asset_create ops nested inside proposal_create.
+        if (opData.is_prediction_market && opData.common_options) {
+          opData.common_options.issuer_permissions =
+            (opData.common_options.issuer_permissions || 0) | 0x20;
+        }
         // Recurse into proposed_ops inner operations only
         if (Array.isArray(opData.proposed_ops)) {
           for (const wrapper of opData.proposed_ops) {
