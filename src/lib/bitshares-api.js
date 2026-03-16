@@ -977,7 +977,6 @@ export class BitSharesAPI {
     const signedTx = await this.signTransaction(freshTx, privateKeyWIF);
 
     // 4. Broadcast
-    console.log('[BTS] broadcasting tx:', JSON.stringify(signedTx, null, 2));
     let result;
     try {
       result = await this.call(
