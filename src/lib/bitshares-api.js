@@ -804,6 +804,14 @@ export class BitSharesAPI {
         if (!opData || typeof opData !== 'object' || Array.isArray(opData)) return;
         if (opData.extensions !== undefined && !Array.isArray(opData.extensions)) opData.extensions = [];
         if (opData.on_fill    !== undefined && !Array.isArray(opData.on_fill))    opData.on_fill    = [];
+        // Normalise extensions in known nested option sub-objects.
+        // These fields hold BitShares option structs that also carry a flat_set extensions.
+        for (const key of ['common_options', 'bitasset_opts', 'new_options', 'options', 'feed']) {
+          const sub = opData[key];
+          if (sub && typeof sub === 'object' && !Array.isArray(sub)) {
+            if (sub.extensions !== undefined && !Array.isArray(sub.extensions)) sub.extensions = [];
+          }
+        }
         // Recurse into proposed_ops inner operations only
         if (Array.isArray(opData.proposed_ops)) {
           for (const wrapper of opData.proposed_ops) {
@@ -909,7 +917,10 @@ export class BitSharesAPI {
       );
       if (requiredFees && requiredFees.length === tx.operations.length) {
         for (let i = 0; i < tx.operations.length; i++) {
-          tx.operations[i][1].fee = requiredFees[i];
+          const fee = requiredFees[i];
+          // For proposal_create, get_required_fees returns [proposal_fee, [inner_op_fees]].
+          // Only the first element is the proposal's own fee; inner fees are informational.
+          tx.operations[i][1].fee = Array.isArray(fee) ? fee[0] : fee;
         }
       }
     } catch (feeErr) {
