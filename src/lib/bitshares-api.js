@@ -862,7 +862,20 @@ export class BitSharesAPI {
           await resolveAssetId(d.amount_to_sell);
           await resolveAssetId(d.min_to_receive);
           break;
+        case 10: // asset_create
+          await resolveAccount(d, 'issuer');
+          // Prediction market assets require global_settle (0x20) in issuer_permissions.
+          // Some dApps omit this bit; add it automatically per BitShares protocol.
+          if (d.is_prediction_market && d.common_options) {
+            d.common_options.issuer_permissions =
+              (d.common_options.issuer_permissions || 0) | 0x20;
+          }
+          break;
         case 22: // proposal_create — normalise proposed_ops to op_wrapper format {op:[type,data]}
+          // Strip sub-second precision from expiration_time; the node expects integer seconds.
+          if (typeof d.expiration_time === 'string') {
+            d.expiration_time = d.expiration_time.replace(/\.\d+$/, '');
+          }
           if (Array.isArray(d.proposed_ops)) {
             d.proposed_ops = d.proposed_ops.map(item =>
               Array.isArray(item) ? { op: item } : item
