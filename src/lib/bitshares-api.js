@@ -797,13 +797,21 @@ export class BitSharesAPI {
       if (!d.fee.asset_id) d.fee.asset_id = '1.3.0';
       await resolveAssetId(d.fee);
 
-      // Normalise extensions/on_fill {} -> [] on this operation and any inner operations
-      // (proposed_ops inside proposal_create). All known BitShares operations use flat_set
-      // for these fields, which serialises as [] not {}.
+      // Normalise extensions/on_fill to correct types on this operation and any inner operations.
+      // Most operations use flat_set for extensions → must be [] not {}.
+      // EXCEPTION: call_order_update uses extension<options_type> → must stay as {} (not []).
+      //   Only truly empty {} objects are safe to normalise to []; non-empty objects that
+      //   contain actual data (e.g. {target_collateral_ratio}) must be preserved as-is.
       const normaliseOpArrayFields = (opData) => {
         if (!opData || typeof opData !== 'object' || Array.isArray(opData)) return;
-        if (opData.extensions !== undefined && !Array.isArray(opData.extensions)) opData.extensions = [];
-        if (opData.on_fill    !== undefined && !Array.isArray(opData.on_fill))    opData.on_fill    = [];
+        if (opData.extensions !== undefined && !Array.isArray(opData.extensions)) {
+          // Only convert empty objects {} → []; leave non-empty objects (call_order_update etc.)
+          if (typeof opData.extensions === 'object' && opData.extensions !== null &&
+              Object.keys(opData.extensions).length === 0) {
+            opData.extensions = [];
+          }
+        }
+        if (opData.on_fill !== undefined && !Array.isArray(opData.on_fill)) opData.on_fill = [];
         // Normalise extensions in known nested option sub-objects.
         // These fields hold BitShares option structs that also carry a flat_set extensions.
         for (const key of ['common_options', 'bitasset_opts', 'new_options', 'options', 'feed']) {
@@ -862,6 +870,11 @@ export class BitSharesAPI {
           break;
         case 2: // limit_order_cancel
           await resolveAccount(d, 'fee_paying_account');
+          break;
+        case 3: // call_order_update
+          await resolveAccount(d, 'funding_account');
+          await resolveAssetId(d.delta_collateral);
+          await resolveAssetId(d.delta_debt);
           break;
         case 63: // liquidity_pool_exchange
           await resolveAccount(d, 'account');
@@ -1935,6 +1948,14 @@ serializeOperationData(opType, opData) {
   /**
    * Serialize call_order_update operation (op 3)
    * { fee, funding_account, delta_collateral, delta_debt, extensions }
+   *
+   * extensions is extension<options_type> where options_type = {optional<uint16> target_collateral_ratio}.
+   * JSON format is an OBJECT {target_collateral_ratio: N} (not an array) — see comment in C++ header.
+   * Possible input forms after normalisation:
+   *   []                             — empty (was {}, normalised)
+   *   {}                             — empty object (rare)
+   *   {target_collateral_ratio: N}   — object with value (preserved by normaliser)
+   *   [[0, {target_collateral_ratio: N}]] — array / static_variant format from older dApps
    */
   serializeCallOrderUpdateOp(op) {
     const buffers = [];
@@ -1942,23 +1963,23 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeObjectId(op.funding_account));
     buffers.push(this.serializeAssetAmount(op.delta_collateral));
     buffers.push(this.serializeAssetAmount(op.delta_debt));
-    // extensions: set of call_order_update_extension (static_variant)
-    // bitsharesjs format: [[0, {target_collateral_ratio: uint16}]]
-    // After normalisation, extensions is always an array ([] when empty).
-    const extArr = Array.isArray(op.extensions) ? op.extensions : [];
+
     let tcr;
-    for (const item of extArr) {
-      // static_variant: [typeIndex, data]  or plain object {target_collateral_ratio}
-      const data = Array.isArray(item) ? item[1] : item;
-      if (data?.target_collateral_ratio !== undefined) {
-        tcr = data.target_collateral_ratio;
-        break;
+    if (Array.isArray(op.extensions)) {
+      // Array / static_variant format: [[0, {target_collateral_ratio}]]
+      for (const item of op.extensions) {
+        const data = Array.isArray(item) ? item[1] : item;
+        if (data?.target_collateral_ratio !== undefined) { tcr = data.target_collateral_ratio; break; }
       }
+    } else if (op.extensions && typeof op.extensions === 'object') {
+      // Object format: extension<options_type> = {target_collateral_ratio: N}
+      tcr = op.extensions.target_collateral_ratio;
     }
+
     if (tcr !== undefined) {
       buffers.push(this.encodeVarint(1));    // 1 extension in set
-      buffers.push(this.encodeVarint(0));    // static_variant index 0
-      buffers.push(this.writeUint16LE(tcr)); // target_collateral_ratio
+      buffers.push(this.encodeVarint(0));    // static_variant index 0 (target_collateral_ratio)
+      buffers.push(this.writeUint16LE(tcr));
     } else {
       buffers.push(this.encodeVarint(0));
     }
