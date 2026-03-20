@@ -1386,8 +1386,29 @@ serializeOperationData(opType, opData) {
     // fill_or_kill (bool - 1 byte)
     buffers.push(new Uint8Array([op.fill_or_kill ? 1 : 0]));
 
-    // extensions
-    buffers.push(this.encodeVarint(0));
+    // extensions: set of limit_order_create_extension (static_variant)
+    // bitsharesjs format: [[0, {on_fill: [<actions>]}]]
+    // type 0 = on_fill array of limit_order_auto_action
+    const extArr = Array.isArray(op.extensions) ? op.extensions : [];
+    // Collect on_fill actions from extensions
+    const onFillActions = [];
+    for (const item of extArr) {
+      const typeIdx = Array.isArray(item) ? item[0] : 0;
+      const data    = Array.isArray(item) ? item[1] : item;
+      if (typeIdx === 0 && Array.isArray(data?.on_fill)) {
+        onFillActions.push(...data.on_fill);
+      }
+    }
+    if (onFillActions.length > 0) {
+      buffers.push(this.encodeVarint(1)); // 1 extension in set
+      buffers.push(this.encodeVarint(0)); // static_variant index 0 (on_fill)
+      buffers.push(this.encodeVarint(onFillActions.length));
+      for (const action of onFillActions) {
+        buffers.push(this.serializeLimitOrderAutoAction(action));
+      }
+    } else {
+      buffers.push(this.encodeVarint(0));
+    }
 
     return this.concatBytes(buffers);
   }
@@ -1453,15 +1474,41 @@ serializeOperationData(opType, opData) {
       ts => this.serializeTimestamp(ts)
     ));
 
-    // on_fill (Optional<Array>) — always present per the graphene class,
-    // even when empty: 0x01 + varint(0)
+    // on_fill (Optional<vector<limit_order_auto_action>>)
+    // python-bitshares defaults to [] when absent, serialised as Optional present + empty array.
     const onFill = op.on_fill ?? [];
     buffers.push(new Uint8Array([1])); // Optional present
-    buffers.push(this.encodeVarint(onFill.length)); // empty array in practice
+    buffers.push(this.encodeVarint(onFill.length));
+    for (const action of onFill) {
+      buffers.push(this.serializeLimitOrderAutoAction(action));
+    }
 
     // extensions (Set — always empty)
     buffers.push(this.encodeVarint(0));
 
+    return this.concatBytes(buffers);
+  }
+
+  /**
+   * Serialize one limit_order_auto_action (static_variant).
+   * Currently only type 0 = create_take_profit_order_action is defined.
+   * bitsharesjs format: [typeIndex, {fee_asset_id, spread_percent, size_percent,
+   *                                   expiration_seconds, repeat}]
+   *   or plain object with a `type` field.
+   */
+  serializeLimitOrderAutoAction(action) {
+    const typeIdx = Array.isArray(action) ? action[0] : (action.type ?? 0);
+    const d       = Array.isArray(action) ? action[1] : action;
+    const buffers = [this.encodeVarint(typeIdx)];
+    if (typeIdx === 0) {
+      // create_take_profit_order_action
+      buffers.push(this.serializeObjectId(d.fee_asset_id ?? '1.3.0'));
+      buffers.push(this.writeUint16LE(d.spread_percent ?? 0));
+      buffers.push(this.writeUint16LE(d.size_percent ?? 0));
+      buffers.push(this.writeUint32LE(d.expiration_seconds ?? 0));
+      buffers.push(new Uint8Array([d.repeat ? 1 : 0]));
+    }
+    // Unknown future types: only the type varint is emitted (best-effort).
     return this.concatBytes(buffers);
   }
 
@@ -1895,13 +1942,23 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeObjectId(op.funding_account));
     buffers.push(this.serializeAssetAmount(op.delta_collateral));
     buffers.push(this.serializeAssetAmount(op.delta_debt));
-    // extensions: extension type with optional target_collateral_ratio
-    // Serialized as a set/array of typed extensions
-    const ext = op.extensions || {};
-    if (ext.target_collateral_ratio !== undefined) {
-      buffers.push(this.encodeVarint(1)); // 1 extension
-      buffers.push(this.encodeVarint(0)); // index 0 = target_collateral_ratio
-      buffers.push(this.writeUint16LE(ext.target_collateral_ratio));
+    // extensions: set of call_order_update_extension (static_variant)
+    // bitsharesjs format: [[0, {target_collateral_ratio: uint16}]]
+    // After normalisation, extensions is always an array ([] when empty).
+    const extArr = Array.isArray(op.extensions) ? op.extensions : [];
+    let tcr;
+    for (const item of extArr) {
+      // static_variant: [typeIndex, data]  or plain object {target_collateral_ratio}
+      const data = Array.isArray(item) ? item[1] : item;
+      if (data?.target_collateral_ratio !== undefined) {
+        tcr = data.target_collateral_ratio;
+        break;
+      }
+    }
+    if (tcr !== undefined) {
+      buffers.push(this.encodeVarint(1));    // 1 extension in set
+      buffers.push(this.encodeVarint(0));    // static_variant index 0
+      buffers.push(this.writeUint16LE(tcr)); // target_collateral_ratio
     } else {
       buffers.push(this.encodeVarint(0));
     }
