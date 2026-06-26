@@ -87,52 +87,79 @@ class BackgroundService {
   }
 
   async connectToBlockchain(networkOverride = null) {
+    // PATCH (XBTS): single in-flight guard. Several entry points (init(),
+    // ensureConnected(), NETWORK_SWITCH) could call connectToBlockchain()
+    // concurrently, each spawning a fresh BitSharesAPI + retry loop. Combined
+    // with the old recursive connect(), that stacked retries and overflowed the
+    // call stack ("Maximum call stack size exceeded"). Collapse overlapping
+    // callers onto one attempt and never keep more than one pending retry timer.
+    if (this._blockchainConnecting) {
+      return this._blockchainConnecting;
+    }
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
+    this._blockchainConnecting = (async () => {
+      try {
+        // Use the network passed directly (e.g. from NETWORK_SWITCH message) or
+        // fall back to what the user last saved in storage.  Preferring the
+        // in-message value avoids a race where chrome.storage.local.get() could
+        // still return the old network if the popup's set() hasn't flushed yet.
+        const result = await chrome.storage.local.get(['selectedNetwork']);
+        const network = networkOverride || result.selectedNetwork || 'mainnet';
+        const nodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
+
+        // Null out the old walletManager API BEFORE connecting so that if the
+        // new connection fails, ensureApiConnected() won't fall back to the stale
+        // API (which may have the wrong chainId / network).
+        this.walletManager.api = null;
+        this.walletManager._apiNodes = [...nodes]; // seed reconnect with correct nodes
+
+        this.api = new BitSharesAPI(nodes);
+
+        await this.api.connect();
+        console.log('Connected to BitShares blockchain via:', this.api.currentNode);
+
+        // Share the connected API with walletManager so signTransaction, sendTransfer, etc.
+        // use the correct network (chain ID, nodes) - not a default mainnet fallback.
+        this.walletManager.setApi(this.api);
+        this.currentNetwork = network; // record which network we're connected to
+
+        // Notify popup of connection status
+        chrome.runtime.sendMessage({
+          type: 'CONNECTION_STATUS',
+          connected: true,
+          node: this.api.currentNode
+        }).catch(() => {}); // Ignore if popup is closed
+
+      } catch (error) {
+        console.error('Failed to connect to blockchain:', error);
+
+        // Notify popup of connection status
+        chrome.runtime.sendMessage({
+          type: 'CONNECTION_STATUS',
+          connected: false,
+          error: error.message
+        }).catch(() => {});
+
+        // Retry after delay with exponential backoff. Keep only ONE pending
+        // timer so repeated failures can't fan out into many parallel loops.
+        const retryDelay = Math.min(30000, 5000 * (this.api?.connectionAttempts + 1 || 1));
+        console.log(`Retrying connection in ${retryDelay/1000} seconds...`);
+        if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+        this._reconnectTimer = setTimeout(() => {
+          this._reconnectTimer = null;
+          this.connectToBlockchain(networkOverride);
+        }, retryDelay);
+      }
+    })();
+
     try {
-      // Use the network passed directly (e.g. from NETWORK_SWITCH message) or
-      // fall back to what the user last saved in storage.  Preferring the
-      // in-message value avoids a race where chrome.storage.local.get() could
-      // still return the old network if the popup's set() hasn't flushed yet.
-      const result = await chrome.storage.local.get(['selectedNetwork']);
-      const network = networkOverride || result.selectedNetwork || 'mainnet';
-      const nodes = DEFAULT_NODES[network] || DEFAULT_NODES.mainnet;
-
-      // Null out the old walletManager API BEFORE connecting so that if the
-      // new connection fails, ensureApiConnected() won't fall back to the stale
-      // API (which may have the wrong chainId / network).
-      this.walletManager.api = null;
-      this.walletManager._apiNodes = [...nodes]; // seed reconnect with correct nodes
-
-      this.api = new BitSharesAPI(nodes);
-
-      await this.api.connect();
-      console.log('Connected to BitShares blockchain via:', this.api.currentNode);
-
-      // Share the connected API with walletManager so signTransaction, sendTransfer, etc.
-      // use the correct network (chain ID, nodes) — not a default mainnet fallback.
-      this.walletManager.setApi(this.api);
-      this.currentNetwork = network; // record which network we're connected to
-
-      // Notify popup of connection status
-      chrome.runtime.sendMessage({
-        type: 'CONNECTION_STATUS',
-        connected: true,
-        node: this.api.currentNode
-      }).catch(() => {}); // Ignore if popup is closed
-
-    } catch (error) {
-      console.error('Failed to connect to blockchain:', error);
-
-      // Notify popup of connection status
-      chrome.runtime.sendMessage({
-        type: 'CONNECTION_STATUS',
-        connected: false,
-        error: error.message
-      }).catch(() => {});
-
-      // Retry after delay with exponential backoff
-      const retryDelay = Math.min(30000, 5000 * (this.api?.connectionAttempts + 1 || 1));
-      console.log(`Retrying connection in ${retryDelay/1000} seconds...`);
-      setTimeout(() => this.connectToBlockchain(networkOverride), retryDelay);
+      return await this._blockchainConnecting;
+    } finally {
+      this._blockchainConnecting = null;
     }
   }
 
