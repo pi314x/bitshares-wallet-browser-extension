@@ -110,6 +110,7 @@
       this.isConnected = false;
       this.chainId = null;
       this.account = null;
+      this._connectPromise = null;
     }
 
     /**
@@ -118,20 +119,35 @@
      * @returns {Promise<{account: {name: string, id: string}, balances: Array}>}
      */
     async connect(options = {}) {
-      const response = await sendRequest('connect', options);
-      if (response.connected) {
-        this.isConnected = true;
-        // Use account from connection response (avoid extra request)
-        if (response.account) {
-          this.account = response.account;
-        }
-        // Return full response with account and balances
-        return {
-          account: response.account || this.account,
-          balances: response.balances || []
-        };
+      // Coalesce concurrent/re-entrant calls (e.g. a page retrying on every
+      // reactive update) into a single in-flight request instead of piling
+      // up a new sendRequest + promise chain per call.
+      if (this._connectPromise) {
+        return this._connectPromise;
       }
-      throw new Error('Connection rejected');
+
+      this._connectPromise = (async () => {
+        const response = await sendRequest('connect', options);
+        if (response.connected) {
+          this.isConnected = true;
+          // Use account from connection response (avoid extra request)
+          if (response.account) {
+            this.account = response.account;
+          }
+          // Return full response with account and balances
+          return {
+            account: response.account || this.account,
+            balances: response.balances || []
+          };
+        }
+        throw new Error('Connection rejected');
+      })();
+
+      try {
+        return await this._connectPromise;
+      } finally {
+        this._connectPromise = null;
+      }
     }
 
     /**
