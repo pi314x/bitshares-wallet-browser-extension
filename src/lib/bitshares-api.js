@@ -37,103 +37,135 @@ export class BitSharesAPI {
   }
 
   /**
-   * Connect to BitShares node
+   * Connect to BitShares node.
+   *
+   * PATCH (XBTS): rewritten as a single iterative loop + in-flight guard.
+   * The previous implementation recursed via connect()->tryNextNode()->connect()
+   * and chained .then(resolve).catch(reject) on every retry. Under repeated node
+   * failures (e.g. WebSocket close 1006) - and especially when several callers
+   * (service-worker connectToBlockchain, walletManager.ensureApiConnected, popup)
+   * triggered connect() concurrently - those nested promise chains grew without
+   * bound and overflowed the call stack:
+   *   "Failed to connect to blockchain: RangeError: Maximum call stack size exceeded".
+   * The iterative loop below uses await (no synchronous recursion) and the
+   * _connectPromise guard collapses concurrent callers onto one attempt.
    */
   async connect() {
-    return new Promise((resolve, reject) => {
-      if (this.connectionAttempts >= this.maxConnectionAttempts) {
-        reject(new Error('Failed to connect to any BitShares node after multiple attempts'));
-        return;
-      }
+    // Already connected - nothing to do.
+    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return true;
+    }
+    // A connection attempt is already running - reuse it instead of starting
+    // a second (concurrent) retry loop.
+    if (this._connectPromise) {
+      return this._connectPromise;
+    }
 
-      const node = this.nodes[this.currentNodeIndex];
-      if (!node) {
-        this.currentNodeIndex = 0;
-        this.connectionAttempts++;
-        this.connect().then(resolve).catch(reject);
-        return;
-      }
-
-      console.log('Connecting to:', node);
-      this.currentNode = node;
-
-      try {
-        // Close existing connection if any
-        if (this.ws) {
-          try { this.ws.close(); } catch (e) {}
+    this._connectPromise = (async () => {
+      this.connectionAttempts = 0;
+      while (this.connectionAttempts < this.maxConnectionAttempts) {
+        if (this.currentNodeIndex >= this.nodes.length) {
+          this.currentNodeIndex = 0;
+        }
+        const node = this.nodes[this.currentNodeIndex];
+        if (!node) {
+          this.currentNodeIndex = 0;
+          this.connectionAttempts++;
+          continue;
         }
 
-        this.ws = new WebSocket(node);
-        let connectionTimeout;
-
-        this.ws.onopen = async () => {
-          clearTimeout(connectionTimeout);
-
-          try {
-            await this.login();
-            await this.getApiIds();
-            await this.initChainProperties();
-            this.isConnected = true;
-            this.connectionAttempts = 0;
-            console.log('Connected to BitShares via:', node);
-            resolve(true);
-          } catch (error) {
-            console.warn('Connection error on', node, ':', error.message);
-            this.tryNextNode(resolve, reject);
-          }
-        };
-
-        this.ws.onmessage = (event) => {
-          this.handleMessage(event.data);
-        };
-
-        this.ws.onerror = (error) => {
-          console.warn('WebSocket error on', node);
-          clearTimeout(connectionTimeout);
-        };
-
-        this.ws.onclose = (event) => {
-          console.log('WebSocket closed:', event.code, event.reason);
+        try {
+          await this._connectToNode(node);
+          this.isConnected = true;
+          this.connectionAttempts = 0;
+          console.log('Connected to BitShares via:', node);
+          return true;
+        } catch (error) {
+          console.warn('Connection error on', node, ':', error && error.message);
           this.isConnected = false;
-          // Don't auto-reconnect here, let the error handler do it
-        };
-
-        // Connection timeout - try next node after 8 seconds
-        connectionTimeout = setTimeout(() => {
-          if (!this.isConnected) {
-            console.warn('Connection timeout for:', node);
-            try { this.ws.close(); } catch (e) {}
-            this.tryNextNode(resolve, reject);
-          }
-        }, 8000);
-
-      } catch (error) {
-        console.warn('Connection error:', error.message);
-        this.tryNextNode(resolve, reject);
+          this.currentNodeIndex++;
+          this.connectionAttempts++;
+          // Small, non-recursive delay before trying the next node.
+          await new Promise((r) => setTimeout(r, 500));
+        }
       }
-    });
+      throw new Error('Failed to connect to any BitShares node after multiple attempts');
+    })();
+
+    try {
+      return await this._connectPromise;
+    } finally {
+      this._connectPromise = null;
+    }
   }
 
   /**
-   * Try connecting to the next available node
+   * PATCH (XBTS): open a single WebSocket to one node and complete the API
+   * handshake (login + api ids + chain props). Resolves on success, rejects on
+   * timeout / socket close / handshake error. Never recurses - node iteration is
+   * handled by connect()'s loop.
    */
-  tryNextNode(resolve, reject) {
-    this.currentNodeIndex++;
-    this.connectionAttempts++;
-    
-    if (this.connectionAttempts >= this.maxConnectionAttempts) {
-      reject(new Error('Failed to connect to any BitShares node'));
-      return;
-    }
-    
-    if (this.currentNodeIndex >= this.nodes.length) {
-      this.currentNodeIndex = 0;
-    }
-    
-    // Small delay before trying next node
-    setTimeout(() => {
-      this.connect().then(resolve).catch(reject);
-    }, 500);
+  _connectToNode(node) {
+    return new Promise((resolve, reject) => {
+      console.log('Connecting to:', node);
+      this.currentNode = node;
+
+      let settled = false;
+      let connectionTimeout;
+      const settle = (isResolve, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectionTimeout);
+        isResolve ? resolve(value) : reject(value);
+      };
+
+      let ws;
+      try {
+        // Close any existing socket before opening a new one.
+        if (this.ws) {
+          try { this.ws.close(); } catch (e) {}
+        }
+        ws = new WebSocket(node);
+        this.ws = ws;
+      } catch (error) {
+        settle(false, error);
+        return;
+      }
+
+      ws.onopen = async () => {
+        try {
+          await this.login();
+          await this.getApiIds();
+          await this.initChainProperties();
+          settle(true, true);
+        } catch (error) {
+          settle(false, error);
+        }
+      };
+
+      ws.onmessage = (event) => {
+        this.handleMessage(event.data);
+      };
+
+      ws.onerror = () => {
+        console.warn('WebSocket error on', node);
+        // Let onclose / timeout settle the attempt.
+      };
+
+      ws.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        this.isConnected = false;
+        // If the socket dropped before the handshake finished, fail this attempt
+        // immediately (no 8s wait, no recursion).
+        settle(false, new Error('WebSocket closed: ' + event.code));
+      };
+
+      // Hard timeout for the whole handshake.
+      connectionTimeout = setTimeout(() => {
+        try { ws.close(); } catch (e) {}
+        settle(false, new Error('Connection timeout for ' + node));
+      }, 8000);
+    });
   }
 
   /**
