@@ -196,14 +196,30 @@
     }
 
     /**
+     * Verify connection before a privileged call.
+     * this.isConnected is a local cache that only flips true inside connect() —
+     * it can go stale (stuck false) if a connect() call was in flight during a
+     * "Background connection lost" cycle and got rejected before completing,
+     * even though the background reconnects moments later and the site is
+     * still approved (connection state is persisted in storage, unaffected by
+     * a service-worker restart). Re-check with the background — the actual
+     * source of truth — instead of failing a call that would otherwise succeed.
+     */
+    async _ensureConnected() {
+      if (this.isConnected) return;
+      const { connected } = await this.checkConnection();
+      if (!connected) {
+        throw new Error('Not connected');
+      }
+    }
+
+    /**
      * Sign and broadcast a transaction
      * @param {Object} transaction - Transaction object
      * @returns {Promise<Object>}
      */
     async signTransaction(transaction) {
-      if (!this.isConnected) {
-        throw new Error('Not connected');
-      }
+      await this._ensureConnected();
       return await sendRequest('signTransaction', { transaction });
     }
 
@@ -213,9 +229,7 @@
      * @returns {Promise<string>}
      */
     async signMessage(message) {
-      if (!this.isConnected) {
-        throw new Error('Not connected');
-      }
+      await this._ensureConnected();
       return await sendRequest('signMessage', { message });
     }
 
@@ -225,9 +239,7 @@
      * @returns {Promise<Object>}
      */
     async transfer(params) {
-      if (!this.isConnected) {
-        throw new Error('Not connected');
-      }
+      await this._ensureConnected();
       return await sendRequest('transfer', params);
     }
 
@@ -237,9 +249,7 @@
      * @returns {Promise<Object>}
      */
     async vote(params) {
-      if (!this.isConnected) {
-        throw new Error('Not connected');
-      }
+      await this._ensureConnected();
       return await sendRequest('vote', params);
     }
 

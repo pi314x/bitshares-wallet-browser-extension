@@ -780,9 +780,12 @@ export class BitSharesAPI {
 
   /**
    * Return true when a string already looks like a BitShares object ID (X.Y.Z).
+   * Strict N.N.N shape — "contains a dot" is not enough: a malformed value like
+   * "1.3.1.3.0" (e.g. a dApp bug) also contains a dot and would otherwise be
+   * passed straight through to the node instead of being caught/resolved.
    */
   _isObjectId(str) {
-    return typeof str === 'string' && str.includes('.');
+    return typeof str === 'string' && /^\d+\.\d+\.\d+$/.test(str);
   }
 
   /**
@@ -828,6 +831,13 @@ export class BitSharesAPI {
       if (d.fee.amount === undefined || d.fee.amount === null) d.fee.amount = 0;
       if (!d.fee.asset_id) d.fee.asset_id = '1.3.0';
       await resolveAssetId(d.fee);
+      // Symbol/name resolution above only touches non-object-id-shaped strings and
+      // silently leaves them as-is on lookup failure — so a malformed value that
+      // still isn't a valid "N.N.N" id at this point (e.g. a dApp bug producing
+      // "1.3.1.3.0") would otherwise sail through to get_required_fees / broadcast
+      // and fail with an opaque node-side "Couldn't parse uint64_t" error. Fall
+      // back to the core asset rather than broadcast garbage.
+      if (!this._isObjectId(d.fee.asset_id)) d.fee.asset_id = '1.3.0';
 
       // Normalise extensions/on_fill to correct types on this operation and any inner operations.
       // Most operations use flat_set for extensions → must be [] not {}.
