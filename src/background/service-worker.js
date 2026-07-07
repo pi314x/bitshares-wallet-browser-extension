@@ -1183,7 +1183,10 @@ class BackgroundService {
         // accounts: when the dApp switched to account B the connection metadata still
         // pointed to the first connected account A, so signatures were produced with A's
         // keys even though the transaction said from = B.
-        const result = await this.walletManager.signTransaction(txData, null);
+        // isDappRequest is passed separately (NOT accountId) so the operation-type
+        // whitelist still applies — accountId alone used to gate it, so this request
+        // (genuinely dApp-originated) was silently skipping the whitelist entirely.
+        const result = await this.walletManager.signTransaction(txData, null, { isDappRequest: true });
         if (request.resolve) {
           request.resolve(result);
         } else if (request.tabId && this.contentPorts.has(request.tabId)) {

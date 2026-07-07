@@ -789,6 +789,19 @@ export class BitSharesAPI {
   }
 
   /**
+   * Repair a doubled-prefix object ID produced by buggy dApps that prepend
+   * the type prefix onto an already-qualified ID: "1.3." + "1.3.0" → "1.3.1.3.0".
+   * The doubling is unambiguous (same "space.type." repeated), so un-doubling is
+   * safe: "1.3.1.3.4099" → "1.3.4099", "1.2.1.2.5" → "1.2.5".
+   * Valid IDs and anything else pass through unchanged.
+   */
+  _repairDoubledId(id) {
+    if (typeof id !== 'string') return id;
+    const m = /^(\d+\.\d+\.)\1(\d+)$/.exec(id);
+    return m ? m[1] + m[2] : id;
+  }
+
+  /**
    * Resolve account names and asset symbols inside operation data to proper
    * numeric object IDs (X.Y.Z) in-place.  Only fields that are already strings
    * without dots are touched; numeric IDs are left as-is.
@@ -817,6 +830,7 @@ export class BitSharesAPI {
       // Helper: resolve an asset symbol → "1.3.N" ID in-place on assetObj.asset_id
       const resolveAssetId = async (assetObj) => {
         if (!assetObj || typeof assetObj !== 'object') return;
+        assetObj.asset_id = this._repairDoubledId(assetObj.asset_id);
         const v = assetObj.asset_id;
         if (typeof v === 'string' && !this._isObjectId(v)) {
           try {
@@ -824,6 +838,45 @@ export class BitSharesAPI {
             if (asset?.id) assetObj.asset_id = asset.id;
           } catch (_) { /* leave as-is */ }
         }
+      };
+
+      // Helper: resolve a PLAIN asset-id/symbol string field (e.g. credit_offer_create's
+      // asset_type, which is "1.3.N" directly — not an {amount, asset_id} object)
+      const resolveAssetField = async (obj, key) => {
+        if (!obj || typeof obj[key] !== 'string') return;
+        obj[key] = this._repairDoubledId(obj[key]);
+        if (!this._isObjectId(obj[key])) {
+          try {
+            const [asset] = await this.call(this.apiIds.database, 'lookup_asset_symbols', [[obj[key]]]);
+            if (asset?.id) obj[key] = asset.id;
+          } catch (_) { /* leave as-is */ }
+        }
+      };
+
+      // Helper: repair the keys of a flat_map field like acceptable_collateral
+      // ([[asset_id, price], ...]) or acceptable_borrowers ([[account_id, int64], ...]).
+      // Fixes doubled prefixes AND bare-number keys (dApps send 4099 where the node
+      // needs "1.3.4099" — the raw number makes the node fail with "Bad Cast: Invalid
+      // cast from type 'uint64_type' to Object"). idPrefix supplies the qualification
+      // ('1.3.' for asset keys, '1.2.' for account keys). Accepts the object form
+      // ({id: value}) too and converts it to the canonical array-of-pairs form.
+      const repairIdMap = (opData, key, idPrefix) => {
+        const map = opData[key];
+        if (!map || typeof map !== 'object') return;
+        const pairs = Array.isArray(map) ? map : Object.entries(map);
+        for (const pair of pairs) {
+          if (!Array.isArray(pair)) continue;
+          if (typeof pair[0] === 'number' && Number.isInteger(pair[0]) && pair[0] >= 0) {
+            pair[0] = idPrefix + pair[0];
+          } else if (typeof pair[0] === 'string') {
+            pair[0] = this._repairDoubledId(pair[0]);
+            if (/^\d+$/.test(pair[0])) pair[0] = idPrefix + pair[0];
+          }
+          const price = pair[1];
+          if (price?.base) price.base.asset_id = this._repairDoubledId(price.base.asset_id);
+          if (price?.quote) price.quote.asset_id = this._repairDoubledId(price.quote.asset_id);
+        }
+        if (!Array.isArray(map)) opData[key] = pairs;
       };
 
       // All operations: ensure fee is a valid asset object
@@ -943,11 +996,41 @@ export class BitSharesAPI {
             );
           }
           break;
+        case 69: // credit_offer_create
+          await resolveAccount(d, 'owner_account');
+          await resolveAssetField(d, 'asset_type');
+          repairIdMap(d, 'acceptable_collateral', '1.3.');
+          repairIdMap(d, 'acceptable_borrowers', '1.2.');
+          break;
+        case 70: // credit_offer_delete
+          await resolveAccount(d, 'owner_account');
+          d.offer_id = this._repairDoubledId(d.offer_id);
+          break;
+        case 71: // credit_offer_update
+          await resolveAccount(d, 'owner_account');
+          d.offer_id = this._repairDoubledId(d.offer_id);
+          if (d.delta_amount) await resolveAssetId(d.delta_amount);
+          repairIdMap(d, 'acceptable_collateral', '1.3.');
+          repairIdMap(d, 'acceptable_borrowers', '1.2.');
+          break;
+        case 72: // credit_offer_accept
+          await resolveAccount(d, 'borrower');
+          d.offer_id = this._repairDoubledId(d.offer_id);
+          await resolveAssetId(d.borrow_amount);
+          await resolveAssetId(d.collateral);
+          break;
+        case 73: // credit_deal_repay
+          await resolveAccount(d, 'account');
+          d.deal_id = this._repairDoubledId(d.deal_id);
+          await resolveAssetId(d.repay_amount);
+          await resolveAssetId(d.credit_fee);
+          break;
         case 75: // liquidity_pool_update
           await resolveAccount(d, 'account');
           break;
         case 76: // credit_deal_update
           await resolveAccount(d, 'borrower');
+          d.deal_id = this._repairDoubledId(d.deal_id);
           break;
         case 77: // limit_order_update
           await resolveAccount(d, 'seller');
@@ -3227,8 +3310,21 @@ serializeOperationData(opType, opData) {
    * Serialize object ID (e.g., "1.2.123" -> varint)
    */
   serializeObjectId(objectId) {
-    // Object ID format: "type.space.instance"
-    const parts = objectId.split('.');
+    // Bare instance number (some dApps send 123 instead of "1.2.123")
+    if (typeof objectId === 'number' && Number.isInteger(objectId) && objectId >= 0) {
+      return this.encodeVarint(objectId);
+    }
+    if (typeof objectId !== 'string') {
+      throw new Error(`Invalid object ID: expected "space.type.instance" string, got ${typeof objectId} (${JSON.stringify(objectId)})`);
+    }
+    // Repair doubled-prefix IDs ("1.3.1.3.0" → "1.3.0"); without this, split('.')[2]
+    // would read the instance as 1 and silently sign for the WRONG object (1.3.1).
+    const repaired = this._repairDoubledId(objectId);
+    if (!this._isObjectId(repaired)) {
+      throw new Error(`Invalid object ID "${objectId}": expected "space.type.instance" format`);
+    }
+    // Object ID format: "space.type.instance"
+    const parts = repaired.split('.');
     const instance = parseInt(parts[2], 10);
     return this.encodeVarint(instance);
   }

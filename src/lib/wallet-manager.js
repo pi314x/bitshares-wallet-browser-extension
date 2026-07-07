@@ -1470,7 +1470,7 @@ export class WalletManager {
   /**
    * Sign a transaction from dApp request
    */
-  async signTransaction(transaction, accountId = null) {
+  async signTransaction(transaction, accountId = null, { isDappRequest = false } = {}) {
     // Ensure unlocked (will restore from session if service worker restarted)
     await this.ensureUnlocked();
 
@@ -1531,18 +1531,37 @@ export class WalletManager {
       // Operation-type whitelist for dApp-initiated transactions.
       // Only allow operations the wallet explicitly understands and that cannot
       // drain funds or mutate account authorities in unexpected ways.
-      // Internal (non-dApp) transactions skip this check (accountId is null).
-      if (accountId) {
+      // Internal (non-dApp) transactions skip this check.
+      //
+      // NOTE: this is gated on isDappRequest, NOT on accountId. accountId is
+      // deliberately null for dApp-approved transactions too (see caller in
+      // approveTransaction — signing account is resolved from the transaction's
+      // own fields to fix "Missing Active Authority" when the dApp switches
+      // accounts mid-session). Gating on accountId here would silently skip the
+      // whitelist for every dApp transaction, letting a connected dApp get the
+      // wallet to sign ANY operation type — including ones with no asset-ID
+      // validation in _resolveOperationIds, which can crash the serializer on
+      // malformed fields instead of being rejected up front.
+      if (isDappRequest) {
         const ALLOWED_OP_TYPES = new Set([
           0,  // transfer
           1,  // limit_order_create
           2,  // limit_order_cancel
           3,  // call_order_update
-          63  // liquidity_pool_exchange
+          63, // liquidity_pool_exchange
+          69, // credit_offer_create
+          70, // credit_offer_delete
+          71, // credit_offer_update
+          72, // credit_offer_accept
+          73, // credit_deal_repay
+          76  // credit_deal_update
         ]);
         const OP_NAMES = {
           0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
-          3: 'call_order_update', 63: 'liquidity_pool_exchange'
+          3: 'call_order_update', 63: 'liquidity_pool_exchange',
+          69: 'credit_offer_create', 70: 'credit_offer_delete',
+          71: 'credit_offer_update', 72: 'credit_offer_accept',
+          73: 'credit_deal_repay', 76: 'credit_deal_update'
         };
         for (const op of tx.operations) {
           const opType = Array.isArray(op) ? op[0] : (typeof op.type === 'number' ? op.type : null);
