@@ -436,14 +436,14 @@ async function bip32ChildKey(parent, index) {
 
 export class CryptoUtils {
   /**
-   * Generate a random 24-word brainkey
+   * Generate a random 16-word brainkey
    */
   static generateBrainkey() {
     const words = [];
-    const array = new Uint32Array(24);
+    const array = new Uint32Array(16);
     crypto.getRandomValues(array);
 
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 16; i++) {
       const index = array[i] % WORD_LIST.length;
       words.push(WORD_LIST[index].toUpperCase());
     }

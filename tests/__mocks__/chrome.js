@@ -2,7 +2,12 @@
  * Chrome extension API mock for Jest tests
  * Provides in-memory implementations of chrome.storage.local,
  * chrome.runtime, and related APIs.
+ * Also mocks the Web Crypto API for Node.js test environment.
  */
+
+// Mock the Web Crypto API using Node.js crypto module
+const { webcrypto } = require('crypto');
+global.crypto = webcrypto;
 
 // In-memory store for chrome.storage.local
 let localStore = {};

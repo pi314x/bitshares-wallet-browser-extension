@@ -132,11 +132,40 @@ function cacheElements() {
   elements.dappConnectModal = document.getElementById('dapp-connect-modal');
 }
 
+/**
+ * True when this popup.js instance is running inside the standalone window
+ * opened by openInExpandedWindow() (marked via the ?expanded=1 URL param),
+ * as opposed to the toolbar action-popup.
+ */
+function isExpandedWindow() {
+  return new URLSearchParams(window.location.search).get('expanded') === '1';
+}
+
+/**
+ * The toolbar action-popup closes the instant it loses focus — e.g. the user
+ * alt-tabs to a password manager to copy an account name or brainkey — which
+ * silently discards whatever the user had typed into a multi-field form like
+ * wallet import. Re-open the same UI as a normal standalone browser window
+ * (which does NOT close on blur) and hand off to it instead.
+ */
+async function openInExpandedWindow(screenId) {
+  const url = chrome.runtime.getURL(`src/popup/popup.html?expanded=1&screen=${screenId}`);
+  await chrome.windows.create({ url, type: 'popup', width: 400, height: 680 });
+  window.close();
+}
+
 // Setup all event listeners
 function setupEventListeners() {
   // Welcome screen buttons
   document.getElementById('btn-create-wallet')?.addEventListener('click', () => showScreen('create-wallet-screen'));
-  document.getElementById('btn-import-wallet')?.addEventListener('click', () => showScreen('import-wallet-screen'));
+  document.getElementById('btn-import-wallet')?.addEventListener('click', () => {
+    // Only pop out from the toolbar popup — an already-expanded window just switches screens.
+    if (isExpandedWindow()) {
+      showScreen('import-wallet-screen');
+    } else {
+      openInExpandedWindow('import-wallet-screen');
+    }
+  });
   
   // Create wallet flow
   document.getElementById('btn-generate-wallet')?.addEventListener('click', handleGenerateWallet);
@@ -356,7 +385,15 @@ async function initializeApp() {
         await showPendingApprovalIndicator();
       }
     } else {
-      showScreen('welcome-screen');
+      // openInExpandedWindow() hands off to this fresh window via ?screen=,
+      // so the popped-out import flow lands on the right screen instead of
+      // back at the welcome screen.
+      const requestedScreen = new URLSearchParams(window.location.search).get('screen');
+      if (requestedScreen && document.getElementById(requestedScreen)) {
+        showScreen(requestedScreen);
+      } else {
+        showScreen('welcome-screen');
+      }
     }
 
     // Test all nodes in background (don't await - runs asynchronously)

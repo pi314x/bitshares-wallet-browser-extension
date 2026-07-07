@@ -6,8 +6,23 @@
 import { WalletManager } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 
-// Firefox MV2 compat: chrome.* APIs are callback-only; proxy through browser.* (Promise-based)
-if (typeof browser !== 'undefined') {
+// Firefox MV2 compat: chrome.* APIs are callback-only; proxy through browser.* (Promise-based).
+//
+// PATCH (XBTS): the previous guard `typeof browser !== 'undefined'` also fired on
+// Chromium (Chrome/Brave), where `browser` is an alias of `chrome`. There the
+// wrapped chrome.* function and browser.* function are the SAME object, so the
+// wrapper called itself forever -> "RangeError: Maximum call stack size exceeded"
+// (seen as "Failed to connect to blockchain" from connectToBlockchain's
+// chrome.runtime.sendMessage(...) status notification). We now apply the shim
+// ONLY on real Firefox (the two runtime sendMessage fns are genuinely different)
+// and call captured originals, never the live (re-wrapped) references.
+const _isRealFirefox =
+  typeof browser !== 'undefined' &&
+  browser.runtime &&
+  typeof browser.runtime.sendMessage === 'function' &&
+  browser.runtime.sendMessage !== chrome.runtime.sendMessage;
+
+if (_isRealFirefox) {
   if (browser.storage?.local) {
     const _bsl = browser.storage.local;
     chrome.storage.local = {
@@ -17,12 +32,14 @@ if (typeof browser !== 'undefined') {
       clear:  (cb)    => cb ? _bsl.clear().then(() => cb())   : _bsl.clear(),
     };
   }
-  // sendMessage returns undefined in Firefox MV2 — proxy to browser.runtime.sendMessage
+  // sendMessage returns undefined in Firefox MV2 — proxy to browser.runtime.sendMessage.
+  // Capture both originals up-front so the wrapper can never call itself.
   const _origSend = chrome.runtime.sendMessage.bind(chrome.runtime);
+  const _browserSend = browser.runtime.sendMessage.bind(browser.runtime);
   chrome.runtime.sendMessage = (...args) => {
     const last = args[args.length - 1];
     if (typeof last === 'function') return _origSend(...args); // explicit callback — leave as-is
-    return browser.runtime.sendMessage(...args);
+    return _browserSend(...args);
   };
   // chrome.action (MV3) → chrome.browserAction (MV2)
   if (!chrome.action && chrome.browserAction) chrome.action = chrome.browserAction;
