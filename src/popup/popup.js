@@ -3530,14 +3530,28 @@ function initAssetPicker(selectId) {
     btn.appendChild(arrow);
   }
 
+  // Type-to-filter: while the list is open, printable keys build a filter
+  // string shown above the options. Asset symbols are always uppercase, so
+  // typed characters are uppercased before matching.
+  let filter = '';
+
   function renderList() {
     list.replaceChildren();
+    if (filter) {
+      const tag = document.createElement('div');
+      tag.className = 'ap-filter';
+      tag.textContent = filter;
+      list.appendChild(tag);
+    }
+    let shown = 0;
     for (const opt of select.options) {
       if (!opt.value) continue;
+      const sym = (opt.dataset.symbol || opt.textContent.split(' ')[0]).toUpperCase();
+      if (filter && !sym.includes(filter)) continue;
+      shown++;
       const item = document.createElement('div');
       item.className = 'ap-item' + (opt.value === select.value ? ' ap-item--active' : '');
       item.setAttribute('role', 'option');
-      const sym = (opt.dataset.symbol || opt.textContent.split(' ')[0]).toUpperCase();
       item.appendChild(buildIcon(sym));
       const label = document.createElement('span');
       label.className = 'ap-label';
@@ -3552,15 +3566,40 @@ function initAssetPicker(selectId) {
       });
       list.appendChild(item);
     }
+    if (!shown) {
+      const empty = document.createElement('div');
+      empty.className = 'ap-empty';
+      empty.textContent = `No assets matching "${filter}"`;
+      list.appendChild(empty);
+    }
   }
 
-  function openList() { renderList(); list.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.classList.add('open'); }
+  function openList() { filter = ''; renderList(); list.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.classList.add('open'); }
   function closeList() { list.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('open'); }
 
   btn.addEventListener('click', (e) => { e.stopPropagation(); list.hidden ? openList() : closeList(); });
   btn.addEventListener('blur', () => setTimeout(closeList, 150));
   document.addEventListener('click', (e) => { if (!wrapper.contains(e.target)) closeList(); });
-  wrapper.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeList(); });
+  wrapper.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      // First Escape clears an active filter, second closes the list
+      if (!list.hidden && filter) { filter = ''; renderList(); } else { closeList(); }
+      return;
+    }
+    if (list.hidden) return;
+    if (e.key === 'Backspace') {
+      if (filter) { filter = filter.slice(0, -1); renderList(); }
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      // Select the first (best) match
+      list.querySelector('.ap-item')?.dispatchEvent(new MouseEvent('mousedown', { cancelable: true }));
+      e.preventDefault();
+    } else if (e.key.length === 1 && /[a-z0-9.]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      filter += e.key.toUpperCase();
+      renderList();
+      e.preventDefault();
+    }
+  });
 
   // Re-render button when options change (innerHTML replaced by loadSendAssets etc.)
   new MutationObserver(renderBtn).observe(select, { childList: true });

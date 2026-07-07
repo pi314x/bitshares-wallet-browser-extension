@@ -2788,6 +2788,25 @@ body {
 .ap-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ap-placeholder { color: var(--text-muted); }
 
+.ap-filter {
+  position: sticky;
+  top: 0;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.ap-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 .swap-input-group input[type="number"] {
   width: 100%;
   padding: var(--spacing-sm);
