@@ -1548,6 +1548,9 @@ export class WalletManager {
           1,  // limit_order_create
           2,  // limit_order_cancel
           3,  // call_order_update
+          49, // htlc_create
+          50, // htlc_redeem
+          52, // htlc_extend
           63, // liquidity_pool_exchange
           69, // credit_offer_create
           70, // credit_offer_delete
@@ -1558,7 +1561,8 @@ export class WalletManager {
         ]);
         const OP_NAMES = {
           0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
-          3: 'call_order_update', 63: 'liquidity_pool_exchange',
+          3: 'call_order_update', 49: 'htlc_create', 50: 'htlc_redeem',
+          52: 'htlc_extend', 63: 'liquidity_pool_exchange',
           69: 'credit_offer_create', 70: 'credit_offer_delete',
           71: 'credit_offer_update', 72: 'credit_offer_accept',
           73: 'credit_deal_repay', 76: 'credit_deal_update'

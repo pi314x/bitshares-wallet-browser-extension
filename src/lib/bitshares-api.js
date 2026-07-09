@@ -971,6 +971,33 @@ export class BitSharesAPI {
           await resolveAssetId(d.delta_collateral);
           await resolveAssetId(d.delta_debt);
           break;
+        case 49: // htlc_create
+          await resolveAccount(d, 'from');
+          await resolveAccount(d, 'to');
+          await resolveAssetId(d.amount);
+          // preimage_hash: static_variant [hash_type, hash_hex].
+          // Some dApps (and this repo's earlier Go conventions) send a bare hex
+          // string. 64 hex chars = 32 bytes is unambiguously sha256 (type 2) —
+          // qualify it. 40-char hashes stay as-is: 20 bytes could be ripemd160,
+          // sha1 OR hash160, and guessing wrong locks the funds, so the
+          // serializer rejects those with instructions instead.
+          if (typeof d.preimage_hash === 'string' && /^[0-9a-fA-F]{64}$/.test(d.preimage_hash)) {
+            d.preimage_hash = [2, d.preimage_hash];
+          }
+          if (Array.isArray(d.preimage_hash) && typeof d.preimage_hash[1] === 'string') {
+            d.preimage_hash[1] = d.preimage_hash[1].toLowerCase();
+          }
+          break;
+        case 50: // htlc_redeem
+          await resolveAccount(d, 'redeemer');
+          d.htlc_id = this._repairDoubledId(d.htlc_id);
+          // preimage: bytes — the node expects lowercase hex
+          if (typeof d.preimage === 'string') d.preimage = d.preimage.toLowerCase();
+          break;
+        case 52: // htlc_extend
+          await resolveAccount(d, 'update_issuer');
+          d.htlc_id = this._repairDoubledId(d.htlc_id);
+          break;
         case 63: // liquidity_pool_exchange
           await resolveAccount(d, 'account');
           await resolveAssetId(d.amount_to_sell);
@@ -2824,23 +2851,39 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeObjectId(op.from));
     buffers.push(this.serializeObjectId(op.to));
     buffers.push(this.serializeAssetAmount(op.amount));
-    // preimage_hash: static_variant [bytes(20), bytes(20), bytes(32)]
-    // Usually represented as [hash_type, hash_hex_string]
+    // preimage_hash: static_variant<ripemd160(0), sha1(1), sha256(2), hash160(3)>
+    // JSON form: [hash_type, hash_hex_string]
     const preimageHash = op.preimage_hash;
+    let hashType, hashData;
     if (Array.isArray(preimageHash)) {
-      const [hashType, hashData] = preimageHash;
-      buffers.push(this.encodeVarint(hashType || 0));
-      const hashSize = hashType === 2 ? 32 : 20;
-      buffers.push(this.serializeFixedBytes(hashData, hashSize));
+      [hashType, hashData] = preimageHash;
     } else if (typeof preimageHash === 'object' && preimageHash !== null) {
-      const hashType = preimageHash.type || 0;
-      buffers.push(this.encodeVarint(hashType));
-      const hashSize = hashType === 2 ? 32 : 20;
-      buffers.push(this.serializeFixedBytes(preimageHash.hash || preimageHash.data, hashSize));
+      hashType = preimageHash.type;
+      hashData = preimageHash.hash || preimageHash.data;
     } else {
-      buffers.push(this.encodeVarint(0));
-      buffers.push(new Uint8Array(20));
+      throw new Error(
+        'htlc_create: preimage_hash must be [hash_type, hash_hex] ' +
+        '(e.g. [2, "<64-char sha256 hex>"]; types: 0=ripemd160, 1=sha1, 2=sha256, 3=hash160). ' +
+        `Received: ${JSON.stringify(preimageHash)}`
+      );
     }
+    hashType = hashType || 0;
+    if (hashType < 0 || hashType > 3) {
+      throw new Error(`htlc_create: unknown preimage hash type ${hashType} (expected 0=ripemd160, 1=sha1, 2=sha256, 3=hash160)`);
+    }
+    const hashSize = hashType === 2 ? 32 : 20;
+    // STRICT length check — serializeFixedBytes would silently zero-pad or
+    // truncate a wrong-length hash, producing a validly-signed HTLC that can
+    // never be redeemed (funds locked until timeout). Reject instead.
+    const hashBytes = typeof hashData === 'string' ? this.hexToUint8Array(hashData) : hashData;
+    if (!hashBytes || hashBytes.length !== hashSize) {
+      throw new Error(
+        `htlc_create: preimage_hash length ${hashBytes ? hashBytes.length : 0} bytes does not match ` +
+        `hash type ${hashType} (expected ${hashSize} bytes)`
+      );
+    }
+    buffers.push(this.encodeVarint(hashType));
+    buffers.push(this.serializeFixedBytes(hashBytes, hashSize));
     buffers.push(this.writeUint16LE(op.preimage_size || 0));
     buffers.push(this.writeUint32LE(op.claim_period_seconds || 0));
     buffers.push(this.encodeVarint(0)); // extensions

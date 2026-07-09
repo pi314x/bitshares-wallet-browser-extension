@@ -169,6 +169,36 @@
     }
   });
 
+  /**
+   * Make a value safe for chrome.runtime port messaging, which is JSON-only.
+   * window.postMessage (structured clone) happily delivers typed arrays, BigInts
+   * and Dates from the page, but port.postMessage then throws Chrome's
+   * "Could not serialize message." — seen with htlc_create, where dApps send
+   * preimage_hash as a Uint8Array. Convert to the JSON forms the BitShares
+   * node expects: bytes → lowercase hex, BigInt → string, Date → "YYYY-MM-DDTHH:MM:SS".
+   */
+  function sanitizeForPort(value) {
+    if (value === null || value === undefined) return value;
+    const t = typeof value;
+    if (t === 'bigint') return value.toString();
+    if (t === 'function' || t === 'symbol') return undefined;
+    if (t !== 'object') return value;
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      const bytes = value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    if (value instanceof Date) return value.toISOString().slice(0, 19);
+    if (Array.isArray(value)) return value.map(sanitizeForPort);
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      const s = sanitizeForPort(v);
+      if (s !== undefined) out[k] = s;
+    }
+    return out;
+  }
+
   function sendToBackground(method, params) {
     return new Promise((resolve, reject) => {
       if (!port) {
@@ -187,7 +217,7 @@
         }
       }, 60000); // 60 second timeout
 
-      port.postMessage({ method, params, id });
+      port.postMessage({ method, params: sanitizeForPort(params), id });
     });
   }
 
