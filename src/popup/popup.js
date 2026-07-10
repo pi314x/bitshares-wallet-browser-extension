@@ -6701,8 +6701,10 @@ async function handleExecuteSwap() {
     await walletManager.broadcastOperation('liquidity_pool_exchange', opData);
 
     // broadcastOperation throws on failure, so reaching here means success.
-    // broadcast_transaction_with_callback returns null on success (BitShares node convention)
-    // so we must NOT gate the refresh on the return value.
+    // Its return value is now the real transaction_confirmation object (not
+    // null — that was true before broadcastWithConfirmation was added to
+    // actually wait for the node's confirmation notice), but this code
+    // doesn't need anything from it, so it's still fine to ignore.
     showToast('Swap successful!', 'success');
     // Refresh swap-screen balances and dashboard balances
     await refreshSwapBalances();

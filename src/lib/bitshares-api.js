@@ -20,6 +20,15 @@ export class BitSharesAPI {
     this.ws = null;
     this.callId = 0;
     this.pendingCalls = new Map();
+    // broadcast_transaction_with_callback doesn't return the confirmation
+    // synchronously — the node immediately acks the RPC call with a null
+    // result, then pushes the real transaction_confirmation (with
+    // operation_results, needed to read back e.g. a newly-created HTLC's
+    // object id) later as an unsolicited {"method":"notice","params":[id,[...]]}
+    // message tagged with the callback id we chose. pendingCalls only
+    // matches messages that carry a top-level "id" (normal call/response
+    // pairs), so notices need their own map keyed by that callback id.
+    this.pendingCallbacks = new Map();
     this.isConnected = false;
     this.apiIds = {};
     this.chainId = null;
@@ -158,6 +167,20 @@ export class BitSharesAPI {
         // If the socket dropped before the handshake finished, fail this attempt
         // immediately (no 8s wait, no recursion).
         settle(false, new Error('WebSocket closed: ' + event.code));
+
+        // Fail fast instead of leaving callers to discover this via their
+        // own timeout (up to 30s for a pending broadcast confirmation):
+        // once the socket is gone, no pending call or broadcast
+        // confirmation notice can ever arrive for it.
+        const closedErr = new Error('WebSocket closed: ' + event.code);
+        for (const [id, { reject }] of this.pendingCalls) {
+          reject(closedErr);
+        }
+        this.pendingCalls.clear();
+        for (const [id, { reject }] of this.pendingCallbacks) {
+          reject(closedErr);
+        }
+        this.pendingCallbacks.clear();
       };
 
       // Hard timeout for the whole handshake.
@@ -185,6 +208,21 @@ export class BitSharesAPI {
   handleMessage(data) {
     try {
       const response = JSON.parse(data);
+
+      // Unsolicited push from broadcast_transaction_with_callback (and any
+      // other *_with_callback API): no top-level "id", shaped instead as
+      // {"method":"notice","params":[callback_id,[payload]]}. Must be
+      // checked before the pendingCalls branch below, since this never has
+      // an "id" the pendingCalls map would recognise.
+      if (response.method === 'notice' && Array.isArray(response.params)) {
+        const [callbackId, payload] = response.params;
+        if (this.pendingCallbacks.has(callbackId)) {
+          const { resolve } = this.pendingCallbacks.get(callbackId);
+          this.pendingCallbacks.delete(callbackId);
+          resolve(Array.isArray(payload) ? payload[0] : payload);
+        }
+        return;
+      }
 
       if (response.id !== undefined && this.pendingCalls.has(response.id)) {
         const { resolve, reject } = this.pendingCalls.get(response.id);
@@ -724,18 +762,58 @@ export class BitSharesAPI {
       // Sign transaction
       const signedTx = await this.signTransaction(transaction, privateKey);
 
-      // Broadcast
-      const result = await this.call(
-        this.apiIds.network,
-        'broadcast_transaction_with_callback',
-        [this.callId, signedTx]
-      );
-
-      return result;
+      // Broadcast and wait for the real confirmation (see broadcastWithConfirmation)
+      return await this.broadcastWithConfirmation(signedTx);
     } catch (error) {
       console.error('Broadcast transaction error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Broadcast an already-signed transaction via broadcast_transaction_with_callback
+   * and resolve with the real transaction_confirmation (id, block_num, trx_num,
+   * trx — trx.operation_results is how a caller reads back e.g. a newly-created
+   * HTLC's object id) instead of the RPC call's immediate (always-null) ack.
+   *
+   * broadcast_transaction_with_callback returns void synchronously; the node
+   * pushes the confirmation later as an unsolicited notice tagged with the
+   * callback id we choose here, handled by handleMessage's pendingCallbacks
+   * branch.
+   *
+   * KNOWN LIMITATION: this depends on the connected node actually pushing
+   * that notice. Some public nodes rate-limit or disable notify-callback
+   * pushes for anonymous connections, in which case a transaction that
+   * genuinely succeeded on-chain will still time out here and be reported
+   * as a failure, with no reconciliation (e.g. polling for the tx by hash)
+   * to catch that. Not fixed yet — would need per-node behavior testing to
+   * do safely; if you hit spurious timeouts on a specific node, that's
+   * almost certainly why.
+   */
+  async broadcastWithConfirmation(signedTx, timeoutMs = 30000) {
+    const callbackId = ++this.callId;
+    const confirmation = new Promise((resolve, reject) => {
+      this.pendingCallbacks.set(callbackId, { resolve, reject });
+      setTimeout(() => {
+        if (this.pendingCallbacks.has(callbackId)) {
+          this.pendingCallbacks.delete(callbackId);
+          reject(new Error('Timed out waiting for transaction confirmation'));
+        }
+      }, timeoutMs);
+    });
+
+    try {
+      await this.call(
+        this.apiIds.network,
+        'broadcast_transaction_with_callback',
+        [callbackId, signedTx]
+      );
+    } catch (broadcastErr) {
+      this.pendingCallbacks.delete(callbackId);
+      throw broadcastErr;
+    }
+
+    return confirmation;
   }
 
   /**
@@ -1141,21 +1219,15 @@ export class BitSharesAPI {
     // 3. Sign
     const signedTx = await this.signTransaction(freshTx, privateKeyWIF);
 
-    // 4. Broadcast
-    let result;
+    // 4. Broadcast and wait for the real confirmation (see broadcastWithConfirmation)
     try {
-      result = await this.call(
-        this.apiIds.network,
-        'broadcast_transaction_with_callback',
-        [this.callId, signedTx]
-      );
+      return await this.broadcastWithConfirmation(signedTx);
     } catch (broadcastErr) {
       // Re-throw with the operation JSON attached so it's visible in the dApp
       // console (inpage.js propagates the message string back to the page).
       const opsJson = JSON.stringify(signedTx.operations, null, 2);
       throw new Error(`${broadcastErr.message}\n\n[ops JSON for diagnosis]:\n${opsJson}`);
     }
-    return result;
   }
 
   /**
