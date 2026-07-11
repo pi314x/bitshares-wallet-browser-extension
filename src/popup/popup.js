@@ -588,9 +588,12 @@ function stopApprovalDismiss() {
 }
 
 const _approvalDismissMap = {
-  'dapp-connect-modal':     { fillId: 'connect-dismiss-fill',  onExpire: () => handleDappRejectUpdated() },
-  'dapp-transfer-modal':    { fillId: 'transfer-dismiss-fill', onExpire: () => handleTransferReject() },
-  'dapp-transaction-modal': { fillId: 'txsign-dismiss-fill',   onExpire: () => handleTransactionSignReject() },
+  'dapp-connect-modal':     { fillId: 'connect-dismiss-fill',  onExpire: () => handleDappRejectUpdated(),
+                              buttons: ['btn-dapp-reject', 'btn-dapp-connect'] },
+  'dapp-transfer-modal':    { fillId: 'transfer-dismiss-fill', onExpire: () => handleTransferReject(),
+                              buttons: ['btn-transfer-reject', 'btn-transfer-approve'] },
+  'dapp-transaction-modal': { fillId: 'txsign-dismiss-fill',   onExpire: () => handleTransactionSignReject(),
+                              buttons: ['btn-tx-sign-reject', 'btn-tx-sign-approve'] },
 };
 
 // Show modal
@@ -599,7 +602,12 @@ function showModal(modalId) {
   if (modal) {
     modal.classList.add('active');
     const dismiss = _approvalDismissMap[modalId];
-    if (dismiss) startApprovalDismiss(dismiss.fillId, dismiss.onExpire);
+    if (dismiss) {
+      // Approval modals are reused across requests — make sure a previous
+      // in-flight run can't leave the action buttons stuck disabled
+      setApprovalActionsDisabled(dismiss.buttons[0], dismiss.buttons[1], false);
+      startApprovalDismiss(dismiss.fillId, dismiss.onExpire);
+    }
   }
 }
 
@@ -4758,21 +4766,38 @@ function setApprovalActionsDisabled(rejectId, approveId, disabled) {
   if (approveBtn) approveBtn.disabled = disabled;
 }
 
+// sendMessage that gives up after timeoutMs. The buttons stay disabled only
+// while this is pending, so a background request that never responds (node
+// reconnect loop, confirmation callback the node never pushes, …) must not
+// keep the promise pending forever — that would leave the reused modal with
+// permanently locked buttons.
+function sendApprovalMessage(message, timeoutMs = 60_000) {
+  return Promise.race([
+    chrome.runtime.sendMessage(message),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(
+        'The wallet did not respond in time. Check your account history before retrying.'
+      )), timeoutMs)
+    )
+  ]);
+}
+
 // Transfer approval handlers
 async function handleTransferReject() {
   if (pendingDappRequest) {
     stopApprovalDismiss(); // don't let the auto-reject timer fire mid-request
     setApprovalActionsDisabled('btn-transfer-reject', 'btn-transfer-approve', true);
     try {
-      await chrome.runtime.sendMessage({
+      await sendApprovalMessage({
         type: 'DAPP_APPROVE_TRANSFER',
         data: { requestId: pendingDappRequest.id, approved: false }
       });
     } catch (e) {
       console.error('Failed to reject transfer:', e);
+    } finally {
+      setApprovalActionsDisabled('btn-transfer-reject', 'btn-transfer-approve', false);
     }
     await chrome.storage.local.remove(['pendingApproval']);
-    setApprovalActionsDisabled('btn-transfer-reject', 'btn-transfer-approve', false);
   }
   pendingDappRequest = null;
   hideModal('dapp-transfer-modal');
@@ -4783,7 +4808,7 @@ async function handleTransferApprove() {
     stopApprovalDismiss(); // don't let the auto-reject timer fire mid-request
     setApprovalActionsDisabled('btn-transfer-reject', 'btn-transfer-approve', true);
     try {
-      const result = await chrome.runtime.sendMessage({
+      const result = await sendApprovalMessage({
         type: 'DAPP_APPROVE_TRANSFER',
         data: { requestId: pendingDappRequest.id, approved: true }
       });
@@ -4791,15 +4816,17 @@ async function handleTransferApprove() {
         showToast('Transfer failed: ' + (result.error || 'Unknown error'), 'error');
       } else {
         showToast('Transfer sent!', 'success');
-        // Refresh balances after successful transfer
-        await loadDashboard();
+        // Refresh balances after successful transfer — without blocking the
+        // modal teardown on popup-side API availability
+        loadDashboard().catch(e => console.error('Balance refresh failed:', e));
       }
     } catch (e) {
       console.error('Failed to approve transfer:', e);
       showToast('Transfer failed: ' + e.message, 'error');
+    } finally {
+      setApprovalActionsDisabled('btn-transfer-reject', 'btn-transfer-approve', false);
     }
     await chrome.storage.local.remove(['pendingApproval']);
-    setApprovalActionsDisabled('btn-transfer-reject', 'btn-transfer-approve', false);
   }
   pendingDappRequest = null;
   hideModal('dapp-transfer-modal');
@@ -5671,16 +5698,17 @@ async function handleTransactionSignReject() {
     stopApprovalDismiss(); // don't let the auto-reject timer fire mid-request
     setApprovalActionsDisabled('btn-tx-sign-reject', 'btn-tx-sign-approve', true);
     try {
-      await chrome.runtime.sendMessage({
+      await sendApprovalMessage({
         type: 'DAPP_APPROVE_TRANSACTION',
         data: { requestId: pendingDappRequest.id, approved: false }
       });
     } catch (e) {
       console.error('Failed to reject transaction signing:', e);
+    } finally {
+      setApprovalActionsDisabled('btn-tx-sign-reject', 'btn-tx-sign-approve', false);
     }
     await chrome.storage.local.remove(['pendingApproval']);
     await _browserAction.setBadgeText({ text: '' });
-    setApprovalActionsDisabled('btn-tx-sign-reject', 'btn-tx-sign-approve', false);
   }
   pendingDappRequest = null;
   hideModal('dapp-transaction-modal');
@@ -5691,7 +5719,7 @@ async function handleTransactionSignApprove() {
     stopApprovalDismiss(); // don't let the auto-reject timer fire mid-request
     setApprovalActionsDisabled('btn-tx-sign-reject', 'btn-tx-sign-approve', true);
     try {
-      const result = await chrome.runtime.sendMessage({
+      const result = await sendApprovalMessage({
         type: 'DAPP_APPROVE_TRANSACTION',
         data: { requestId: pendingDappRequest.id, approved: true }
       });
@@ -5699,15 +5727,16 @@ async function handleTransactionSignApprove() {
         showToast('Transaction failed: ' + (result.error || 'Unknown error'), 'error');
       } else {
         showToast('Transaction signed!', 'success');
-        await loadDashboard();
+        loadDashboard().catch(e => console.error('Balance refresh failed:', e));
       }
     } catch (e) {
       console.error('Failed to approve transaction signing:', e);
       showToast('Transaction failed: ' + e.message, 'error');
+    } finally {
+      setApprovalActionsDisabled('btn-tx-sign-reject', 'btn-tx-sign-approve', false);
     }
     await chrome.storage.local.remove(['pendingApproval']);
     await _browserAction.setBadgeText({ text: '' });
-    setApprovalActionsDisabled('btn-tx-sign-reject', 'btn-tx-sign-approve', false);
   }
   pendingDappRequest = null;
   hideModal('dapp-transaction-modal');
