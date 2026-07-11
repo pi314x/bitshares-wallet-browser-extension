@@ -79,7 +79,11 @@ class BackgroundService {
   async init() {
     // Load settings
     await this.loadSettings();
-    
+
+    // Re-apply sidebar mode (Chrome side panel) from storage on every service
+    // worker start — panel behavior does not reliably survive browser restarts
+    this.applySidebarMode();
+
     // Setup message listeners
     this.setupMessageListeners();
     
@@ -101,6 +105,39 @@ class BackgroundService {
         resolve();
       });
     });
+  }
+
+  /**
+   * Chrome side panel ("sidebar") support. When enabled, clicking the toolbar
+   * icon opens the wallet in the browser side panel instead of the popup.
+   * Firefox exposes the sidebar through manifest sidebar_action instead, so
+   * this is a no-op there (no chrome.sidePanel).
+   */
+  async applySidebarMode(enabled = null) {
+    if (!chrome.sidePanel) {
+      return { success: false, error: 'This browser does not support the side panel (needs Chrome 114+)' };
+    }
+    try {
+      if (enabled === null) {
+        const stored = await chrome.storage.local.get(['sidebarMode']);
+        enabled = !!stored.sidebarMode;
+      }
+      // ?view=sidebar lets popup.html swap its fixed popup footprint for a
+      // fluid layout that fills the panel
+      try {
+        await chrome.sidePanel.setOptions({ path: 'src/popup/popup.html?view=sidebar' });
+      } catch {
+        await chrome.sidePanel.setOptions({ path: 'src/popup/popup.html' });
+      }
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: enabled });
+      // An action popup takes precedence over openPanelOnActionClick, so the
+      // popup must be cleared while sidebar mode is on
+      await chrome.action.setPopup({ popup: enabled ? '' : 'src/popup/popup.html' });
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to apply sidebar mode:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async connectToBlockchain(networkOverride = null) {
@@ -321,6 +358,10 @@ class BackgroundService {
 
       case 'DAPP_REJECT_REQUEST':
         return await this.rejectPendingRequest(data.requestId, data.reason);
+
+      case 'SET_SIDEBAR_MODE':
+        await chrome.storage.local.set({ sidebarMode: !!data.enabled });
+        return await this.applySidebarMode(!!data.enabled);
 
       case 'NETWORK_SWITCH':
         // Popup switched networks — reconnect to the new chain so that all
@@ -1009,9 +1050,18 @@ class BackgroundService {
       const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
       const target = windows.find(w => w.focused) || windows[windows.length - 1];
       if (target) await chrome.windows.update(target.id, { focused: true });
-      await browserAction.openPopup();
+      const { sidebarMode } = await chrome.storage.local.get(['sidebarMode']);
+      if (sidebarMode && chrome.sidePanel?.open && target) {
+        // Sidebar mode: the action popup is cleared, open the side panel
+        // instead. Chrome may refuse this without a user gesture — if the
+        // panel is already open it picks the request up live via the
+        // storage.onChanged listener, otherwise the badge is the fallback.
+        await chrome.sidePanel.open({ windowId: target.id });
+      } else {
+        await browserAction.openPopup();
+      }
     } catch {
-      // openPopup() failed — badge already set above, user will click the icon
+      // opening failed — badge already set above, user will click the icon
     }
   }
 

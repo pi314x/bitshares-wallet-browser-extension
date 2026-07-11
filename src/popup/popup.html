@@ -760,6 +760,22 @@
           </div>
         </div>
         <div class="settings-group">
+          <h4>Display</h4>
+          <!-- Chrome: choose whether the toolbar icon opens the popup or the side panel -->
+          <div class="settings-item" id="sidebar-mode-item">
+            <span>Toolbar Icon Opens</span>
+            <select id="sidebar-mode-select">
+              <option value="popup" selected>Popup</option>
+              <option value="sidebar">Sidebar</option>
+            </select>
+          </div>
+          <!-- Firefox: the icon behavior is fixed, but the sidebar can be toggled directly -->
+          <div class="settings-item clickable" id="setting-open-sidebar" style="display: none;">
+            <span>Open in Sidebar</span>
+            <span class="settings-arrow">→</span>
+          </div>
+        </div>
+        <div class="settings-group">
           <h4>Address Book</h4>
           <div class="settings-item" id="setting-address-book">
             <span>Manage Contacts</span>

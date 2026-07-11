@@ -39,6 +39,16 @@
     "page": "src/background/background-firefox.html"
   },
 
+  "sidebar_action": {
+    "default_title": "BitShares Wallet",
+    "default_panel": "src/popup/popup.html?view=sidebar",
+    "default_icon": {
+      "16": "src/assets/icons/icon16.png",
+      "32": "src/assets/icons/icon32.png"
+    },
+    "open_at_install": false
+  },
+
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

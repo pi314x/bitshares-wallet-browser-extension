@@ -85,6 +85,13 @@ body {
   background: var(--bg-primary);
 }
 
+/* Sidebar / side panel view (?view=sidebar): fill whatever size the browser
+   gives the panel instead of the fixed popup footprint */
+body.sidebar-view .wallet-container {
+  width: 100%;
+  height: 100vh;
+}
+
 .wallet-container::before {
   content: '';
   position: absolute;

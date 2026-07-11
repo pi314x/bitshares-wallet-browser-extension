@@ -28,6 +28,10 @@
     "service_worker": "src/background/service-worker.js",
     "type": "module"
   },
+
+  "side_panel": {
+    "default_path": "src/popup/popup.html"
+  },
   
   "content_scripts": [
     {
@@ -51,7 +55,8 @@
     "storage",
     "activeTab",
     "notifications",
-    "alarms"
+    "alarms",
+    "sidePanel"
   ],
   
   "host_permissions": [

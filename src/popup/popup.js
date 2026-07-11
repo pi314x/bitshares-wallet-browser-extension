@@ -65,6 +65,13 @@ if (_isRealFirefox) {
 // Alias avoids static linter warnings about chrome.action not being supported in MV2
 const _browserAction = chrome.action;
 
+// Running inside the browser side panel / sidebar (?view=sidebar is set by
+// sidePanel.setOptions on Chrome and sidebar_action.default_panel on Firefox)?
+// The class swaps the fixed 360x600 popup footprint for a fluid layout.
+if (new URLSearchParams(window.location.search).get('view') === 'sidebar') {
+  document.body.classList.add('sidebar-view');
+}
+
 // DOM helpers — avoids linter UNSAFE_VAR_ASSIGNMENT warnings for innerHTML
 function setHTML(el, html) {
   if (!el) return;
@@ -251,6 +258,8 @@ function setupEventListeners() {
     handleShowSend(null, 'buy-me-a-beer');
   });
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
+  document.getElementById('sidebar-mode-select')?.addEventListener('change', handleSidebarModeChange);
+  document.getElementById('setting-open-sidebar')?.addEventListener('click', handleOpenSidebarClick);
   document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
   document.getElementById('explorer-url-save')?.addEventListener('click', handleSaveExplorerUrl);
   document.getElementById('explorer-url-reset')?.addEventListener('click', handleResetExplorerUrl);
@@ -3800,6 +3809,7 @@ async function handleResetWallet() {
 async function handleShowSettings() {
   showScreen('settings-screen');
   await loadAutolockSetting();
+  await loadSidebarModeSetting();
 }
 
 async function handleShowExplorer() {
@@ -3825,6 +3835,66 @@ async function handleAutolockChange(e) {
     showToast('Auto-lock disabled', 'info');
   } else {
     showToast(`Auto-lock set to ${minutes} minutes`, 'info');
+  }
+}
+
+// === Sidebar (browser side panel) mode ===
+
+async function loadSidebarModeSetting() {
+  const chromeRow = document.getElementById('sidebar-mode-item');
+  const firefoxRow = document.getElementById('setting-open-sidebar');
+  if (_isRealFirefox) {
+    // Firefox can't reassign the toolbar icon to the sidebar; it opens the
+    // sidebar directly instead (also reachable via View → Sidebar)
+    if (chromeRow) chromeRow.style.display = 'none';
+    if (firefoxRow) firefoxRow.style.display = '';
+    return;
+  }
+  if (firefoxRow) firefoxRow.style.display = 'none';
+  const select = document.getElementById('sidebar-mode-select');
+  if (select) {
+    const result = await chrome.storage.local.get(['sidebarMode']);
+    select.value = result.sidebarMode ? 'sidebar' : 'popup';
+  }
+}
+
+async function handleSidebarModeChange(e) {
+  const enabled = e.target.value === 'sidebar';
+  let result;
+  try {
+    result = await chrome.runtime.sendMessage({ type: 'SET_SIDEBAR_MODE', data: { enabled } });
+  } catch (err) {
+    result = { success: false, error: err.message };
+  }
+  if (result?.success === false) {
+    showToast('Sidebar not available: ' + (result.error || 'unsupported browser'), 'error');
+    e.target.value = enabled ? 'popup' : 'sidebar';
+    return;
+  }
+  showToast(enabled
+    ? 'The toolbar icon now opens the wallet in the sidebar'
+    : 'The toolbar icon now opens the wallet popup', 'info');
+  if (enabled && chrome.sidePanel?.open && !document.body.classList.contains('sidebar-view')) {
+    // Show the result right away; if Chrome rejects this (gesture consumed by
+    // the awaits above), the next toolbar-icon click opens the panel anyway
+    try {
+      const win = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: win.id });
+      window.close();
+    } catch { /* user opens it via the toolbar icon instead */ }
+  }
+}
+
+async function handleOpenSidebarClick() {
+  // Firefox sidebar; must run inside a user-input handler
+  if (typeof browser === 'undefined' || !browser.sidebarAction) {
+    showToast('Sidebar is not supported in this browser', 'error');
+    return;
+  }
+  try {
+    await browser.sidebarAction.toggle();
+  } catch (e) {
+    showToast('Could not open sidebar: ' + e.message, 'error');
   }
 }
 
