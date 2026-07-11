@@ -296,7 +296,7 @@ body {
   box-shadow: 0 0 30px rgba(0, 212, 170, 0.4);
 }
 
-.btn-primary:disabled {
+.btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
@@ -307,6 +307,11 @@ body {
   background: var(--bg-card);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
+}
+
+.btn-secondary:disabled {
+  background: var(--bg-card);
+  border-color: var(--border-color);
 }
 
 .btn-secondary:hover {
