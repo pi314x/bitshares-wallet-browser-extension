@@ -5824,39 +5824,32 @@ async function handleTransactionSignApprove() {
   hideModal('dapp-transaction-modal');
 }
 
-// === Timestamp-based Auto-lock (works when extension is inactive) ===
+// === Auto-lock (works when extension is inactive) ===
 
-// Throttles how often activity pushes the background's chrome.alarms-based
-// auto-lock back out — that alarm is set once (on unlock) and, without
-// this, never gets reset, so the wallet would lock exactly autoLockMinutes
-// after unlock regardless of how actively it's being used. Storage still
-// gets the timestamp on every click/keypress (cheap, local); the
-// cross-context message is the part worth throttling.
-let _lastAutoLockResetSent = 0;
-const AUTO_LOCK_RESET_THROTTLE_MS = 10 * 1000;
-
-async function updateLastActivityTimestamp() {
-  const timestamp = Date.now();
-  await chrome.storage.local.set({ lastActivityTimestamp: timestamp });
-  if (timestamp - _lastAutoLockResetSent >= AUTO_LOCK_RESET_THROTTLE_MS) {
-    _lastAutoLockResetSent = timestamp;
-    chrome.runtime.sendMessage({ type: 'RESET_AUTO_LOCK' }).catch(() => {});
-  }
+// Activity extends the session by touching WalletManager's own
+// unlockTimestamp/autoLockDuration (chrome.storage.session, shared across
+// every context) and rescheduling the real chrome.alarms 'auto-lock' alarm
+// — the SAME data isUnlocked()'s elapsed check and the background's alarm
+// listener already use. touch() only writes anything when
+// walletManager.isUnlockedState is true, so this is a no-op while locked.
+// (A prior version of this kept its own separate lastActivityTimestamp +
+// a RESET_AUTO_LOCK message to the background — neither was wired to the
+// real session state, so activity never actually extended anything, and
+// the message handler on the other end reset the real alarm back to a
+// hardcoded 5 minutes on every click, fighting the correct duration.)
+function updateLastActivityTimestamp() {
+  walletManager?.touch();
 }
 
+// Authoritative check: isUnlocked() re-validates the SAME shared session
+// state lock()/touch() write to (unlockTimestamp vs. autoLockDuration in
+// chrome.storage.session), so this stays correct regardless of which
+// context (background alarm, another popup, this sidebar) most recently
+// touched or cleared the session — unlike checking local state alone.
 async function checkAutoLock() {
-  if (isLocked) return;
-
-  const result = await chrome.storage.local.get(['autolockMinutes', 'lastActivityTimestamp']);
-  const minutes = result.autolockMinutes ?? 15; // Default to 15 minutes
-
-  if (minutes <= 0) return; // Never auto-lock
-
-  const lastActivity = result.lastActivityTimestamp || Date.now();
-  const elapsed = Date.now() - lastActivity;
-  const timeout = minutes * 60 * 1000;
-
-  if (elapsed >= timeout) {
+  if (isLocked || !walletManager) return;
+  const stillUnlocked = await walletManager.isUnlocked();
+  if (!stillUnlocked) {
     handleLock();
   }
 }
@@ -5874,9 +5867,6 @@ checkAutoLock();
 // elapsed time and could stay unlocked indefinitely regardless of the
 // configured auto-lock duration.
 setInterval(checkAutoLock, 30 * 1000);
-
-// Also set initial timestamp
-updateLastActivityTimestamp();
 
 // === Change Password ===
 

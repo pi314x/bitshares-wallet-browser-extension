@@ -420,11 +420,6 @@ class BackgroundService {
       case 'SETTINGS_GET':
         return await this.getSettings();
 
-      // Auto-lock
-      case 'RESET_AUTO_LOCK':
-        this.resetAutoLock();
-        return { success: true };
-
       // Firefox MV2 session key relay — popup sends key here so it stays in
       // background-page memory and is never written to persistent storage.
       case 'STORE_SESSION_KEY':
