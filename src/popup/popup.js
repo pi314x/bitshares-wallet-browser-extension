@@ -1123,7 +1123,7 @@ async function handleUnlock() {
     }
   } catch (error) {
     console.error('Unlock error:', error);
-    showToast(error.message || 'Failed to unlock wallet', 'error');
+    showToast(error.message || 'Failed to unlock bitshares wallet', 'error');
     // Re-enable on error
     if (passwordField) passwordField.disabled = false;
     if (unlockBtn) unlockBtn.disabled = false;
