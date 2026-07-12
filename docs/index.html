@@ -940,7 +940,7 @@
       height: 44px;
       border-radius: 50%;
       border: 1px solid rgba(0, 212, 170, 0.3);
-      background: rgba(10, 14, 23, 0.9);
+      background: rgba(10, 14, 23, 0.95);
       color: var(--primary);
       font-size: 20px;
       cursor: pointer;
@@ -949,7 +949,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(10px);
+      /* no backdrop-filter here: blurring the scrolling track underneath
+         forces a repaint every frame and makes the carousel stutter */
     }
 
     .carousel-btn:hover {
@@ -2120,13 +2121,27 @@
         dotsContainer.appendChild(dot);
       }
 
+      // Geometry is cached and only re-measured on resize: reading
+      // getBoundingClientRect() for every item inside scroll/drag handlers
+      // forces a synchronous layout pass per frame and makes the carousel lag.
+      let itemCenters = [];
+      let trackWidth = 0;
+      function measure() {
+        trackWidth = track.clientWidth;
+        // items and track share the same offsetParent (.carousel-wrapper);
+        // subtracting the track's own offset yields scroll-content coordinates
+        const base = track.offsetLeft;
+        itemCenters = Array.prototype.map.call(items, function(item) {
+          return item.offsetLeft - base + item.offsetWidth / 2;
+        });
+      }
+      measure();
+      window.addEventListener('resize', measure);
+
       function getScrollTarget(index) {
         if (index < 0) index = 0;
         if (index >= totalItems) index = totalItems - 1;
-        const item = items[index];
-        const trackRect = track.getBoundingClientRect();
-        const itemRect = item.getBoundingClientRect();
-        return track.scrollLeft + (itemRect.left - trackRect.left) - (trackRect.width / 2 - itemRect.width / 2);
+        return itemCenters[index] - trackWidth / 2;
       }
 
       function goToSlide(index) {
@@ -2141,36 +2156,57 @@
         });
       }
 
-      // Detect which slide is most visible on scroll
+      // Detect which slide is most visible on scroll (cached geometry only —
+      // no layout reads in here, it runs once per animation frame)
       function detectCurrentSlide() {
-        const trackRect = track.getBoundingClientRect();
-        const center = trackRect.left + trackRect.width / 2;
+        const center = track.scrollLeft + trackWidth / 2;
         let closest = 0;
         let closestDist = Infinity;
-        items.forEach(function(item, i) {
-          const rect = item.getBoundingClientRect();
-          const itemCenter = rect.left + rect.width / 2;
-          const dist = Math.abs(center - itemCenter);
+        for (let i = 0; i < totalItems; i++) {
+          const dist = Math.abs(center - itemCenters[i]);
           if (dist < closestDist) {
             closestDist = dist;
             closest = i;
           }
-        });
+        }
         if (closest !== currentIndex) {
           currentIndex = closest;
           updateDots();
         }
       }
 
-      track.addEventListener('scroll', detectCurrentSlide);
+      // Throttle to one check per frame — scroll events fire far more often
+      let scrollRaf = null;
+      track.addEventListener('scroll', function() {
+        if (scrollRaf) return;
+        scrollRaf = requestAnimationFrame(function() {
+          scrollRaf = null;
+          detectCurrentSlide();
+        });
+      }, { passive: true });
 
       // Prevent the carousel from stealing vertical page scroll.
       // When the wheel is predominantly vertical, let the event bubble to the page.
       // When it's horizontal (or a trackpad swipe), scroll the carousel.
+      // Deltas are batched into one instant scroll per frame: assigning
+      // scrollLeft while CSS scroll-behavior:smooth is active restarts a
+      // smooth-scroll animation on every wheel tick, which is what made the
+      // carousel feel laggy and rubbery.
+      let wheelDelta = 0;
+      let wheelRaf = null;
       track.addEventListener('wheel', function(e) {
         if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) return; // vertical — page handles it
         e.preventDefault();
-        track.scrollLeft += e.deltaX || e.deltaY;
+        wheelDelta += e.deltaX || e.deltaY;
+        if (wheelRaf) return;
+        wheelRaf = requestAnimationFrame(function() {
+          wheelRaf = null;
+          const prevBehavior = track.style.scrollBehavior;
+          track.style.scrollBehavior = 'auto';
+          track.scrollLeft += wheelDelta;
+          wheelDelta = 0;
+          track.style.scrollBehavior = prevBehavior;
+        });
       }, { passive: false });
 
       // scrollCarousel for prev/next buttons
@@ -2179,8 +2215,10 @@
         resetAutoSlide();
       };
 
-      // Auto-slide
+      // Auto-slide (idempotent: always clears first so overlapping
+      // start calls can never stack multiple intervals)
       function startAutoSlide() {
+        clearInterval(autoSlideInterval);
         autoSlideInterval = setInterval(function() {
           var next = currentIndex + 1;
           if (next >= totalItems) next = 0;
@@ -2189,39 +2227,35 @@
       }
 
       function resetAutoSlide() {
-        clearInterval(autoSlideInterval);
         startAutoSlide();
       }
 
       startAutoSlide();
 
+      // Don't burn frames sliding a carousel nobody can see
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function(entries) {
+          if (entries[0].isIntersecting) startAutoSlide();
+          else clearInterval(autoSlideInterval);
+        }, { threshold: 0.1 }).observe(track);
+      }
+
       // Pause auto-slide on hover, resume on leave
       track.addEventListener('mouseenter', function() { clearInterval(autoSlideInterval); });
       track.addEventListener('mouseleave', function() { startAutoSlide(); });
 
-      // Touch swipe support
-      let touchStartX = 0;
-      let touchStartScroll = 0;
-      let isTouching = false;
-
-      track.addEventListener('touchstart', function(e) {
-        isTouching = true;
-        touchStartX = e.touches[0].clientX;
-        touchStartScroll = track.scrollLeft;
+      // Touch: the track is a native overflow scroller, so the browser
+      // already handles swiping (composited, off-main-thread). Writing
+      // scrollLeft from touchmove on top of that fights the native scroll
+      // and causes jank — JS only pauses/resumes the auto-slide here.
+      track.addEventListener('touchstart', function() {
         clearInterval(autoSlideInterval);
       }, { passive: true });
 
-      track.addEventListener('touchmove', function(e) {
-        if (!isTouching) return;
-        var dx = touchStartX - e.touches[0].clientX;
-        track.scrollLeft = touchStartScroll + dx;
-      }, { passive: true });
-
-      track.addEventListener('touchend', function(e) {
-        isTouching = false;
+      track.addEventListener('touchend', function() {
         detectCurrentSlide();
         startAutoSlide();
-      });
+      }, { passive: true });
 
       // Mouse drag support
       let mouseDown = false;
@@ -2239,11 +2273,20 @@
         e.preventDefault();
       });
 
+      // Batch drag scrolling to one write per frame — mousemove can fire
+      // several times per frame and each scrollLeft write forces a scroll
+      let dragRaf = null;
+      let dragTargetLeft = 0;
       window.addEventListener('mousemove', function(e) {
         if (!mouseDown) return;
         var dx = mouseStartX - e.clientX;
         if (Math.abs(dx) > 5) mouseDragged = true;
-        track.scrollLeft = mouseStartScroll + dx;
+        dragTargetLeft = mouseStartScroll + dx;
+        if (dragRaf) return;
+        dragRaf = requestAnimationFrame(function() {
+          dragRaf = null;
+          track.scrollLeft = dragTargetLeft;
+        });
       });
 
       window.addEventListener('mouseup', function() {
