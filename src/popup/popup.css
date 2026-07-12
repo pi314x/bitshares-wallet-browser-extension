@@ -1677,7 +1677,7 @@ body.sidebar-view .wallet-container {
   border-radius: var(--border-radius-sm);
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-md);
-  max-height: 260px;
+  max-height: 320px;
   overflow-y: auto;
 }
 

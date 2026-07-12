@@ -133,10 +133,35 @@ class BackgroundService {
       // An action popup takes precedence over openPanelOnActionClick, so the
       // popup must be cleared while sidebar mode is on
       await chrome.action.setPopup({ popup: enabled ? '' : 'src/popup/popup.html' });
+      // Switching to popup mode only changes what *future* toolbar-icon
+      // clicks do — a side panel that's already open stays open on its own
+      // until the user closes it, so without this, turning sidebar mode
+      // off while the sidebar is actually showing left both the (now
+      // stale) sidebar and the popup visible/reachable at once instead of
+      // showing only the selected view.
+      if (!enabled) {
+        await this.closeSidePanelForActiveTab();
+      }
       return { success: true };
     } catch (error) {
       console.error('Failed to apply sidebar mode:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // There's no direct chrome.sidePanel.close() — the documented technique
+  // is to disable the panel for a tab (which dismisses it if currently
+  // open) and immediately re-enable it, so it's still available the next
+  // time the user switches back to sidebar mode.
+  async closeSidePanelForActiveTab() {
+    if (!chrome.sidePanel) return;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id == null) return;
+      await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false });
+      await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: true, path: 'src/popup/popup.html?view=sidebar' });
+    } catch (error) {
+      console.error('Failed to close side panel for active tab:', error);
     }
   }
 
@@ -362,6 +387,14 @@ class BackgroundService {
       case 'SET_SIDEBAR_MODE':
         await chrome.storage.local.set({ sidebarMode: !!data.enabled });
         return await this.applySidebarMode(!!data.enabled);
+
+      // Sent by popup.js the instant it loads as the actual popup (not the
+      // sidebar) — i.e. the toolbar icon was just clicked while in popup
+      // mode. Closes a sidebar left open from before the mode was
+      // switched, so clicking the icon always leaves only the popup shown.
+      case 'CLOSE_LINGERING_SIDEBAR':
+        await this.closeSidePanelForActiveTab();
+        return { success: true };
 
       case 'NETWORK_SWITCH':
         // Popup switched networks — reconnect to the new chain so that all

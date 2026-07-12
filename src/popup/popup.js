@@ -70,6 +70,15 @@ const _browserAction = chrome.action;
 // The class swaps the fixed 360x600 popup footprint for a fluid layout.
 if (new URLSearchParams(window.location.search).get('view') === 'sidebar') {
   document.body.classList.add('sidebar-view');
+} else {
+  // This document loading at all means the toolbar icon opened the popup
+  // (chrome.action.onClicked never fires once a popup is set — the
+  // browser opens it natively, bypassing background JS entirely, so
+  // there's no other place to hook "user clicked the icon while in
+  // popup mode"). If a sidebar was left open from before the mode was
+  // switched, or from some other path, close it now so only the popup
+  // that's actually opening is shown.
+  chrome.runtime.sendMessage({ type: 'CLOSE_LINGERING_SIDEBAR' }).catch(() => {});
 }
 
 // DOM helpers — avoids linter UNSAFE_VAR_ASSIGNMENT warnings for innerHTML
@@ -5817,9 +5826,22 @@ async function handleTransactionSignApprove() {
 
 // === Timestamp-based Auto-lock (works when extension is inactive) ===
 
+// Throttles how often activity pushes the background's chrome.alarms-based
+// auto-lock back out — that alarm is set once (on unlock) and, without
+// this, never gets reset, so the wallet would lock exactly autoLockMinutes
+// after unlock regardless of how actively it's being used. Storage still
+// gets the timestamp on every click/keypress (cheap, local); the
+// cross-context message is the part worth throttling.
+let _lastAutoLockResetSent = 0;
+const AUTO_LOCK_RESET_THROTTLE_MS = 10 * 1000;
+
 async function updateLastActivityTimestamp() {
   const timestamp = Date.now();
   await chrome.storage.local.set({ lastActivityTimestamp: timestamp });
+  if (timestamp - _lastAutoLockResetSent >= AUTO_LOCK_RESET_THROTTLE_MS) {
+    _lastAutoLockResetSent = timestamp;
+    chrome.runtime.sendMessage({ type: 'RESET_AUTO_LOCK' }).catch(() => {});
+  }
 }
 
 async function checkAutoLock() {
@@ -5845,6 +5867,13 @@ document.addEventListener('keypress', updateLastActivityTimestamp);
 
 // Check auto-lock on startup
 checkAutoLock();
+
+// Also check periodically — required for the sidebar view, which (unlike
+// the popup) is a persistent document that never closes/reloads on blur.
+// Without a recurring check, an idle sidebar would never re-evaluate
+// elapsed time and could stay unlocked indefinitely regardless of the
+// configured auto-lock duration.
+setInterval(checkAutoLock, 30 * 1000);
 
 // Also set initial timestamp
 updateLastActivityTimestamp();
