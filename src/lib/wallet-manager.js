@@ -45,6 +45,14 @@ export class WalletManager {
       return true;
     }
 
+    return this._checkSessionStorage();
+  }
+
+  // Re-validates against the shared session storage directly — the slow
+  // path isUnlocked() falls through to once its own in-memory fast-path
+  // check fails. Split out so revalidateUnlocked() (below) can force this
+  // path even when isUnlockedState/decryptedKeys are still set.
+  _checkSessionStorage() {
     // Check if there's a valid session in storage and try to restore it
     return new Promise((resolve) => {
       const storage = chrome.storage.session || chrome.storage.local;
@@ -96,6 +104,58 @@ export class WalletManager {
           // No session key available
           resolve(false);
         }
+      });
+    });
+  }
+
+  /**
+   * Authoritative re-check for a periodic/background poll (see popup.js's
+   * checkAutoLock) — unlike isUnlocked(), this ALWAYS consults the shared
+   * session storage, even when isUnlockedState/decryptedKeys are already
+   * set on this instance.
+   *
+   * Why this needs to exist: each context (background, popup, sidebar)
+   * holds its own separate WalletManager instance. A lock() call in one
+   * context (e.g. the background's chrome.alarms auto-lock firing) clears
+   * the SHARED storage, but has no way to reach into another context's
+   * already-unlocked in-memory flags — so that other context's own
+   * isUnlocked() would keep taking its fast path and reporting "still
+   * unlocked" forever, never once looking at storage again. A long-lived
+   * sidebar polling isUnlocked() on itself is exactly that case.
+   *
+   * Deliberately NOT built on _checkSessionStorage()/isUnlocked()'s slow
+   * path: that path calls restoreFromSession(), which re-decrypts the
+   * stored password and re-derives keys on every single call. Fine as a
+   * one-off (e.g. page load), but this runs on a timer — doing full
+   * decryption work every 30s just to confirm "yep, still unlocked" in
+   * the overwhelmingly common case would be pure waste. This only checks
+   * presence + expiry, the same fields checked before the elapsed-time
+   * comparison would even matter, and doesn't touch the encrypted payload
+   * at all when the session is still fine — which is almost always.
+   *
+   * If storage says the session is gone/expired, this also corrects this
+   * instance's own cache to match, so a subsequent isUnlocked() call
+   * stops reporting the stale "true".
+   */
+  async revalidateUnlocked() {
+    return new Promise((resolve) => {
+      const storage = chrome.storage.session || chrome.storage.local;
+      storage.get(['encryptedSessionData', 'unlockTimestamp', 'autoLockDuration'], (result) => {
+        let stillValid = !!(result.encryptedSessionData && result.unlockTimestamp);
+        if (stillValid) {
+          const autoLockMs = result.autoLockDuration !== undefined ? result.autoLockDuration : this.autoLockDuration;
+          if (autoLockMs > 0 && Date.now() - result.unlockTimestamp >= autoLockMs) {
+            stillValid = false;
+          }
+        }
+        if (!stillValid) {
+          this.isUnlockedState = false;
+          this.decryptedKeys = null;
+          // Best-effort cleanup — a poll shouldn't block on this, and the
+          // in-memory correction above already stands regardless.
+          this.clearSessionPassword().catch(() => {});
+        }
+        resolve(stillValid);
       });
     });
   }

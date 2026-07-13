@@ -4439,6 +4439,25 @@ function handleBackgroundMessage(message, sender, sendResponse) {
     case 'LOCK_WALLET':
       handleLock();
       break;
+
+    // Broadcast by WalletManager.lock() (wallet-manager.js) whenever ANY
+    // context locks — including this one's own handleLock() above, and
+    // the background's chrome.alarms auto-lock firing while this context
+    // had no idea. Deliberately UI-only: do NOT call handleLock() here,
+    // which would call walletManager.lock() again and re-broadcast this
+    // same message — if two contexts (e.g. popup + sidebar) were ever
+    // open at once, that would ping-pong the two of them back and forth
+    // indefinitely instead of settling. The wallet is already locked by
+    // the time this arrives; this only needs to catch the UI up to that
+    // fact. Also backstopped by checkAutoLock's periodic
+    // revalidateUnlocked() poll in case this message is ever missed
+    // (e.g. delivered before this listener finished registering).
+    case 'WALLET_LOCKED':
+      if (!isLocked) {
+        isLocked = true;
+        showScreen('unlock-screen');
+      }
+      break;
   }
 }
 
@@ -5841,14 +5860,18 @@ function updateLastActivityTimestamp() {
   walletManager?.touch();
 }
 
-// Authoritative check: isUnlocked() re-validates the SAME shared session
-// state lock()/touch() write to (unlockTimestamp vs. autoLockDuration in
-// chrome.storage.session), so this stays correct regardless of which
-// context (background alarm, another popup, this sidebar) most recently
-// touched or cleared the session — unlike checking local state alone.
+// Deliberately walletManager.revalidateUnlocked(), NOT isUnlocked() — the
+// latter's fast path trusts this instance's OWN isUnlockedState/
+// decryptedKeys and returns true without ever looking at storage once
+// they're set, so it can never notice a lock that happened in a different
+// context (e.g. the background's chrome.alarms auto-lock firing, which
+// clears the SHARED session but has no way to reach into this sidebar's
+// own in-memory cache). revalidateUnlocked() always re-checks storage —
+// see its doc comment in wallet-manager.js for why this bug is exactly
+// what made a long-lived sidebar never notice it had been auto-locked.
 async function checkAutoLock() {
   if (isLocked || !walletManager) return;
-  const stillUnlocked = await walletManager.isUnlocked();
+  const stillUnlocked = await walletManager.revalidateUnlocked();
   if (!stillUnlocked) {
     handleLock();
   }
