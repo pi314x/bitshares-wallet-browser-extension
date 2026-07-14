@@ -877,63 +877,21 @@ class BackgroundService {
     }
   }
 
-  async handleSignMessage(origin, params, messageId, tabId) {
-    // Rate-limit: reject if there's already any pending request from this origin
-    for (const [, req] of this.pendingRequests) {
-      if (req.origin === origin) {
-        throw new Error('A request from this site is already pending approval');
-      }
-    }
-
-    // Verify connection on current network
-    const network = await this.getCurrentNetwork();
-    const currentAccount = await this.walletManager.getCurrentAccount();
-    const isConnected = await this.walletManager.isSiteConnected(origin, currentAccount?.id, network);
-    if (!isConnected) {
-      throw new Error('Not connected');
-    }
-
-    const { message } = params;
-    if (!message) {
-      throw new Error('Missing required parameter: message');
-    }
-    if (typeof message !== 'string') {
-      throw new Error('Message must be a string');
-    }
-    if (message.length > 4096) {
-      throw new Error('Message too long (max 4096 characters)');
-    }
-
-    // Create pending request for user approval
-    const requestId = crypto.randomUUID();
-    this.pendingRequests.set(requestId, {
-      type: 'signMessage',
-      origin,
-      params: { message },
-      messageId,
-      tabId,
-      resolve: null,
-      reject: null
-    });
-
-    // Open popup for approval
-    await this.openPopupForApproval(requestId, 'signMessage', origin);
-
-    // Wait for user response
-    return new Promise((resolve, reject) => {
-      const request = this.pendingRequests.get(requestId);
-      request.resolve = resolve;
-      request.reject = reject;
-
-      request.timeout = setTimeout(() => {
-        if (this.pendingRequests.has(requestId)) {
-          this.pendingRequests.delete(requestId);
-          chrome.storage.local.remove(['pendingApproval']);
-          browserAction.setBadgeText({ text: '' });
-          reject(new Error('Sign message request timed out'));
-        }
-      }, 60000);
-    });
+  // signMessage is intentionally NOT implemented. It previously created a
+  // pending approval that no popup UI ever rendered, so every call simply hung
+  // for 60s and then rejected. Beyond the dead UX, an off-chain message-signing
+  // feature is security-sensitive: to be safe it MUST hash the message under a
+  // dedicated domain-separation prefix that can never coincide with a
+  // transaction digest (which is sha256(chain_id || serialized_tx)) — otherwise
+  // a "sign this message" request could be crafted to yield a signature that is
+  // ALSO valid for a real transaction (blind signing). Rather than leave a
+  // half-wired path that a future change might complete without that guarantee,
+  // this fails fast. If message signing is added later, do it with a magic
+  // prefix whose leading bytes differ from every supported chain_id, sign with
+  // the connected account's active/memo key via a dedicated code path, and add
+  // an explicit approval modal.
+  async handleSignMessage(_origin, _params, _messageId, _tabId) {
+    throw new Error('signMessage is not supported by this wallet');
   }
 
   async handleSwapRequest(origin, params, messageId, tabId) {
@@ -1264,7 +1222,18 @@ class BackgroundService {
         // isDappRequest is passed separately (NOT accountId) so the operation-type
         // whitelist still applies — accountId alone used to gate it, so this request
         // (genuinely dApp-originated) was silently skipping the whitelist entirely.
-        const result = await this.walletManager.signTransaction(txData, null, { isDappRequest: true });
+        //
+        // allowedAccountIds bounds WHICH accounts the dApp may sign as: the set
+        // this origin is actually connected to on the current network. Inferring
+        // the signer from tx fields (above) without this bound would let a site
+        // connected to account A name account B in `from` and drain it. The set
+        // (not a single id) preserves the multi-account/account-switch case.
+        const network = await this.getCurrentNetwork();
+        const originSites = await this.walletManager.getConnectedSites(null, network);
+        const allowedAccountIds = originSites
+          .filter(s => s.origin === request.origin)
+          .map(s => s.accountId);
+        const result = await this.walletManager.signTransaction(txData, null, { isDappRequest: true, allowedAccountIds });
         if (request.resolve) {
           request.resolve(result);
         } else if (request.tabId && this.contentPorts.has(request.tabId)) {

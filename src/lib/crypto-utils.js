@@ -117,17 +117,34 @@ class ECPoint {
   }
 
   multiply(k) {
+    // Double-and-add-ALWAYS (side-channel hardening). Unlike a plain
+    // double-and-add, the point addition is performed at every bit position
+    // regardless of the bit's value; when the bit is 0 the sum is simply
+    // discarded. This removes the secret-dependent "skip the add when the bit
+    // is 0" control-flow difference, and the fixed 256-iteration count (every
+    // scalar used here is in [1, n) with n < 2^256) avoids leaking the
+    // scalar's bit length. The computed result is bit-for-bit identical to the
+    // previous plain double-and-add — only discarded dummy additions differ —
+    // so this changes nothing about signatures or key derivation.
+    //
+    // NOTE: the underlying BigInt field arithmetic (mul/mod/modInverse) is
+    // itself not constant-time, so this is defence-in-depth for a local
+    // adversary, not a hard constant-time guarantee. A web page cannot time
+    // this operation at all (it runs in the extension worker, and the page
+    // only sees a broadcast result after user approval). For a fully
+    // constant-time implementation, vendor a vetted library such as
+    // @noble/secp256k1 as a local 'self' script (to satisfy the extension CSP).
+    if (k <= 0n) {
+      return ECPoint.infinity(); // scalars here are always in [1, n); guard anyway
+    }
     let result = ECPoint.infinity();
     let addend = this;
-
-    while (k > 0n) {
-      if (k % 2n === 1n) {
-        result = result.add(addend);
-      }
+    for (let i = 0; i < 256; i++) {
+      const bit = (k >> BigInt(i)) & 1n;
+      const sum = result.add(addend);
+      result = bit === 1n ? sum : result;
       addend = addend.double();
-      k = k / 2n;
     }
-
     return result;
   }
 
@@ -144,12 +161,29 @@ class ECPoint {
   // Decompress point from 33 bytes
   static fromCompressed(bytes) {
     const prefix = bytes[0];
+    if (prefix !== 0x02 && prefix !== 0x03) {
+      throw new Error('Invalid compressed point prefix');
+    }
     const x = bytesToBigInt(bytes.slice(1));
     const { P, B } = SECP256K1;
+
+    // x must be a field element in [1, P-1]
+    if (x <= 0n || x >= P) {
+      throw new Error('Invalid compressed point: x out of range');
+    }
 
     // y^2 = x^3 + 7
     const ySquared = mod(modPow(x, 3n, P) + B, P);
     let y = modPow(ySquared, (P + 1n) / 4n, P);
+
+    // Verify the point actually lies on the curve. For a non-residue ySquared
+    // the modular square root above does not satisfy y^2 == ySquared, so this
+    // rejects x values that are not real curve points instead of silently
+    // returning a bogus point (which would corrupt any ECIES shared secret
+    // derived from it).
+    if (mod(y * y, P) !== ySquared) {
+      throw new Error('Invalid compressed point: not on curve');
+    }
 
     // Choose correct y based on prefix
     if ((prefix === 0x02 && y % 2n !== 0n) || (prefix === 0x03 && y % 2n === 0n)) {
@@ -1120,17 +1154,6 @@ export class CryptoUtils {
   }
 
   /**
-   * Hash password for session storage
-   */
-  static async hashPassword(password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + 'session-salt');
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = new Uint8Array(hashBuffer);
-    return bytesToBase64(hashArray);
-  }
-
-  /**
    * Encrypt memo using ECIES (Elliptic Curve Integrated Encryption Scheme)
    * Compatible with BitShares memo encryption standard
    * @param {string} message - The plaintext message to encrypt
@@ -1404,7 +1427,10 @@ export async function runSelfTests() {
   // Test 2: 2*G should give known value
   const G2 = G.multiply(2n);
   const expected2Gx = BigInt('0xc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5');
-  const expected2Gy = BigInt('0x1ae168fea63dc339a3c58419466ceae1061b7cd381a0259628ae3bf9cd55c3ee');
+  // Canonical secp256k1 2*G y-coordinate (verified against OpenSSL). A previous
+  // value here was wrong, making this self-test falsely report FAIL even though
+  // the EC math is correct.
+  const expected2Gy = BigInt('0x1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a');
   const pass2 = G2.x === expected2Gx && G2.y === expected2Gy;
   console.log('Test 2 (2*G):', pass2 ? 'PASS' : 'FAIL');
   if (!pass2) {

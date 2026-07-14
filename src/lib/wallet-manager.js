@@ -1530,7 +1530,7 @@ export class WalletManager {
   /**
    * Sign a transaction from dApp request
    */
-  async signTransaction(transaction, accountId = null, { isDappRequest = false } = {}) {
+  async signTransaction(transaction, accountId = null, { isDappRequest = false, allowedAccountIds = null } = {}) {
     // Ensure unlocked (will restore from session if service worker restarted)
     await this.ensureUnlocked();
 
@@ -1554,15 +1554,19 @@ export class WalletManager {
       // The connected accountId (from the dApp's approval) is the authority boundary —
       // the transaction must only be signed by that account, never by another wallet account
       // that the dApp forged via fields like 'from' inside the transaction body.
-      let resolvedId = accountId;
+      // Account-authority fields: the operation fields whose account's active
+      // authority is what actually signs (NOT recipients like `to`, which
+      // shouldn't constrain who signs).
+      const AUTH_FIELDS = ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account'];
+      const ops = tx.operations || [];
 
+      let resolvedId = accountId;
       if (!resolvedId) {
-        // No caller-provided account: infer from operation fields (last resort for UI-initiated tx)
-        const ops = tx.operations || [];
+        // No caller-provided account: infer the signer from operation fields.
         for (const op of ops) {
           const opData = Array.isArray(op) ? op[1] : op;
           if (!opData || typeof opData !== 'object') continue;
-          for (const field of ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account']) {
+          for (const field of AUTH_FIELDS) {
             const val = opData[field];
             if (typeof val === 'string' && /^1\.2\.\d+$/.test(val)) {
               resolvedId = val;
@@ -1571,20 +1575,45 @@ export class WalletManager {
           }
           if (resolvedId) break;
         }
-      } else {
-        // Caller provided an accountId (dApp connection). Verify the transaction does not
-        // reference a *different* account in its operations — if it does, the dApp is trying
-        // to escalate privileges by signing with an account it was never connected to.
-        const ops = tx.operations || [];
+      }
+
+      // Authority boundary. The signing account — and every authority-bearing
+      // account field in every operation — must fall inside an allowed set, so
+      // a dApp can never get the wallet to sign for an account it was never
+      // granted access to:
+      //   • caller passed an explicit accountId → boundary is exactly {accountId}
+      //   • dApp request                        → boundary is the set of accounts
+      //     this origin is actually connected to (allowedAccountIds)
+      //   • internal UI call with neither       → no boundary (trusted caller)
+      //
+      // The dApp path deliberately passes accountId=null (so a dApp that
+      // legitimately switched to another *connected* account still signs with
+      // the correct keys instead of failing with "Missing Active Authority").
+      // Without this boundary, that null would let a connected dApp name ANY
+      // wallet account in `from` and have it signed — spending an account the
+      // site was never connected to. Constraining to allowedAccountIds keeps
+      // the account-switch fix while restoring the "only accounts you connected"
+      // guarantee.
+      let boundary = null;
+      if (accountId) {
+        boundary = [accountId];
+      } else if (Array.isArray(allowedAccountIds)) {
+        boundary = allowedAccountIds;
+      }
+      if (boundary) {
+        const inBoundary = (id) => boundary.includes(id);
         for (const op of ops) {
           const opData = Array.isArray(op) ? op[1] : op;
           if (!opData || typeof opData !== 'object') continue;
-          for (const field of ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account']) {
+          for (const field of AUTH_FIELDS) {
             const val = opData[field];
-            if (typeof val === 'string' && /^1\.2\.\d+$/.test(val) && val !== accountId) {
-              throw new Error(`Transaction references account ${val} but the dApp is only connected to ${accountId}`);
+            if (typeof val === 'string' && /^1\.2\.\d+$/.test(val) && !inBoundary(val)) {
+              throw new Error(`Transaction references account ${val}, which is not connected to this site`);
             }
           }
+        }
+        if (resolvedId && !inBoundary(resolvedId)) {
+          throw new Error(`Transaction would be signed by ${resolvedId}, which is not connected to this site`);
         }
       }
 
