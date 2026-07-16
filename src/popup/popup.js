@@ -576,6 +576,14 @@ function showScreen(screenId) {
   if (screenId === 'create-wallet-screen') {
     populateBtsPassword();
   }
+
+  // Returning to the dashboard (e.g. from the History or Receive screen) should
+  // reflect any funds received in the meantime. Silent + no reconnect, and a
+  // no-op until the first full loadDashboard has populated the account, so this
+  // never double-loads on initial unlock.
+  if (screenId === 'dashboard-screen') {
+    refreshDashboardData();
+  }
 }
 
 // Approval dismiss bar — auto-rejects after APPROVAL_TIMEOUT_MS milliseconds
@@ -1271,7 +1279,32 @@ async function loadDashboard(forceReconnect = false) {
   }
 }
 
-async function loadBalances(accountId) {
+// Lightweight, silent refresh of the dashboard's balance + activity for the
+// already-loaded account. Unlike loadDashboard() it does NOT reconnect, rebuild
+// the account picker/avatar, or show skeletons — so it can run on every return
+// to the dashboard and on a timer without flicker or extra round-trips. This is
+// what makes funds received while the popup sits on another screen (or stays
+// open) show up in the balance without reopening the wallet.
+async function refreshDashboardData() {
+  try {
+    if (isLocked) return;
+    // Only after loadDashboard's first full pass has populated the account.
+    const accountId = document.getElementById('account-id')?.dataset.accountId;
+    if (!accountId) return;
+    // Don't force a reconnect from here — if the socket is down, the next full
+    // loadDashboard (or the user's next action) will re-establish it.
+    if (!btsAPI || !btsAPI.isConnected) return;
+    // Balances only: loadHistory() clears the list before its async fetch, so
+    // refreshing it on a timer would flicker the activity list. The balance is
+    // the field that was going stale; the History screen refreshes itself on
+    // open, and a full loadDashboard still refreshes both after user actions.
+    await loadBalances(accountId, true);
+  } catch (e) {
+    console.error('Dashboard refresh failed:', e);
+  }
+}
+
+async function loadBalances(accountId, silent = false) {
   try {
     // Check if account exists on chain
     const network = document.getElementById('network-select')?.value || 'mainnet';
@@ -1285,9 +1318,11 @@ async function loadBalances(accountId) {
       return;
     }
 
-    // Show skeleton placeholder rows while data loads
+    // Show skeleton placeholder rows while data loads — skipped on a silent
+    // background refresh so a periodic/return-to-dashboard update doesn't blank
+    // out the already-correct list and flicker.
     const assetsListEl = document.getElementById('assets-list');
-    if (assetsListEl) setHTML(assetsListEl, ASSETS_SKELETON_HTML);
+    if (!silent && assetsListEl) setHTML(assetsListEl, ASSETS_SKELETON_HTML);
 
     // Ensure API is connected
     if (!btsAPI || !btsAPI.isConnected) {
@@ -5890,6 +5925,18 @@ checkAutoLock();
 // elapsed time and could stay unlocked indefinitely regardless of the
 // configured auto-lock duration.
 setInterval(checkAutoLock, 30 * 1000);
+
+// Keep the dashboard balance + activity live while it's the visible screen.
+// Same rationale as the auto-lock check above for the persistent sidebar: with
+// the dashboard left open, funds received would otherwise never appear until
+// the user navigated away and back or reopened the wallet. Silent, no
+// reconnect, and only while unlocked on the dashboard (see refreshDashboardData),
+// so it's cheap and flicker-free.
+setInterval(() => {
+  if (currentScreen === 'dashboard-screen' && !isLocked) {
+    refreshDashboardData();
+  }
+}, 20 * 1000);
 
 // === Change Password ===
 
