@@ -3503,7 +3503,16 @@ async function loadSendAssets() {
       }
     }
 
-    // Update available balance for default selection (BTS)
+    // If exactly one asset has a positive balance, preselect it — with a
+    // single spendable currency there's nothing to choose, and defaulting to
+    // a zero-balance core asset just forces a manual switch every time.
+    const funded = Array.from(assetSelect.options).filter(o => parseInt(o.dataset.amount) > 0);
+    if (funded.length === 1) {
+      assetSelect.value = funded[0].value;
+      refreshAssetPicker('send-asset');
+    }
+
+    // Update available balance for the current selection
     updateSendAvailableBalance();
   } catch (error) {
     console.error('Failed to load send assets:', error);
