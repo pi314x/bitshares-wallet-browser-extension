@@ -1483,8 +1483,14 @@ export class WalletManager {
       // Build transfer operation
       let memoObject = null;
       if (memo && memo.trim()) {
-        // Get memo keys for proper memo structure
-        const fromMemoKey = fromAccount.options?.memo_key;
+        // The sender's memo key MUST come from a fresh chain lookup: the
+        // wallet's stored account record is only {name, id, network, …} and
+        // never carries options.memo_key — reading it off the stored record
+        // (as this used to) made the key always look missing, which is how
+        // transfers ended up silently sent memo-less. toAccount is already a
+        // fresh api.getAccount() result.
+        const fromChain = await this.api.getAccount(fromAccount.name || fromAccount.id);
+        const fromMemoKey = fromChain?.options?.memo_key || fromAccount.options?.memo_key;
         const toMemoKey = toAccount.options?.memo_key;
 
         // A memo was explicitly requested, so it matters — some recipients
