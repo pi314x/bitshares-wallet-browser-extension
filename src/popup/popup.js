@@ -6681,6 +6681,35 @@ async function calculatePoolRates(pools) {
   return poolsWithRates;
 }
 
+// Constant-product AMM output including price impact and the pool's taker fee,
+// all in integer base units — matching how the chain actually fills a
+// liquidity_pool_exchange. Using the spot rate here (as the old quote did)
+// overstates the output for any non-trivial trade, so min_to_receive landed
+// above the real fill and the node rejected it ("Unable to exchange at
+// expected price"). BigInt avoids precision loss on large reserves.
+function poolReserves(pool) {
+  const inBase = pool.isAssetAFrom ? BigInt(pool.balance_a) : BigInt(pool.balance_b);
+  const outBase = pool.isAssetAFrom ? BigInt(pool.balance_b) : BigInt(pool.balance_a);
+  const feeBps = BigInt(parseInt(pool.taker_fee_percent) || 0); // out of 10000 (=100%)
+  return { inBase, outBase, feeBps };
+}
+// amountInBase -> amountOutBase
+function ammOutBase(pool, amountInBase) {
+  const { inBase, outBase, feeBps } = poolReserves(pool);
+  const amtIn = BigInt(Math.floor(amountInBase));
+  if (amtIn <= 0n) return 0n;
+  const inAfterFee = amtIn * (10000n - feeBps) / 10000n;
+  return outBase * inAfterFee / (inBase + inAfterFee);
+}
+// desired amountOutBase -> required amountInBase (inverse of ammOutBase)
+function ammInBase(pool, amountOutBase) {
+  const { inBase, outBase, feeBps } = poolReserves(pool);
+  const amtOut = BigInt(Math.floor(amountOutBase));
+  if (amtOut <= 0n || amtOut >= outBase) return 0n; // can't extract >= the whole reserve
+  const inAfterFee = inBase * amtOut / (outBase - amtOut) + 1n; // +1 to cover flooring
+  return inAfterFee * 10000n / (10000n - feeBps) + 1n;
+}
+
 function displaySwapPools(pools) {
   const poolsList = document.getElementById('swap-pools-list');
   const poolsSection = document.getElementById('swap-pools-section');
@@ -6759,18 +6788,19 @@ async function handleSwapFromAmountChange() {
     return;
   }
 
-  // Get TO asset precision
+  const fromAsset = await btsAPI.getAsset(swapState.fromAsset);
   const toAsset = await btsAPI.getAsset(swapState.toAsset);
   const toPrecision = toAsset?.precision || 5;
 
-  // Calculate output amount considering fee
-  const feeMultiplier = 1 - (pool.feePercent / 100);
-  const outputAmount = amount * pool.rate * feeMultiplier;
+  // Constant-product output (includes price impact + pool fee), then 1%
+  // slippage on top of that real figure.
+  const amountInBase = amount * Math.pow(10, fromAsset?.precision || 5);
+  const outBase = ammOutBase(pool, amountInBase);
+  const outputAmount = Number(outBase) / Math.pow(10, toPrecision);
 
   document.getElementById('swap-to-amount').value = outputAmount.toFixed(toPrecision);
 
-  // Minimum received (with 1% slippage)
-  const minReceived = outputAmount * 0.99;
+  const minReceived = outputAmount * (1 - SWAP_SLIPPAGE);
   const toSymbolLabel = toAsset?.symbol || '';
   document.getElementById('swap-min-received').textContent =
     `${minReceived.toFixed(toPrecision)}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
@@ -6793,14 +6823,14 @@ async function handleSwapToAmountChange() {
   const fromPrecision = fromAsset?.precision || 5;
   const toPrecision = toAsset?.precision || 5;
 
-  // Reverse calculation: inputAmount = outputAmount / (rate * feeMultiplier)
-  const feeMultiplier = 1 - (pool.feePercent / 100);
-  const inputAmount = outputAmount / (pool.rate * feeMultiplier);
+  // Reverse constant-product: required input for the desired output.
+  const outBase = outputAmount * Math.pow(10, toAsset?.precision || 5);
+  const inBase = ammInBase(pool, outBase);
+  const inputAmount = Number(inBase) / Math.pow(10, fromAsset?.precision || 5);
 
   document.getElementById('swap-from-amount').value = inputAmount.toFixed(fromPrecision);
 
-  // Minimum received (with 1% slippage) - based on the entered TO amount
-  const minReceived = outputAmount * 0.99;
+  const minReceived = outputAmount * (1 - SWAP_SLIPPAGE);
   const toSymbolLabel = toAsset?.symbol || '';
   document.getElementById('swap-min-received').textContent =
     `${minReceived.toFixed(toPrecision)}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
@@ -6879,6 +6909,11 @@ async function handleShowSwapConfirmation() {
   showModal('swap-confirm-modal');
 }
 
+// Default swap slippage tolerance (fraction). The quote already accounts for
+// price impact via the constant-product formula, so this is a genuine buffer
+// for reserve movement between quote and broadcast — not a fudge for impact.
+const SWAP_SLIPPAGE = 0.01;
+
 async function handleExecuteSwap() {
   hideModal('swap-confirm-modal');
 
@@ -6901,8 +6936,10 @@ async function handleExecuteSwap() {
     const toPrecision = Math.pow(10, toAsset.precision);
 
     const amountToSell = Math.floor(amount * fromPrecision);
-    const expectedOutput = parseFloat(document.getElementById('swap-to-amount').value);
-    const minToReceive = Math.floor(expectedOutput * 0.99 * toPrecision); // 1% slippage
+    // Recompute the expected output from live reserves via the constant-product
+    // formula (not the possibly-stale displayed value), then apply slippage.
+    const expectedOutBase = ammOutBase(pool, amountToSell);
+    const minToReceive = Math.floor(Number(expectedOutBase) * (1 - SWAP_SLIPPAGE));
 
     // Build liquidity pool exchange operation
     const opData = {
