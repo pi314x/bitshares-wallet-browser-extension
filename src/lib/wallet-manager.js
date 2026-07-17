@@ -1487,17 +1487,19 @@ export class WalletManager {
         const fromMemoKey = fromAccount.options?.memo_key;
         const toMemoKey = toAccount.options?.memo_key;
 
-        // Only create memo if both accounts have memo keys
+        // A memo was explicitly requested, so it matters — some recipients
+        // (bridges, exchanges) route funds BY the memo, and a transfer that
+        // silently arrives without it strands the money. Fail the whole
+        // transfer instead of sending memo-less.
         if (fromMemoKey && toMemoKey && fromMemoKey.length > 10 && toMemoKey.length > 10) {
           const memoPrivateKey = keys.memo?.privateKey;
           if (!memoPrivateKey) {
-            console.warn('Cannot encrypt memo: sender memo private key not available');
-          } else {
-            // ECIES-encrypt the memo using the sender's memo private key and recipient's memo public key
-            memoObject = await CryptoUtils.encryptMemo(memo, memoPrivateKey, toMemoKey);
+            throw new Error("Cannot encrypt the memo: this account's memo private key is not in the wallet (it was likely imported with only its active key). Re-import the account with its password or brainkey — the transfer was NOT sent.");
           }
+          // ECIES-encrypt the memo using the sender's memo private key and recipient's memo public key
+          memoObject = await CryptoUtils.encryptMemo(memo, memoPrivateKey, toMemoKey);
         } else {
-          console.warn('Cannot send memo: one or both accounts missing memo key');
+          throw new Error('Cannot send the memo: one or both accounts have no memo key on-chain — the transfer was NOT sent.');
         }
       }
 
