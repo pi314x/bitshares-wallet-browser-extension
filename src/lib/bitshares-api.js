@@ -251,9 +251,29 @@ export class BitSharesAPI {
   }
 
   /**
-   * Make an API call
+   * Make an API call. Self-heals a dropped socket instead of surfacing
+   * "WebSocket not connected": MV3 service workers idle out and take the
+   * socket with them, so a dead connection here is routine, not
+   * exceptional. One shared reconnect (concurrent callers await the same
+   * promise), then the stale api id the caller captured before the drop is
+   * remapped to its freshly negotiated equivalent.
    */
-  call(apiId, method, params = []) {
+  async call(apiId, method, params = []) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      const oldIds = { ...this.apiIds };
+      if (!this._reconnectP) {
+        this.isConnected = false;
+        this._reconnectP = this.connect().finally(() => { this._reconnectP = null; });
+      }
+      await this._reconnectP;
+      for (const [name, id] of Object.entries(oldIds)) {
+        if (id === apiId && this.apiIds[name] != null) { apiId = this.apiIds[name]; break; }
+      }
+    }
+    return this._callNow(apiId, method, params);
+  }
+
+  _callNow(apiId, method, params = []) {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(new Error('WebSocket not connected'));
