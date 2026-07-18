@@ -236,18 +236,26 @@ body.sidebar-view .wallet-container {
 }
 
 .welcome-network select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: 13px;
-  padding: 6px 12px;
+  padding: 6px 36px 6px 12px;
   cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
 }
 
 .welcome-network select:focus {
   outline: none;
-  border-color: var(--accent-primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.12);
 }
 
 .welcome-footer {
@@ -518,12 +526,28 @@ body.sidebar-view .wallet-container {
   color: var(--text-primary);
 }
 
+.form-group select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  cursor: pointer;
+}
+
+.form-group select:hover {
+  border-color: #3a5280;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.15);
 }
 
 .form-group input::placeholder,
@@ -883,6 +907,7 @@ body.sidebar-view .wallet-container {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  position: relative;
 }
 
 .network-dot {
@@ -899,12 +924,16 @@ body.sidebar-view .wallet-container {
 }
 
 .network-selector select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-family: var(--font-primary);
   font-size: 13px;
   cursor: pointer;
+  padding-right: 18px;
 }
 
 .network-selector select option {
@@ -914,6 +943,20 @@ body.sidebar-view .wallet-container {
 
 .network-selector select:focus {
   outline: none;
+}
+
+.network-selector::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
 }
 
 /* Account Card */
@@ -969,21 +1012,39 @@ body.sidebar-view .wallet-container {
 .account-selector-wrapper {
   display: flex;
   align-items: center;
+  position: relative;
 }
 
 .account-selector {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
   font-family: var(--font-primary);
-  padding: 0 16px 0 0;
+  padding: 0 22px 0 0;
   cursor: pointer;
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.account-selector-wrapper::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
 }
 
 .account-id {
@@ -1867,8 +1928,11 @@ body.sidebar-view .wallet-container {
 }
 
 .history-filter select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) 36px var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   background: var(--bg-card);
@@ -1876,11 +1940,16 @@ body.sidebar-view .wallet-container {
   font-family: var(--font-primary);
   font-size: 13px;
   cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
 }
 
 .history-filter select:focus {
   outline: none;
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.12);
 }
 
 .history-filter select option {
@@ -2041,11 +2110,32 @@ body.sidebar-view .wallet-container {
 }
 
 .settings-item select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--text-primary);
   font-family: var(--font-primary);
   cursor: pointer;
+  padding: 4px 28px 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 14px;
+}
+
+.settings-item select:hover {
+  border-color: var(--border-color);
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.settings-item select:focus {
+  outline: none;
+  border-color: var(--primary);
 }
 
 .settings-item select option {
@@ -2749,8 +2839,11 @@ body.sidebar-view .wallet-container {
 }
 
 .swap-asset-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) 36px var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   background: var(--bg-input);
@@ -2759,11 +2852,20 @@ body.sidebar-view .wallet-container {
   font-size: 14px;
   cursor: pointer;
   margin-bottom: var(--spacing-xs);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+}
+
+.swap-asset-select:hover {
+  border-color: #3a5280;
 }
 
 .swap-asset-select:focus {
   outline: none;
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.12);
 }
 
 .swap-asset-select option {
