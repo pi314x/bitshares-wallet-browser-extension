@@ -2015,7 +2015,20 @@ body.sidebar-view .wallet-container {
 }
 
 .settings-arrow {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   color: var(--text-muted);
+}
+
+.settings-arrow svg {
+  display: block;
 }
 
 .settings-value {
@@ -2047,10 +2060,6 @@ body.sidebar-view .wallet-container {
 
 .settings-item.clickable:hover {
   background: var(--bg-hover);
-}
-
-.settings-arrow {
-  color: var(--text-muted);
 }
 
 .settings-item--column {
