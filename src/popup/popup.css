@@ -137,12 +137,13 @@ body.sidebar-view .wallet-container {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Loading Screen */
+/* Loading Screen — center in the real viewport (popup 600px or sidebar 100vh),
+   not a hardcoded height that only approximates the popup */
 #loading-screen.active {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 580px;
+  min-height: 100%;
 }
 
 .loading-content {
@@ -354,6 +355,15 @@ body.sidebar-view .wallet-container {
   font-size: 18px;
 }
 
+/* SVG icon sizing (the emoji-to-line-icon makeover). Buttons that carry these
+   are already flex-centered; these rules just size the glyph and, for the one
+   inline case (.btn-icon inside a text button), align it to the label. */
+.btn-icon-only svg { width: 18px; height: 18px; display: block; }
+.btn-gen-action svg { width: 16px; height: 16px; display: block; }
+.btn-address-book svg { width: 18px; height: 18px; display: block; }
+.btn-icon svg { width: 16px; height: 16px; vertical-align: -3px; }
+.empty-state-icon svg { width: 48px; height: 48px; display: block; margin: 0 auto; }
+
 .btn-icon-only {
   width: 36px;
   height: 36px;
@@ -366,6 +376,7 @@ body.sidebar-view .wallet-container {
   justify-content: center;
   transition: all var(--transition-fast);
   font-size: 16px;
+  color: var(--primary);
 }
 
 .btn-icon-only:hover {
@@ -376,17 +387,30 @@ body.sidebar-view .wallet-container {
 .btn-back {
   width: 32px;
   height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
   border-radius: var(--border-radius-sm);
-  border: none;
+  border: 1px solid var(--border-color);
   background: var(--bg-card);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 18px;
   transition: all var(--transition-fast);
+}
+
+.btn-back svg {
+  display: block;             /* kills baseline whitespace — true centering */
 }
 
 .btn-back:hover {
   background: var(--bg-hover);
+}
+
+.btn-back:hover svg {
+  transform: translateX(-1px);
+  transition: transform var(--transition-fast);
 }
 
 /* Screen Header */
@@ -761,12 +785,18 @@ body.sidebar-view .wallet-container {
 }
 
 /* Unlock Screen */
+/* Fill the whole screen so the unlock UI centers vertically in the actual
+   viewport (popup or sidebar), instead of inside a fixed 480px island */
+#unlock-screen.active {
+  display: flex;
+}
+
 .unlock-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 480px;
+  flex: 1;
   padding: var(--spacing-xl);
   text-align: center;
 }
@@ -1094,6 +1124,12 @@ body.sidebar-view .wallet-container {
   border-radius: 50%;
   font-size: 18px;
   color: var(--primary);
+}
+
+.action-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 .action-btn span:last-child {
@@ -2748,10 +2784,11 @@ body.sidebar-view .wallet-container {
 .asset-picker-btn.open { border-color: var(--accent); }
 .asset-picker-btn .ap-arrow {
   margin-left: auto;
-  opacity: 0.5;
-  font-size: 11px;
+  display: inline-flex;
+  opacity: 0.6;
   transition: transform var(--transition-fast);
 }
+.asset-picker-btn .ap-arrow svg { width: 16px; height: 16px; display: block; }
 .asset-picker-btn.open .ap-arrow { transform: rotate(180deg); }
 
 .asset-picker-list {
@@ -2871,15 +2908,19 @@ body.sidebar-view .wallet-container {
   transform: translate(-50%, -50%);
   width: 36px;
   height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   border: 2px solid var(--bg-primary);
   background: var(--primary);
   color: var(--bg-primary);
-  font-size: 16px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), transform var(--transition-slow);
   z-index: 1;
 }
+
+.swap-direction-btn svg { width: 18px; height: 18px; display: block; }
 
 .swap-direction-btn:hover {
   transform: translate(-50%, -50%) rotate(180deg);

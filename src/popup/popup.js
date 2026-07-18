@@ -93,6 +93,27 @@ function appendHTML(el, html) {
   el.append(...Array.from(doc.body.childNodes));
 }
 
+// Line-icon set (feather-style, stroke-based) shared by the JS-rendered empty
+// states, matching the inline SVGs in popup.html for the back / send / receive /
+// swap / header buttons. Every icon inherits `currentColor`, so it takes on the
+// same colour as the surrounding text/button — unlike the emoji these replaced,
+// which render per-OS and can't be recoloured. `uiIcon(name)` returns the markup.
+const UI_ICONS = {
+  wallet: '<path d="M3 7h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M3 7l2.5-3.2a1 1 0 0 1 .8-.4H16a1 1 0 0 1 1 1V7"/><circle cx="16.5" cy="13" r="1.4"/>',
+  history: '<path d="M3.05 11a9 9 0 1 1 .5 4"/><polyline points="3 20 3 15 8 15"/><polyline points="12 7 12 12 15.5 14"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  addressBook: '<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M2 9h4M2 15h4"/><circle cx="13" cy="11" r="2.2"/><path d="M9.5 17a3.5 3.5 0 0 1 7 0"/>',
+  search: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  linkOff: '<path d="M18.36 15.64 21 13a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M5.64 8.36 3 11a5 5 0 0 0 7 7l1.5-1.5"/><line x1="2" y1="2" x2="22" y2="22"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>',
+  alert: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+};
+function uiIcon(name) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" `
+    + `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UI_ICONS[name] || ''}</svg>`;
+}
+
 const ASSETS_SKELETON_HTML = (() => {
   const row = `
     <div class="asset-skeleton-item">
@@ -1216,7 +1237,7 @@ async function loadDashboard(forceReconnect = false) {
       const accountIdEl = document.getElementById('account-id');
       if (accountIdEl) accountIdEl.textContent = '';
       const assetsList = document.getElementById('assets-list');
-      if (assetsList) setHTML(assetsList, `<div class="empty-state"><div class="empty-state-icon">📭</div><p>No accounts on ${network}</p><p class="hint">Add or create an account for this network</p></div>`);
+      if (assetsList) setHTML(assetsList, `<div class="empty-state"><div class="empty-state-icon">${uiIcon('inbox')}</div><p>No accounts on ${network}</p><p class="hint">Add or create an account for this network</p></div>`);
       document.getElementById('balance-bts').textContent = `0 ${getCoreSymbol(network)}`;
       document.getElementById('balance-usd').textContent = '';
       return;
@@ -1314,7 +1335,7 @@ async function loadBalances(accountId, silent = false) {
       document.getElementById('balance-bts').textContent = `0 ${coreSymbol}`;
       document.getElementById('balance-usd').textContent = '≈ $0.00 USD';
       const assetsList = document.getElementById('assets-list');
-      setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No account on chain yet</p><p class="hint">Import an existing account to see balances</p></div>');
+      setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('inbox') + '</div><p>No account on chain yet</p><p class="hint">Import an existing account to see balances</p></div>');
       return;
     }
 
@@ -1373,9 +1394,9 @@ async function loadBalances(accountId, silent = false) {
         error.message.includes('Assert Exception')
       );
       if (isWrongNetwork) {
-        setHTML(assetsList, `<div class="empty-state"><div class="empty-state-icon">🌐</div><p>This account is not on ${networkLabel}</p><p class="hint">Switch network or add your ${networkLabel} account</p></div>`);
+        setHTML(assetsList, `<div class="empty-state"><div class="empty-state-icon">${uiIcon('globe')}</div><p>This account is not on ${networkLabel}</p><p class="hint">Switch network or add your ${networkLabel} account</p></div>`);
       } else {
-        setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Failed to load balances</p></div>');
+        setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('alert') + '</div><p>Failed to load balances</p></div>');
       }
     }
   }
@@ -1522,7 +1543,7 @@ async function updateAssetsList(balances) {
   }
 
   if (assetsList.children.length === 0) {
-    setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">💰</div><p>No assets yet</p></div>');
+    setHTML(assetsList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('wallet') + '</div><p>No assets yet</p></div>');
   }
 }
 
@@ -1545,7 +1566,7 @@ async function loadHistory(accountId) {
     }
     
     if (historyList.children.length === 0) {
-      setHTML(historyList, '<div class="empty-state"><div class="empty-state-icon">📜</div><p>No transactions yet</p></div>');
+      setHTML(historyList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('history') + '</div><p>No transactions yet</p></div>');
     }
 
     // Reset filter to 'all' when history loads
@@ -1583,7 +1604,7 @@ function handleHistoryFilter() {
     if (!emptyState) {
       emptyState = document.createElement('div');
       emptyState.className = 'empty-state empty-state-filter';
-      setHTML(emptyState, '<div class="empty-state-icon">🔍</div><p>No matching transactions</p>');
+      setHTML(emptyState, '<div class="empty-state-icon">' + uiIcon('search') + '</div><p>No matching transactions</p>');
       historyList.appendChild(emptyState);
     }
     emptyState.style.display = '';
@@ -3063,7 +3084,7 @@ async function loadAccountsList() {
   const network = document.getElementById('network-select')?.value || 'mainnet';
 
   if (accounts.length === 0) {
-    setHTML(accountsList, '<div class="empty-state"><div class="empty-state-icon">👤</div><p>No accounts</p></div>');
+    setHTML(accountsList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('users') + '</div><p>No accounts</p></div>');
     return;
   }
 
@@ -3503,17 +3524,32 @@ async function loadSendAssets() {
       }
     }
 
-    // If exactly one asset has a positive balance, preselect it — with a
-    // single spendable currency there's nothing to choose, and defaulting to
-    // a zero-balance core asset just forces a manual switch every time.
+    // Preselect a sensible asset instead of defaulting to the always-first core
+    // asset. The core asset (1.3.0) is listed even at zero balance because it
+    // pays fees, so it's a poor default when the user actually holds tokens:
+    //   * exactly one funded non-core asset  -> pick it (BTS is just fee reserve)
+    //   * core asset unfunded but tokens held -> pick the first funded token,
+    //     so the screen never opens on an unspendable "BTS (0.00000)"
+    // With a funded core asset AND several tokens there's no unambiguous choice,
+    // so the core stays selected and the user picks.
     const funded = Array.from(assetSelect.options).filter(o => parseInt(o.dataset.amount) > 0);
-    if (funded.length === 1) {
-      assetSelect.value = funded[0].value;
+    const nonCore = funded.filter(o => o.value !== '1.3.0');
+    const coreFunded = funded.some(o => o.value === '1.3.0');
+    const pick = nonCore.length === 1 ? nonCore[0]
+               : (!coreFunded && nonCore.length > 1) ? nonCore[0]
+               : null;
+    if (pick) {
+      assetSelect.value = pick.value;
+      // Dispatch 'change' (like the picker's own list-click path) so the custom
+      // picker button re-renders AND updateSendAvailableBalance runs — a plain
+      // value assignment updates neither.
+      assetSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      // No preselect: still refresh the button + available balance for the
+      // default (core) selection.
       refreshAssetPicker('send-asset');
+      updateSendAvailableBalance();
     }
-
-    // Update available balance for the current selection
-    updateSendAvailableBalance();
   } catch (error) {
     console.error('Failed to load send assets:', error);
   }
@@ -3596,7 +3632,7 @@ function initAssetPicker(selectId) {
     }
     const arrow = document.createElement('span');
     arrow.className = 'ap-arrow';
-    arrow.textContent = '▾';
+    arrow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
     btn.appendChild(arrow);
   }
 
@@ -4352,7 +4388,7 @@ async function loadConnectionsList() {
   const sites = await walletManager.getConnectedSites(null, network);
 
   if (sites.length === 0) {
-    setHTML(connectionsList, '<div class="empty-state"><div class="empty-state-icon">🔗</div><p>No connected sites on this network</p></div>');
+    setHTML(connectionsList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('linkOff') + '</div><p>No connected sites on this network</p></div>');
     return;
   }
 
@@ -6231,7 +6267,7 @@ async function loadAddressBook() {
 
   // Show empty state only if nothing was added to the list
   if (contactsList.children.length === 0) {
-    setHTML(contactsList, '<div class="empty-state"><div class="empty-state-icon">📇</div><p>No contacts yet</p></div>');
+    setHTML(contactsList, '<div class="empty-state"><div class="empty-state-icon">' + uiIcon('addressBook') + '</div><p>No contacts yet</p></div>');
   }
 }
 
@@ -6846,22 +6882,36 @@ function handleSwapMax() {
   }
 }
 
-function handleSwapDirection() {
+async function handleSwapDirection() {
   const fromSelect = document.getElementById('swap-from-asset');
   const toSelect = document.getElementById('swap-to-asset');
 
   const fromValue = fromSelect.value;
   const toValue = toSelect.value;
+  if (!fromValue || !toValue) return;
 
-  if (fromValue && toValue) {
-    // Swap the values
-    fromSelect.value = toValue;
-    toSelect.value = fromValue;
-    refreshAssetPicker('swap-from-asset');
-    refreshAssetPicker('swap-to-asset');
+  // What you were about to receive becomes what you now send.
+  const carriedAmount = document.getElementById('swap-to-amount').value;
 
-    // Trigger change events
-    handleSwapFromAssetChange({ target: fromSelect });
+  // 1. New "from" = old "to". handleSwapFromAssetChange REBUILDS the "to"
+  //    dropdown (findSwapPools → setHTML), which is exactly what used to wipe a
+  //    pre-set "to" value and leave only the "from" side flipped. Await it so
+  //    the rebuilt list exists before we restore the "to" selection.
+  fromSelect.value = toValue;
+  refreshAssetPicker('swap-from-asset');
+  await handleSwapFromAssetChange({ target: fromSelect });
+
+  // 2. New "to" = old "from". The rebuilt list contains it (the pair still
+  //    shares a pool), so select it and recompute pools/rates.
+  toSelect.value = fromValue;
+  refreshAssetPicker('swap-to-asset');
+  await handleSwapToAssetChange({ target: toSelect });
+
+  // 3. Carry the amount across the flip and recompute the output.
+  if (carriedAmount) {
+    const fromAmountInput = document.getElementById('swap-from-amount');
+    fromAmountInput.value = carriedAmount;
+    fromAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
 
