@@ -239,7 +239,16 @@ function setupEventListeners() {
   // Dashboard actions
   document.getElementById('btn-lock')?.addEventListener('click', handleLock);
   document.getElementById('btn-settings')?.addEventListener('click', handleShowSettings);
-  document.getElementById('btn-send')?.addEventListener('click', handleShowSend);
+  // NOT `addEventListener('click', handleShowSend)` directly: the browser
+  // calls a click listener with the MouseEvent as its first argument, which
+  // handleShowSend's signature reads as `preselectedAssetId` — a truthy
+  // object that isn't null, so handleShowSend's own
+  // `if (preselectedAssetId) { assetSelect.value = preselectedAssetId; ... }`
+  // block ran right after loadSendAssets() had correctly preselected an
+  // asset, overwrote .value with the coerced event object (matches no
+  // <option>, so the select's selectedIndex resets to -1), and silently
+  // undid the preselect on every real click. Discard the event explicitly.
+  document.getElementById('btn-send')?.addEventListener('click', () => handleShowSend());
   document.getElementById('btn-receive')?.addEventListener('click', handleShowReceive);
   document.getElementById('receive-account-selector')?.addEventListener('change', handleReceiveAccountChange);
   document.getElementById('btn-copy-receive-account')?.addEventListener('click', handleCopyReceiveAccount);
@@ -3430,6 +3439,23 @@ async function handleConfirmTransaction() {
 // Store user balances for send screen
 let sendScreenBalances = [];
 
+// Pure guard for handleShowSend's preselectedAssetId: only a genuine asset-id
+// STRING (e.g. "1.3.50") should ever reach assetSelect.value. Exists as its
+// own function so it's cheaply unit-testable (see
+// tests/resolve-preselected-asset-id.test.js) without needing the rest of
+// popup.js's DOM machinery. Guards against the exact bug this was written
+// for: `btn-send` was once wired as
+// `addEventListener('click', handleShowSend)` — the browser calls a click
+// listener with the MouseEvent as ITS first argument, which handleShowSend's
+// signature reads as preselectedAssetId. A MouseEvent is truthy but not a
+// string, so `assetSelect.value = preselectedAssetId` silently coerced it to
+// something like "[object PointerEvent]", matched no <option>, and reset the
+// picker's selectedIndex to -1 — clobbering a correct preselect from
+// loadSendAssets() on every real click.
+function resolvePreselectedAssetId(raw) {
+  return typeof raw === 'string' && raw ? raw : null;
+}
+
 async function handleShowSend(preselectedAssetId = null, prefillRecipient = null) {
   // Check if current account is watch-only
   const account = await walletManager.getCurrentAccount();
@@ -3481,11 +3507,13 @@ async function handleShowSend(preselectedAssetId = null, prefillRecipient = null
   // Load user's asset balances and populate dropdown
   await loadSendAssets();
 
-  // Pre-select asset if specified
-  if (preselectedAssetId) {
+  // Pre-select asset if specified — see resolvePreselectedAssetId's doc
+  // comment for why this can't just be a truthiness check.
+  const preselectId = resolvePreselectedAssetId(preselectedAssetId);
+  if (preselectId) {
     const assetSelect = document.getElementById('send-asset');
     if (assetSelect) {
-      assetSelect.value = preselectedAssetId;
+      assetSelect.value = preselectId;
       refreshAssetPicker('send-asset');
       updateSendAvailableBalance();
     }
@@ -3506,7 +3534,12 @@ async function loadSendAssets() {
     const assetSelect = document.getElementById('send-asset');
     assetSelect.replaceChildren();
 
-    // Always add the core asset first, even at zero balance. Build it WITHOUT a
+    // Placeholder — selected by default unless there's exactly one funded
+    // asset (see preselect logic below). The swap screen uses the same
+    // pattern so the two flows behave consistently.
+    appendHTML(assetSelect, '<option value="">Select asset</option>');
+
+    // Always add the core asset next, even at zero balance. Build it WITHOUT a
     // getAsset('1.3.0') round-trip: the core asset is fixed at 5 decimals on
     // every BitShares chain and its label comes from getCoreSymbol(), so no
     // lookup is needed. That await used to sit right after replaceChildren() and
@@ -3544,10 +3577,9 @@ async function loadSendAssets() {
     }
 
     // Preselect ONLY when there's exactly one funded asset in the whole
-    // wallet (core included) — the "nothing to choose" case. With two or
-    // more funded assets, leave the picker on its default (the core asset,
-    // always option 0 — appended first above, so this needs no extra code)
-    // and let the user pick.
+    // wallet (core included) — the "nothing to choose" case. With zero or
+    // two or more funded assets, leave the picker on the "Select asset"
+    // placeholder (option 0) and let the user pick.
     const funded = Array.from(assetSelect.options).filter(o => parseInt(o.dataset.amount) > 0);
     if (funded.length === 1) {
       assetSelect.value = funded[0].value;
