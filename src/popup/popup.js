@@ -3506,14 +3506,20 @@ async function loadSendAssets() {
     const assetSelect = document.getElementById('send-asset');
     assetSelect.replaceChildren();
 
-    // Always add core asset first even if balance is 0
+    // Always add the core asset first, even at zero balance. Build it WITHOUT a
+    // getAsset('1.3.0') round-trip: the core asset is fixed at 5 decimals on
+    // every BitShares chain and its label comes from getCoreSymbol(), so no
+    // lookup is needed. That await used to sit right after replaceChildren() and
+    // outside the per-asset try/catch — a transient node drop there threw with
+    // the select already cleared, leaving the picker stuck on "Select asset"
+    // with nothing to preselect (the reported bug). Now the core option is added
+    // synchronously and always present.
     const network = document.getElementById('network-select')?.value || 'mainnet';
     const coreSymbol = getCoreSymbol(network);
     const btsBalance = balances.find(b => b.asset_id === '1.3.0') || { amount: 0, asset_id: '1.3.0' };
-    const btsAsset = await btsAPI.getAsset('1.3.0');
-    const btsPrecision = Math.pow(10, btsAsset.precision);
-    const btsAmount = (parseInt(btsBalance.amount) / btsPrecision).toFixed(btsAsset.precision);
-    appendHTML(assetSelect, `<option value="1.3.0" data-precision="${btsAsset.precision}" data-amount="${btsBalance.amount}">${coreSymbol} (${btsAmount})</option>`);
+    const CORE_PRECISION = 5;
+    const btsAmount = (parseInt(btsBalance.amount) / Math.pow(10, CORE_PRECISION)).toFixed(CORE_PRECISION);
+    appendHTML(assetSelect, `<option value="1.3.0" data-precision="${CORE_PRECISION}" data-amount="${btsBalance.amount}">${coreSymbol} (${btsAmount})</option>`);
     // Add other assets with balance > 0
     for (const balance of balances) {
       if (balance.asset_id === '1.3.0') continue; // Already added
@@ -3537,41 +3543,21 @@ async function loadSendAssets() {
       }
     }
 
-    // Preselect a sensible asset instead of leaving the picker on its implicit
-    // first-option default. The core asset (1.3.0 — "BTS" on mainnet, "TEST" on
-    // testnet) is always listed because it pays fees:
-    //   * only ONE funded asset (core or a token) -> pick it. Covers the
-    //     BTS/TEST-only wallet: preselect the core asset explicitly (and fire
-    //     `change` so the available balance fills in), rather than relying on
-    //     the browser's default selectedIndex, which the custom picker doesn't
-    //     always reflect.
-    //   * one funded token alongside a funded core -> pick the token (core is
-    //     just the fee reserve, not what the user came to send).
-    //   * core unfunded but several tokens held -> pick the first funded token,
-    //     so the screen never opens on an unspendable "BTS (0.00000)".
-    // Only a funded core AND several tokens is ambiguous — leave that to the user.
+    // Preselect ONLY when there's exactly one funded asset in the whole
+    // wallet (core included) — the "nothing to choose" case. With two or
+    // more funded assets, leave the picker on its default (the core asset,
+    // always option 0 — appended first above, so this needs no extra code)
+    // and let the user pick.
     const funded = Array.from(assetSelect.options).filter(o => parseInt(o.dataset.amount) > 0);
-    const nonCore = funded.filter(o => o.value !== '1.3.0');
-    const coreFunded = funded.some(o => o.value === '1.3.0');
-    const pick = funded.length === 1 ? funded[0]
-               : nonCore.length === 1 ? nonCore[0]
-               : (!coreFunded && nonCore.length > 1) ? nonCore[0]
-               : null;
-    // Fall back to the core asset (1.3.0 — TEST on testnet, BTS on mainnet) when
-    // there's no single obvious pick: a funded core alongside several tokens, or
-    // nothing funded yet (e.g. balances still loading). The core option is always
-    // present, so this guarantees TEST/BTS shows up selected rather than a blank
-    // picker — the user never has to open the dropdown just to pick their only
-    // spendable currency.
-    const chosen = pick
-      || Array.from(assetSelect.options).find(o => o.value === '1.3.0')
-      || assetSelect.options[0];
-    if (chosen) {
-      assetSelect.value = chosen.value;
+    if (funded.length === 1) {
+      assetSelect.value = funded[0].value;
       // Dispatch 'change' (like the picker's own list-click path) so the custom
       // picker button re-renders AND updateSendAvailableBalance runs — a plain
       // value assignment updates neither.
       assetSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      refreshAssetPicker('send-asset');
+      updateSendAvailableBalance();
     }
   } catch (error) {
     console.error('Failed to load send assets:', error);
@@ -6545,13 +6531,36 @@ async function initializeSwap() {
     const fromSelect = document.getElementById('swap-from-asset');
     setHTML(fromSelect, '<option value="">Select asset</option>');
 
+    const network = document.getElementById('network-select')?.value || 'mainnet';
     for (const balance of balances) {
-      if (parseInt(balance.amount) > 0) {
-        const asset = await btsAPI.getAsset(balance.asset_id);
-        const precision = Math.pow(10, asset.precision);
-        const amount = (parseInt(balance.amount) / precision).toFixed(asset.precision);
-        appendHTML(fromSelect, `<option value="${escapeHtml(asset.id)}" data-symbol="${escapeHtml(asset.symbol)}" data-precision="${asset.precision}">${escapeHtml(asset.symbol)} (${escapeHtml(amount)})</option>`);
+      if (parseInt(balance.amount) <= 0) continue;
+      let symbol, precision;
+      if (balance.asset_id === '1.3.0') {
+        // Core asset is fixed at 5 decimals on every BitShares chain and its
+        // label comes from getCoreSymbol() — no getAsset() round-trip needed,
+        // same optimization loadSendAssets uses (see its comment: this also
+        // means a transient node drop can't stop the core asset from listing).
+        symbol = getCoreSymbol(network);
+        precision = 5;
+      } else {
+        // Per-asset try/catch: one failed lookup must skip only that asset,
+        // not throw out of initializeSwap() entirely — that outer catch just
+        // shows a generic "Failed to initialize swap" toast and leaves the
+        // dropdown empty, the swap equivalent of the send-screen bug where a
+        // single bad lookup blanked the whole picker.
+        let asset;
+        try {
+          asset = await btsAPI.getAsset(balance.asset_id);
+        } catch (e) {
+          console.warn('swap: skipping asset (lookup failed):', balance.asset_id, e);
+          continue;
+        }
+        if (!asset) continue;
+        symbol = asset.symbol;
+        precision = asset.precision;
       }
+      const amount = (parseInt(balance.amount) / Math.pow(10, precision)).toFixed(precision);
+      appendHTML(fromSelect, `<option value="${escapeHtml(balance.asset_id)}" data-symbol="${escapeHtml(symbol)}" data-precision="${precision}">${escapeHtml(symbol)} (${escapeHtml(amount)})</option>`);
     }
 
     // Clear to asset dropdown
@@ -6574,6 +6583,28 @@ async function initializeSwap() {
     document.getElementById('swap-details').style.display = 'none';
     document.getElementById('btn-execute-swap').disabled = true;
     document.getElementById('btn-execute-swap').textContent = 'Select assets to swap';
+
+    // Preselect the "from" side ONLY when the wallet holds exactly one
+    // swappable asset — options[0] is always the "Select asset" placeholder,
+    // so options.length === 2 means exactly one real asset is listed. With
+    // two or more, leave it on the placeholder and let the user pick.
+    // Deliberately the LAST step in this function: 'change' below runs
+    // handleSwapFromAssetChange, which sets swapState.fromAsset and starts an
+    // async pool lookup — if that fired before the "Reset state"/"Clear
+    // amount fields" blocks above, THEIR synchronous writes would run after
+    // it and clobber what the handler had just set (swapState.fromAsset back
+    // to null), silently breaking the "to" side once the user picked one.
+    // Nothing may follow this dispatch in initializeSwap().
+    if (fromSelect.options.length === 2) {
+      fromSelect.value = fromSelect.options[1].value;
+      // 'change' both re-renders the custom picker button (initAssetPicker
+      // wires renderBtn to the select's change event) and runs
+      // handleSwapFromAssetChange to find pools/populate the "to" dropdown —
+      // a plain value assignment would do neither.
+      fromSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      refreshAssetPicker('swap-from-asset');
+    }
   } catch (error) {
     console.error('Initialize swap error:', error);
     showToast('Failed to initialize swap', 'error');

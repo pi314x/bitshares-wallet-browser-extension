@@ -2000,6 +2000,14 @@
 
         <div class="faq-item">
           <button class="faq-q" onclick="toggleFaq(this)">
+            Is my local storage quantum-safe?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Partly, and it's worth being precise about which part. The <strong>encryption protecting your keys at rest</strong> (AES-256-GCM) is believed to hold up well against a quantum computer: the best known quantum attack (Grover's algorithm) only gives a quadratic speed-up against a symmetric cipher, so AES-256 still offers the equivalent of roughly 128 bits of security even against a quantum adversary — comfortably out of reach of any quantum computer that exists or is realistically on the horizon. That part is quantum-resistant. Your <strong>on-chain account keys</strong> are a different story: BitShares, like Bitcoin and Ethereum, secures accounts with ECDSA (secp256k1), and ECDSA <em>is</em> breakable in theory by Shor's algorithm on a sufficiently large, fault-tolerant quantum computer — once your account's public key has appeared on-chain, which happens the moment you make your first transaction. That's a property of the signature scheme these blockchains use, not of this wallet's local storage, and no major chain — BitShares included — has moved to post-quantum signatures yet. So: your encrypted local storage is quantum-resistant today; your on-chain BitShares keys, like everyone else's on every major chain, are not.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
             Does it work with BeetEOS / existing BitShares dApps?
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
