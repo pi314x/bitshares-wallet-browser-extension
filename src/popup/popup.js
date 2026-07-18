@@ -145,6 +145,7 @@ const elements = {};
 document.addEventListener('DOMContentLoaded', async () => {
   cacheElements();
   setupEventListeners();
+  loadBridgeShortcut();   // restore the optional header bridge shortcut (default off)
   await initializeApp();
 });
 
@@ -289,6 +290,8 @@ function setupEventListeners() {
   });
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
   document.getElementById('sidebar-mode-select')?.addEventListener('change', handleSidebarModeChange);
+  document.getElementById('bridge-shortcut-select')?.addEventListener('change', handleBridgeShortcutChange);
+  document.getElementById('btn-bridge')?.addEventListener('click', openBridge);
   document.getElementById('setting-open-sidebar')?.addEventListener('click', handleOpenSidebarClick);
   document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
   document.getElementById('explorer-url-save')?.addEventListener('click', handleSaveExplorerUrl);
@@ -3516,7 +3519,17 @@ async function loadSendAssets() {
       if (balance.asset_id === '1.3.0') continue; // Already added
       if (parseInt(balance.amount) <= 0) continue;
 
-      const asset = await btsAPI.getAsset(balance.asset_id);
+      // Per-asset try/catch: a single failed lookup (e.g. a transient node drop
+      // the reconnect couldn't heal) must skip only that asset, not abort the
+      // whole loop — otherwise the preselect below never runs and the send
+      // dialog opens with nothing chosen.
+      let asset;
+      try {
+        asset = await btsAPI.getAsset(balance.asset_id);
+      } catch (e) {
+        console.warn('send: skipping asset (lookup failed):', balance.asset_id, e);
+        continue;
+      }
       if (asset) {
         const precision = Math.pow(10, asset.precision);
         const amount = (parseInt(balance.amount) / precision).toFixed(asset.precision);
@@ -3524,31 +3537,41 @@ async function loadSendAssets() {
       }
     }
 
-    // Preselect a sensible asset instead of defaulting to the always-first core
-    // asset. The core asset (1.3.0) is listed even at zero balance because it
-    // pays fees, so it's a poor default when the user actually holds tokens:
-    //   * exactly one funded non-core asset  -> pick it (BTS is just fee reserve)
-    //   * core asset unfunded but tokens held -> pick the first funded token,
-    //     so the screen never opens on an unspendable "BTS (0.00000)"
-    // With a funded core asset AND several tokens there's no unambiguous choice,
-    // so the core stays selected and the user picks.
+    // Preselect a sensible asset instead of leaving the picker on its implicit
+    // first-option default. The core asset (1.3.0 — "BTS" on mainnet, "TEST" on
+    // testnet) is always listed because it pays fees:
+    //   * only ONE funded asset (core or a token) -> pick it. Covers the
+    //     BTS/TEST-only wallet: preselect the core asset explicitly (and fire
+    //     `change` so the available balance fills in), rather than relying on
+    //     the browser's default selectedIndex, which the custom picker doesn't
+    //     always reflect.
+    //   * one funded token alongside a funded core -> pick the token (core is
+    //     just the fee reserve, not what the user came to send).
+    //   * core unfunded but several tokens held -> pick the first funded token,
+    //     so the screen never opens on an unspendable "BTS (0.00000)".
+    // Only a funded core AND several tokens is ambiguous — leave that to the user.
     const funded = Array.from(assetSelect.options).filter(o => parseInt(o.dataset.amount) > 0);
     const nonCore = funded.filter(o => o.value !== '1.3.0');
     const coreFunded = funded.some(o => o.value === '1.3.0');
-    const pick = nonCore.length === 1 ? nonCore[0]
+    const pick = funded.length === 1 ? funded[0]
+               : nonCore.length === 1 ? nonCore[0]
                : (!coreFunded && nonCore.length > 1) ? nonCore[0]
                : null;
-    if (pick) {
-      assetSelect.value = pick.value;
+    // Fall back to the core asset (1.3.0 — TEST on testnet, BTS on mainnet) when
+    // there's no single obvious pick: a funded core alongside several tokens, or
+    // nothing funded yet (e.g. balances still loading). The core option is always
+    // present, so this guarantees TEST/BTS shows up selected rather than a blank
+    // picker — the user never has to open the dropdown just to pick their only
+    // spendable currency.
+    const chosen = pick
+      || Array.from(assetSelect.options).find(o => o.value === '1.3.0')
+      || assetSelect.options[0];
+    if (chosen) {
+      assetSelect.value = chosen.value;
       // Dispatch 'change' (like the picker's own list-click path) so the custom
       // picker button re-renders AND updateSendAvailableBalance runs — a plain
       // value assignment updates neither.
       assetSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    } else {
-      // No preselect: still refresh the button + available balance for the
-      // default (core) selection.
-      refreshAssetPicker('send-asset');
-      updateSendAvailableBalance();
     }
   } catch (error) {
     console.error('Failed to load send assets:', error);
@@ -3948,6 +3971,44 @@ async function loadSidebarModeSetting() {
     const result = await chrome.storage.local.get(['sidebarMode']);
     select.value = result.sidebarMode ? 'sidebar' : 'popup';
   }
+}
+
+// Optional header shortcut to a locally-running BitShares bridge (BTS <-> BSC).
+// Off by default and points at the bridge frontend's dev address; opening it
+// when nothing is served there simply fails to load in the new tab — it never
+// touches the wallet.
+const BRIDGE_URL = 'http://127.0.0.1:8080';
+
+function openBridge() {
+  // chrome.tabs.create is the reliable opener from a popup/side-panel context;
+  // window.open is a fallback for environments where the tabs API is absent.
+  try {
+    chrome.tabs.create({ url: BRIDGE_URL });
+  } catch (e) {
+    window.open(BRIDGE_URL, '_blank', 'noopener');
+  }
+}
+
+function applyBridgeShortcut(on) {
+  const btn = document.getElementById('btn-bridge');
+  if (btn) btn.style.display = on ? '' : 'none';
+}
+
+async function handleBridgeShortcutChange(e) {
+  const on = e.target.value === 'on';
+  await chrome.storage.local.set({ showBridgeShortcut: on });
+  applyBridgeShortcut(on);
+  showToast(on ? 'Bridge shortcut shown in the header' : 'Bridge shortcut hidden', 'info');
+}
+
+// Restore the bridge-shortcut preference: the header button and the Settings
+// dropdown both reflect the stored value (default off).
+async function loadBridgeShortcut() {
+  const { showBridgeShortcut } = await chrome.storage.local.get(['showBridgeShortcut']);
+  const on = !!showBridgeShortcut;
+  applyBridgeShortcut(on);
+  const select = document.getElementById('bridge-shortcut-select');
+  if (select) select.value = on ? 'on' : 'off';
 }
 
 async function handleSidebarModeChange(e) {

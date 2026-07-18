@@ -669,7 +669,7 @@ body.sidebar-view .wallet-container {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
-  color: var(--text-secondary);
+  color: var(--primary);
   cursor: pointer;
   font-size: 15px;
   line-height: 1;
@@ -1035,7 +1035,7 @@ body.sidebar-view .wallet-container {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  color: var(--primary);
 }
 
 .btn-copy:hover {
@@ -2304,7 +2304,8 @@ body.sidebar-view .wallet-container {
 .empty-state-icon {
   font-size: 48px;
   margin-bottom: var(--spacing-md);
-  opacity: 0.5;
+  color: var(--primary);
+  opacity: 0.6;
 }
 
 .empty-state .hint {
@@ -2549,6 +2550,7 @@ body.sidebar-view .wallet-container {
   justify-content: center;
   transition: all var(--transition-fast);
   padding: 0;
+  color: var(--primary);
 }
 
 .btn-address-book:hover {

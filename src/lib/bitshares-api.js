@@ -258,19 +258,39 @@ export class BitSharesAPI {
    * promise), then the stale api id the caller captured before the drop is
    * remapped to its freshly negotiated equivalent.
    */
-  async call(apiId, method, params = []) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      const oldIds = { ...this.apiIds };
-      if (!this._reconnectP) {
-        this.isConnected = false;
-        this._reconnectP = this.connect().finally(() => { this._reconnectP = null; });
+  async call(apiId, method, params = [], { retry = true } = {}) {
+    // Two-pass so a socket that dies MID-CALL is healed transparently, not just
+    // one that was already dead before we started. The onclose handler rejects
+    // in-flight calls with "WebSocket closed: <code>" (typically 1006 when an
+    // MV3 worker idles out or a public node drops us) — for an idempotent read
+    // that's transient, so reconnect and replay once instead of surfacing it
+    // (which is what turned a routine drop into an empty balance list and a
+    // send dialog with nothing preselected). Non-connection errors are never
+    // retried, and broadcasts pass retry:false so a dropped confirmation is
+    // never silently resent.
+    for (let attempt = 0; ; attempt++) {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        const oldIds = { ...this.apiIds };
+        if (!this._reconnectP) {
+          this.isConnected = false;
+          this._reconnectP = this.connect().finally(() => { this._reconnectP = null; });
+        }
+        await this._reconnectP;
+        // The api ids the caller captured before the drop were renegotiated on
+        // reconnect; remap to the fresh equivalent.
+        for (const [name, id] of Object.entries(oldIds)) {
+          if (id === apiId && this.apiIds[name] != null) { apiId = this.apiIds[name]; break; }
+        }
       }
-      await this._reconnectP;
-      for (const [name, id] of Object.entries(oldIds)) {
-        if (id === apiId && this.apiIds[name] != null) { apiId = this.apiIds[name]; break; }
+      try {
+        return await this._callNow(apiId, method, params);
+      } catch (err) {
+        const transient = /WebSocket (closed|not connected)/.test((err && err.message) || '');
+        if (!retry || !transient || attempt >= 1) throw err;
+        // Loop: the next iteration sees the now-dead socket and reconnects
+        // before replaying the call exactly once.
       }
     }
-    return this._callNow(apiId, method, params);
   }
 
   _callNow(apiId, method, params = []) {
@@ -826,7 +846,8 @@ export class BitSharesAPI {
       await this.call(
         this.apiIds.network,
         'broadcast_transaction_with_callback',
-        [callbackId, signedTx]
+        [callbackId, signedTx],
+        { retry: false }   // never auto-resend a transaction on a mid-call drop
       );
     } catch (broadcastErr) {
       this.pendingCallbacks.delete(callbackId);
