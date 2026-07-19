@@ -1424,7 +1424,7 @@
         </svg>
       </div>
       <h1>BitShares Wallet</h1>
-      <p>A secure browser extension for the BitShares blockchain. Manage assets, sign <strong style="color:var(--primary)">all 78 operation types</strong>, and connect to dApps.</p>
+      <p>A secure browser extension for the BitShares blockchain. Manage assets, sign <strong style="color:var(--primary)">all 78 operation types</strong>, connect to dApps, and unlock with biometrics.</p>
       <div class="hero-buttons">
         <a href="https://github.com/pi314x/bitshares-wallet-browser-extension/releases" class="btn btn-primary" target="_blank">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1478,6 +1478,16 @@
           <div class="feature-icon">&#127760;</div>
           <h3>Multi-Account &amp; Testnet</h3>
           <p>Manage multiple accounts, switch between BitShares Mainnet and Testnet, choose your preferred API nodes, and keep frequent recipients in the built-in address book.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128522;</div>
+          <h3>Biometric Unlock</h3>
+          <p>Unlock your wallet with Face ID or fingerprint via WebAuthn. Enable it in Settings for quick and secure access without typing your password every time.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#10003;</div>
+          <h3>Per-Site Auto-Approval</h3>
+          <p>Trust your favorite dApps once and skip confirmation prompts on subsequent requests. Manage trusted sites anytime from the Connected Sites settings page.</p>
         </div>
         <div class="feature-card feature-card-wide">
           <div class="feature-icon">&#9997;</div>
@@ -2020,6 +2030,22 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
           <div class="faq-a">BitShares Mainnet by default. You can add, remove, and switch nodes from Settings → Manage Nodes. Any Graphene-compatible WebSocket node URL is accepted, so you can also connect to a private or testnet node.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            What is biometric unlock and how do I enable it?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Biometric unlock lets you access your wallet using your device's built-in biometric sensor (Face ID, Touch ID, or fingerprint) instead of typing your wallet password. To enable it, go to Settings and turn on the biometric unlock toggle. The first time you enable it, you'll be prompted to register your biometric credential with WebAuthn. Subsequent unlocks will show a biometric prompt instead of the password field.</div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-q" onclick="toggleFaq(this)">
+            Do I need to approve every dApp request?
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div class="faq-a">Not necessarily. You can mark a connected site as <strong>trusted</strong>, which enables auto-approve for that site. Once trusted, the wallet will automatically approve connection and signing requests from that dApp without showing a confirmation dialog. Manage your trusted sites from Settings → Connected Sites. For maximum security, only enable auto-approve for dApps you fully trust.</div>
         </div>
 
         <div class="faq-item">

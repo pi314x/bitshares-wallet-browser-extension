@@ -74,6 +74,7 @@ Unknown or future operations gracefully fall back to a formatted JSON display.
 - Connect to BitShares dApps
 - Sign transactions for connected sites
 - Manage site permissions
+- Per-site auto-approve for trusted dApps (approve once, skip confirmation on subsequent requests)
 - BeetEOS/Scatter API compatibility
 - Event-based communication
 
@@ -91,11 +92,12 @@ Unknown or future operations gracefully fall back to a formatted JSON display.
 - Custom node configuration per network
 - Connected sites management
 - Change wallet password
+- Biometric unlock (Face ID / fingerprint via WebAuthn)
 - Retrieve private keys (watch-only accounts clearly identified)
 
 ## Testing
 
-The extension includes a Jest test suite (73 tests) covering the core cryptographic and wallet management logic.
+The extension includes a Jest test suite (89 tests) covering core cryptographic, wallet management, and biometric authentication logic.
 
 ### Running Tests
 
@@ -449,7 +451,8 @@ await window.beet.forgetIdentity();
 - **Brainkey** is never stored unencrypted
 - **Session storage** is used for temporary unlock state (cleared when browser closes)
 - **Auto-lock** prevents unauthorized access after inactivity
-- **dApp connections** require explicit user approval
+- **dApp connections** require explicit user approval (with optional per-site auto-approve)
+- **Biometric unlock** via WebAuthn (Face ID / fingerprint) for quick and secure access
 - **All transactions** must be confirmed in the popup with human-readable operation details
 
 ### Best Practices
@@ -459,7 +462,8 @@ await window.beet.forgetIdentity();
 3. Enable auto-lock with a short timer
 4. Review transaction details before confirming
 5. Only connect to trusted dApps
-6. Disconnect from sites when not in use
+6. Enable auto-approve only for sites you fully trust
+7. Disconnect from sites when not in use
 
 ## BitShares Network
 
