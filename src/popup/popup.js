@@ -200,7 +200,6 @@ function setupEventListeners() {
   
   // Backup brainkey
   document.getElementById('btn-copy-brainkey')?.addEventListener('click', handleCopyBrainkey);
-  document.getElementById('btn-verify-brainkey')?.addEventListener('click', handleVerifyBrainkey);
   
   // Import wallet
   setupImportTabs();
@@ -1034,13 +1033,6 @@ async function copyCodeBlock(codeBlock, copyBtn) {
   } catch (error) {
     showToast('Failed to copy code', 'error');
   }
-}
-
-async function handleVerifyBrainkey() {
-  await initializeAPI();
-  await loadDashboard();
-  showScreen('dashboard-screen');
-  isLocked = false;
 }
 
 // === Import Wallet Flow ===
@@ -4101,15 +4093,106 @@ async function handleNetworkChange(e) {
 
 // === Settings ===
 
+function showPasswordPrompt(title, confirmLabel) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>${title}</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="password-input-wrapper">
+            <input type="password" id="prompt-password" placeholder="Enter your wallet password" autocomplete="off">
+            <button type="button" class="password-toggle" data-target="prompt-password">
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary prompt-cancel">Cancel</button>
+          <button class="btn btn-primary prompt-confirm">${confirmLabel}</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+    requestAnimationFrame(() => modal.classList.add('active'));
+
+    const close = () => {
+      modal.classList.remove('active');
+      setTimeout(() => modal.remove(), 300);
+      resolve(null);
+    };
+
+    modal.querySelector('.modal-close').addEventListener('click', close);
+    modal.querySelector('.prompt-cancel').addEventListener('click', close);
+    modal.querySelector('.prompt-confirm').addEventListener('click', async () => {
+      const pw = document.getElementById('prompt-password')?.value;
+      modal.classList.remove('active');
+      setTimeout(() => modal.remove(), 300);
+      resolve(pw);
+    });
+
+    // Allow Enter key to submit
+    modal.querySelector('#prompt-password').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        modal.querySelector('.prompt-confirm').click();
+      }
+    });
+
+    // Set up password toggle for the dynamically created modal
+    modal.querySelector('.password-toggle')?.addEventListener('click', () => {
+      const input = document.getElementById('prompt-password');
+      const eyeOpen = modal.querySelector('.eye-open');
+      const eyeClosed = modal.querySelector('.eye-closed');
+      if (input.type === 'password') {
+        input.type = 'text';
+        eyeOpen.style.display = 'none';
+        eyeClosed.style.display = 'block';
+      } else {
+        input.type = 'password';
+        eyeOpen.style.display = 'block';
+        eyeClosed.style.display = 'none';
+      }
+    });
+
+    // Focus the password input
+    setTimeout(() => modal.querySelector('#prompt-password')?.focus(), 100);
+  });
+}
+
 async function handleShowBackup() {
   try {
     const brainkey = await walletManager.getBrainkey();
-    if (brainkey) {
-      displayBrainkey(brainkey);
-      showScreen('backup-brainkey-screen');
-    } else {
+    if (!brainkey) {
       showToast('No brainkey stored for this wallet (imported via private key?)', 'error');
+      return;
     }
+
+    const password = await showPasswordPrompt('Enter Password', 'Reveal Brainkey');
+    if (!password) return;
+
+    const success = await walletManager.unlock(password);
+    if (!success) {
+      showToast('Invalid password', 'error');
+      return;
+    }
+
+    displayBrainkey(brainkey);
+    // Update back button to go to settings when accessed from settings
+    const backBtn = document.querySelector('#backup-brainkey-screen .btn-back');
+    if (backBtn) backBtn.setAttribute('data-target', 'settings-screen');
+    showScreen('backup-brainkey-screen');
   } catch (error) {
     console.error('Brainkey backup error:', error);
     showToast('Unable to retrieve brainkey: ' + error.message, 'error');
@@ -4875,11 +4958,12 @@ async function showPendingApprovalIndicator() {
     const hostname = new URL(origin).hostname;
 
     // Add indicator below the unlock form
+    const unlockContainer = unlockScreen.querySelector('.unlock-container');
     if (!indicator) {
       indicator = document.createElement('div');
       indicator.id = 'pending-approval-indicator';
       indicator.className = 'pending-approval-indicator';
-      unlockScreen.appendChild(indicator);
+      (unlockContainer || unlockScreen).appendChild(indicator);
     }
 
     let message, hint;
