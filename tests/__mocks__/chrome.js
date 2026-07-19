@@ -74,7 +74,9 @@ const chromeMock = {
     session: sessionStorageMock,
   },
   runtime: {
+    id: 'test-extension-id',
     lastError: null,
+    getURL: jest.fn((path) => 'chrome-extension://test-extension-id/' + path),
     sendMessage: jest.fn((message, callback) => {
       if (callback) callback();
       return Promise.resolve();
@@ -89,6 +91,12 @@ const chromeMock = {
       }),
       hasListener: jest.fn((listener) => messageListeners.includes(listener)),
     },
+  },
+  tabs: {
+    create: jest.fn((createProperties, callback) => {
+      if (callback) callback({ id: 1 });
+      return Promise.resolve({ id: 1 });
+    }),
   },
 };
 

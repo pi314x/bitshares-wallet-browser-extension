@@ -11,6 +11,13 @@ import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
 import { updateSvg as jdenticonUpdateSvg } from '../lib/jdenticon.js';
+import {
+  isBiometricSupported,
+  isBiometricEnabled,
+  enableBiometric,
+  disableBiometric,
+  biometricUnlock
+} from '../lib/biometric-auth.js';
 
 // Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
 { const l = document.createElement('link'); l.rel = 'stylesheet';
@@ -268,6 +275,8 @@ function setupEventListeners() {
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
   document.getElementById('sidebar-mode-select')?.addEventListener('change', handleSidebarModeChange);
   document.getElementById('bridge-shortcut-toggle')?.addEventListener('change', handleBridgeShortcutChange);
+  document.getElementById('biometric-toggle')?.addEventListener('change', handleBiometricToggleChange);
+  document.getElementById('btn-biometric-unlock')?.addEventListener('click', handleBiometricUnlock);
   document.getElementById('btn-bridge')?.addEventListener('click', openBridge);
   document.getElementById('setting-open-sidebar')?.addEventListener('click', handleOpenSidebarClick);
   document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
@@ -574,6 +583,7 @@ function showScreen(screenId) {
     if (passwordField) passwordField.disabled = false;
     if (unlockBtn) unlockBtn.disabled = false;
     if (eyeToggle) eyeToggle.disabled = false;
+    updateBiometricUnlockButton();
   }
 
   // Clear sensitive forms when navigating to welcome screen
@@ -4093,7 +4103,7 @@ async function handleNetworkChange(e) {
 
 // === Settings ===
 
-function showPasswordPrompt(title, confirmLabel) {
+function showPasswordPrompt(title, confirmLabel, processPassword) {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
     modal.className = 'modal';
@@ -4104,18 +4114,21 @@ function showPasswordPrompt(title, confirmLabel) {
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="password-input-wrapper">
-            <input type="password" id="prompt-password" placeholder="Enter your wallet password" autocomplete="off">
-            <button type="button" class="password-toggle" data-target="prompt-password">
-              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                <line x1="1" y1="1" x2="23" y2="23"/>
-              </svg>
-            </button>
+          <div class="form-group">
+            <label for="prompt-password">Enter Password</label>
+            <div class="password-input-wrapper">
+              <input type="password" id="prompt-password" placeholder="Enter your wallet password" autocomplete="off">
+              <button type="button" class="password-toggle" data-target="prompt-password">
+                <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
         <div class="modal-actions">
@@ -4128,6 +4141,7 @@ function showPasswordPrompt(title, confirmLabel) {
     document.body.appendChild(modal);
     requestAnimationFrame(() => modal.classList.add('active'));
 
+    const confirmBtn = modal.querySelector('.prompt-confirm');
     const close = () => {
       modal.classList.remove('active');
       setTimeout(() => modal.remove(), 300);
@@ -4136,21 +4150,33 @@ function showPasswordPrompt(title, confirmLabel) {
 
     modal.querySelector('.modal-close').addEventListener('click', close);
     modal.querySelector('.prompt-cancel').addEventListener('click', close);
-    modal.querySelector('.prompt-confirm').addEventListener('click', async () => {
+    confirmBtn.addEventListener('click', async () => {
       const pw = document.getElementById('prompt-password')?.value;
-      modal.classList.remove('active');
-      setTimeout(() => modal.remove(), 300);
-      resolve(pw);
-    });
-
-    // Allow Enter key to submit
-    modal.querySelector('#prompt-password').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        modal.querySelector('.prompt-confirm').click();
+      if (!pw) { showToast('Please enter your password', 'error'); return; }
+      if (processPassword) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Processing…';
+        try {
+          const result = await processPassword(pw);
+          modal.classList.remove('active');
+          setTimeout(() => modal.remove(), 300);
+          resolve(result ?? pw);
+        } catch (err) {
+          showToast(err.message || 'Failed', 'error');
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = confirmLabel;
+        }
+      } else {
+        modal.classList.remove('active');
+        setTimeout(() => modal.remove(), 300);
+        resolve(pw);
       }
     });
 
-    // Set up password toggle for the dynamically created modal
+    modal.querySelector('#prompt-password').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') confirmBtn.click();
+    });
+
     modal.querySelector('.password-toggle')?.addEventListener('click', () => {
       const input = document.getElementById('prompt-password');
       const eyeOpen = modal.querySelector('.eye-open');
@@ -4166,7 +4192,6 @@ function showPasswordPrompt(title, confirmLabel) {
       }
     });
 
-    // Focus the password input
     setTimeout(() => modal.querySelector('#prompt-password')?.focus(), 100);
   });
 }
@@ -4210,6 +4235,7 @@ async function handleResetWallet() {
   if (!confirmed) return;
   
   await walletManager.resetWallet();
+  await disableBiometric();
   clearCreateWalletForm();
   clearImportWalletForm();
   showScreen('welcome-screen');
@@ -4231,6 +4257,75 @@ async function updateBackupSettingVisibility() {
   }
 }
 
+async function updateBiometricUnlockButton() {
+  const btn = document.getElementById('btn-biometric-unlock');
+  if (!btn) return;
+  const enabled = isBiometricSupported() && await isBiometricEnabled();
+  btn.style.display = enabled ? '' : 'none';
+}
+
+async function loadBiometricSetting() {
+  const toggle = document.getElementById('biometric-toggle');
+  if (!toggle) return;
+  if (!isBiometricSupported()) {
+    const row = document.getElementById('setting-biometric');
+    if (row) row.style.display = 'none';
+    return;
+  }
+  const enabled = await isBiometricEnabled();
+  toggle.checked = enabled;
+}
+
+async function handleBiometricToggleChange(e) {
+  const enabled = e.target.checked;
+  if (enabled) {
+    const password = await showPasswordPrompt('Enable Biometric Unlock', 'Enable', async (pw) => {
+      const success = await walletManager.unlock(pw);
+      if (!success) throw new Error('Invalid password');
+      await enableBiometric(pw);
+    });
+    if (!password) e.target.checked = false;
+  } else {
+    await disableBiometric();
+    showToast('Biometric unlock disabled', 'info');
+  }
+}
+
+async function handleBiometricUnlock() {
+  const btn = document.getElementById('btn-biometric-unlock');
+  if (btn) btn.disabled = true;
+  try {
+    const password = await biometricUnlock();
+    if (!password) {
+      showToast('Biometric authentication failed', 'error');
+      return;
+    }
+    const success = await walletManager.unlock(password);
+    if (success) {
+      const passwordField = document.getElementById('unlock-password');
+      const unlockBtn = document.getElementById('btn-unlock');
+      const eyeToggle = document.querySelector('.password-toggle[data-target="unlock-password"]');
+      if (passwordField) { passwordField.type = 'password'; passwordField.value = ''; }
+      if (eyeToggle) {
+        eyeToggle.querySelector('.eye-open').style.display = '';
+        eyeToggle.querySelector('.eye-closed').style.display = 'none';
+      }
+      await initializeAPI();
+      await loadDashboard();
+      showScreen('dashboard-screen');
+      isLocked = false;
+      await checkPendingApproval();
+    } else {
+      showToast('Invalid password', 'error');
+    }
+  } catch (error) {
+    console.error('Biometric unlock error:', error);
+    showToast(error.message || 'Biometric unlock failed', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function handleShowSettings() {
   showScreen('settings-screen');
   // Always read the version from the manifest so it can't drift from releases
@@ -4239,6 +4334,7 @@ async function handleShowSettings() {
   await loadAutolockSetting();
   await loadSidebarModeSetting();
   await updateBackupSettingVisibility();
+  await loadBiometricSetting();
 }
 
 async function handleShowExplorer() {

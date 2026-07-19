@@ -3638,6 +3638,16 @@ body.sidebar-view .wallet-container {
   display: inline-block;
 }
 
+#btn-biometric-unlock {
+  margin-top: var(--spacing-xs);
+}
+
+#btn-biometric-unlock .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+}
+
 /* Responsive Adjustments */
 @media (max-height: 600px) {
   .wallet-container {
