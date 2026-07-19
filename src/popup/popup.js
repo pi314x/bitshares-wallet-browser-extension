@@ -4327,14 +4327,15 @@ async function handleBiometricUnlock() {
 }
 
 async function handleShowSettings() {
-  showScreen('settings-screen');
-  // Always read the version from the manifest so it can't drift from releases
   const versionEl = document.getElementById('settings-version');
   if (versionEl) versionEl.textContent = chrome.runtime.getManifest().version;
-  await loadAutolockSetting();
-  await loadSidebarModeSetting();
-  await updateBackupSettingVisibility();
-  await loadBiometricSetting();
+  await Promise.all([
+    loadAutolockSetting(),
+    loadSidebarModeSetting(),
+    updateBackupSettingVisibility(),
+    loadBiometricSetting()
+  ]);
+  showScreen('settings-screen');
 }
 
 async function handleShowExplorer() {
