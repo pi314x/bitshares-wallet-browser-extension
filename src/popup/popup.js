@@ -4880,11 +4880,20 @@ async function loadConnectionsList() {
     const dateStr = date.toLocaleDateString();
     const accountDisplay = site.accountName || 'All accounts';
 
+    const trusted = site.trusted === true;
+
     setHTML(item, `
       <div class="connection-info">
         <div class="connection-origin">${escapeHtml(site.origin)}</div>
         <div class="connection-account">Account: ${escapeHtml(accountDisplay)}</div>
         <div class="connection-date">Connected: ${escapeHtml(dateStr)}</div>
+      </div>
+      <div class="connection-trust-toggle">
+        <label class="switch" title="Auto-approve requests from this site">
+          <input type="checkbox" class="trust-checkbox" data-origin="${escapeHtml(site.origin)}" data-account="${escapeHtml(site.accountId || '')}" ${trusted ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+        <span class="toggle-label">Auto</span>
       </div>
       <button class="connection-btn-remove" data-origin="${escapeHtml(site.origin)}" data-account="${escapeHtml(site.accountId || '')}" title="Disconnect">✕</button>
     `);
@@ -4900,6 +4909,19 @@ async function loadConnectionsList() {
       await walletManager.removeConnectedSite(btn.dataset.origin, accountId, network);
       await loadConnectionsList();
       showToast('Site disconnected', 'info');
+    });
+  });
+
+  connectionsList.querySelectorAll('.trust-checkbox').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const accountId = cb.dataset.account || null;
+      const origin = cb.dataset.origin;
+      const trusted = cb.checked;
+      await chrome.runtime.sendMessage({
+        type: 'DAPP_SET_SITE_TRUSTED',
+        data: { origin, accountId, trusted, network }
+      });
+      showToast(trusted ? 'Auto-approve enabled for this site' : 'Auto-approve disabled for this site', 'info');
     });
   });
 }

@@ -35,6 +35,16 @@ async function main() {
 async function handleRegister(password) {
   const challenge = crypto.getRandomValues(new Uint8Array(64));
 
+  // Exclude any existing credential so we don't create duplicate passkeys
+  const existing = await chrome.storage.local.get(['biometricCredentialId']);
+  let excludeCredentials = [];
+  if (existing.biometricCredentialId) {
+    excludeCredentials.push({
+      id: base64ToUint8Array(existing.biometricCredentialId).buffer,
+      type: 'public-key'
+    });
+  }
+
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge,
@@ -45,11 +55,14 @@ async function handleRegister(password) {
         displayName: 'BitShares Wallet'
       },
       pubKeyCredParams: [
-        { alg: -7, type: 'public-key' }
+        { alg: -7, type: 'public-key' },
+        { alg: -257, type: 'public-key' }
       ],
       authenticatorSelection: {
-        userVerification: 'preferred'
+        userVerification: 'preferred',
+        residentKey: 'preferred'
       },
+      excludeCredentials: excludeCredentials.length > 0 ? excludeCredentials : undefined,
       timeout: WEBAUTHN_TIMEOUT
     }
   });
@@ -94,10 +107,6 @@ async function handleAuth() {
     publicKey: {
       challenge,
       rpId: chrome.runtime.id,
-      allowCredentials: [{
-        id: base64ToArrayBuffer(stored.biometricCredentialId),
-        type: 'public-key'
-      }],
       userVerification: 'preferred',
       timeout: WEBAUTHN_TIMEOUT
     }

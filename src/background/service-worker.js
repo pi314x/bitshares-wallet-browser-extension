@@ -372,6 +372,10 @@ class BackgroundService {
         await this.walletManager.removeConnectedSite(data.origin);
         return { success: true };
 
+      case 'DAPP_SET_SITE_TRUSTED':
+        await this.walletManager.setSiteTrusted(data.origin, data.accountId, data.trusted, data.network);
+        return { success: true };
+
       case 'DAPP_APPROVE_CONNECTION':
         return await this.approveConnection(data.requestId, data.approved, data.accountId, data.accountName);
 
@@ -703,6 +707,20 @@ class BackgroundService {
       throw new Error('Not connected');
     }
 
+    // Check if site is trusted for auto-approve
+    const isTrusted = currentAccount?.id
+      ? await this.walletManager.isSiteTrusted(origin, currentAccount.id, network)
+      : false;
+    if (isTrusted) {
+      // Auto-approve without showing popup
+      const txData = params?.transaction || params;
+      const originSites = await this.walletManager.getConnectedSites(null, network);
+      const allowedAccountIds = originSites
+        .filter(s => s.origin === origin)
+        .map(s => s.accountId);
+      return await this.walletManager.signTransaction(txData, null, { isDappRequest: true, allowedAccountIds });
+    }
+
     const isUnlocked = await this.walletManager.isUnlocked();
     if (!isUnlocked) {
       // Open the popup so the user sees the lock screen and can unlock
@@ -784,6 +802,17 @@ class BackgroundService {
     }
     if (memo && memo.length > 2048) {
       throw new Error('Memo too long (max 2048 characters)');
+    }
+
+    // Check if site is trusted for auto-approve
+    const isTrusted = currentAccount?.id
+      ? await this.walletManager.isSiteTrusted(origin, currentAccount.id, network)
+      : false;
+    if (isTrusted) {
+      // Auto-approve without showing popup
+      const assetId = (asset === 'BTS' || asset === 'TEST') ? '1.3.0' : asset;
+      await this.walletManager.ensureUnlocked();
+      return await this.walletManager.sendTransfer(to, numAmount, assetId, memo || '');
     }
 
     // Create pending request for user approval

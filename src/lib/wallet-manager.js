@@ -1939,6 +1939,7 @@ export class WalletManager {
         accountName,
         permissions,
         network,
+        trusted: false,
         connectedAt: Date.now(),
         lastConnected: Date.now()
       });
@@ -1974,6 +1975,40 @@ export class WalletManager {
 
     return new Promise((resolve) => {
       chrome.storage.local.set({ connectedSites: filtered }, resolve);
+    });
+  }
+
+  /**
+   * Set the trusted status for a connected site
+   * @param {string} origin - Site origin URL
+   * @param {string} accountId - Account ID
+   * @param {boolean} trusted - Trusted status
+   */
+  async setSiteTrusted(origin, accountId, trusted, network = null) {
+    const sites = await this.getConnectedSites();
+    for (const site of sites) {
+      if (site.origin === origin && site.accountId === accountId && (!network || (site.network || 'mainnet') === network)) {
+        site.trusted = trusted;
+      }
+    }
+    return new Promise((resolve) => {
+      chrome.storage.local.set({ connectedSites: sites }, resolve);
+    });
+  }
+
+  /**
+   * Check if a site is trusted for auto-approve
+   * @param {string} origin - Site origin URL
+   * @param {string} accountId - Account ID
+   * @returns {boolean} Whether the site is trusted
+   */
+  async isSiteTrusted(origin, accountId, network = null) {
+    const sites = await this.getConnectedSites();
+    return sites.some(s => {
+      if (s.origin !== origin) return false;
+      if (s.accountId !== accountId) return false;
+      if (network && (s.network || 'mainnet') !== network) return false;
+      return s.trusted === true;
     });
   }
 
