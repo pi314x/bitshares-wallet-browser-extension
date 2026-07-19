@@ -74,8 +74,9 @@ export async function enableBiometric(password) {
 }
 
 export async function disableBiometric() {
+  // Keep biometricCredentialId so re-enable reuses it via excludeCredentials
+  // (prevents duplicate passkeys on the authenticator)
   await chrome.storage.local.remove([
-    STORAGE_KEY_CREDENTIAL_ID,
     STORAGE_KEY_ENCRYPTED_PASSWORD,
     STORAGE_KEY_ENCRYPTION_KEY,
     STORAGE_KEY_ENABLED

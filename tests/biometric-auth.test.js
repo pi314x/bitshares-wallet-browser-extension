@@ -73,9 +73,9 @@ describe('isBiometricEnabled', () => {
 // ---------------------------------------------------------------------------
 
 describe('disableBiometric', () => {
-  test('removes all biometric storage keys', async () => {
+  test('removes sensitive biometric keys but keeps credentialId for reuse', async () => {
     await chrome.storage.local.set({
-      biometricCredentialId: 'abc123',
+      biometricCredentialId: [1, 2, 3],
       biometricEncryptedPassword: { iv: 'iv', data: 'data' },
       biometricEncryptionKey: 'a2V5',
       biometricEnabled: true,
@@ -88,7 +88,8 @@ describe('disableBiometric', () => {
       'biometricEncryptionKey',
       'biometricEnabled',
     ]);
-    expect(result.biometricCredentialId).toBeUndefined();
+    // credentialId is kept so re-enable can exclude it and avoid duplicates
+    expect(result.biometricCredentialId).toEqual([1, 2, 3]);
     expect(result.biometricEncryptedPassword).toBeUndefined();
     expect(result.biometricEncryptionKey).toBeUndefined();
     expect(result.biometricEnabled).toBeUndefined();

@@ -1,10 +1,17 @@
 import { bytesToBase64, base64ToBytes } from './lib/crypto-utils.js';
 
 const WEBAUTHN_TIMEOUT = 60000;
+const STORAGE_KEY_BIO_CREDENTIAL_ID = 'biometricCredentialId';
+const STORAGE_KEY_BIO_ENCRYPTED_PASSWORD = 'biometricEncryptedPassword';
+const STORAGE_KEY_BIO_ENCRYPTION_KEY = 'biometricEncryptionKey';
+const STORAGE_KEY_BIO_ENABLED = 'biometricEnabled';
+const STORAGE_KEY_BIO_RESULT = 'biometricResult';
+const STORAGE_SESSION_BIO_PENDING = 'biometricPending';
+const STORAGE_SESSION_BIO_DECRYPTED = 'biometricDecryptedPassword';
 
 async function main() {
   try {
-    const result = await chrome.storage.session.get(['biometricPending']);
+    const result = await chrome.storage.session.get([STORAGE_SESSION_BIO_PENDING]);
 
     if (!result.biometricPending) {
       document.getElementById('title').textContent = 'No pending request';
@@ -27,7 +34,7 @@ async function main() {
     document.getElementById('title').textContent = 'Failed';
     document.getElementById('title').className = 'error';
     document.getElementById('status').textContent = error.message;
-    await chrome.storage.session.remove(['biometricPending']);
+    await chrome.storage.session.remove([STORAGE_SESSION_BIO_PENDING]);
     await chrome.storage.local.set({ biometricResult: { success: false, error: error.message } });
   }
 }
@@ -35,12 +42,11 @@ async function main() {
 async function handleRegister(password) {
   const challenge = crypto.getRandomValues(new Uint8Array(64));
 
-  // Exclude any existing credential so we don't create duplicate passkeys
-  const existing = await chrome.storage.local.get(['biometricCredentialId']);
+  const existing = await chrome.storage.local.get([STORAGE_KEY_BIO_CREDENTIAL_ID]);
   let excludeCredentials = [];
-  if (existing.biometricCredentialId) {
+  if (existing.biometricCredentialId && existing.biometricCredentialId.length > 0) {
     excludeCredentials.push({
-      id: base64ToUint8Array(existing.biometricCredentialId).buffer,
+      id: new Uint8Array(existing.biometricCredentialId),
       type: 'public-key'
     });
   }
@@ -69,19 +75,19 @@ async function handleRegister(password) {
 
   if (!credential) throw new Error('Biometric registration was cancelled');
 
-  const credentialId = bytesToBase64(new Uint8Array(credential.rawId));
+  const credentialId = Array.from(new Uint8Array(credential.rawId));
   const encryptionKey = crypto.getRandomValues(new Uint8Array(32));
   const encryptedPassword = await encryptPassword(password, encryptionKey);
 
   await chrome.storage.local.set({
-    biometricCredentialId: credentialId,
-    biometricEncryptedPassword: encryptedPassword,
-    biometricEncryptionKey: bytesToBase64(encryptionKey),
-    biometricEnabled: true,
-    biometricResult: { success: true }
+    [STORAGE_KEY_BIO_CREDENTIAL_ID]: credentialId,
+    [STORAGE_KEY_BIO_ENCRYPTED_PASSWORD]: encryptedPassword,
+    [STORAGE_KEY_BIO_ENCRYPTION_KEY]: bytesToBase64(encryptionKey),
+    [STORAGE_KEY_BIO_ENABLED]: true,
+    [STORAGE_KEY_BIO_RESULT]: { success: true }
   });
 
-  await chrome.storage.session.remove(['biometricPending']);
+  await chrome.storage.session.remove([STORAGE_SESSION_BIO_PENDING]);
 
   document.getElementById('spinner').style.display = 'none';
   document.getElementById('title').textContent = 'Success!';
@@ -92,9 +98,9 @@ async function handleRegister(password) {
 
 async function handleAuth() {
   const stored = await chrome.storage.local.get([
-    'biometricCredentialId',
-    'biometricEncryptedPassword',
-    'biometricEncryptionKey'
+    STORAGE_KEY_BIO_CREDENTIAL_ID,
+    STORAGE_KEY_BIO_ENCRYPTED_PASSWORD,
+    STORAGE_KEY_BIO_ENCRYPTION_KEY
   ]);
 
   if (!stored.biometricCredentialId || !stored.biometricEncryptedPassword || !stored.biometricEncryptionKey) {
@@ -103,22 +109,39 @@ async function handleAuth() {
 
   const challenge = crypto.getRandomValues(new Uint8Array(64));
 
-  const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge,
-      rpId: chrome.runtime.id,
-      userVerification: 'preferred',
-      timeout: WEBAUTHN_TIMEOUT
-    }
-  });
+  const credentialId = new Uint8Array(stored.biometricCredentialId);
+
+  let assertion;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        rpId: chrome.runtime.id,
+        allowCredentials: [{
+          id: credentialId,
+          type: 'public-key'
+        }],
+        userVerification: 'preferred',
+        timeout: WEBAUTHN_TIMEOUT
+      }
+    });
+  } catch (webauthnErr) {
+    throw new Error('WebAuthn error: ' + webauthnErr.message);
+  }
 
   if (!assertion) throw new Error('Biometric authentication was cancelled');
 
   const encryptionKey = base64ToBytes(stored.biometricEncryptionKey);
-  const password = await decryptPassword(stored.biometricEncryptedPassword, new Uint8Array(encryptionKey));
+
+  let password;
+  try {
+    password = await decryptPassword(stored.biometricEncryptedPassword, new Uint8Array(encryptionKey));
+  } catch (decryptErr) {
+    throw new Error('Password decryption failed (stored data may be corrupted): ' + decryptErr.message);
+  }
 
   await chrome.storage.session.set({ biometricDecryptedPassword: password });
-  await chrome.storage.session.remove(['biometricPending']);
+  await chrome.storage.session.remove([STORAGE_SESSION_BIO_PENDING]);
   await chrome.storage.local.set({ biometricResult: { success: true } });
 
   document.getElementById('spinner').style.display = 'none';
@@ -133,7 +156,7 @@ async function encryptPassword(password, key) {
   const cryptoKey = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt']);
   const encoded = new TextEncoder().encode(password);
   const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, encoded);
-  return { iv: bytesToBase64(iv), data: bytesToBase64(encrypted) };
+  return { iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(encrypted)) };
 }
 
 async function decryptPassword(encryptedData, key) {
