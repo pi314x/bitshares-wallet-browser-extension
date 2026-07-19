@@ -63,12 +63,6 @@
         <h1>BitShares Wallet</h1>
         <p class="subtitle">Your gateway to decentralized finance</p>
       </div>
-      <div class="welcome-network">
-        <select id="welcome-network-select">
-          <option value="mainnet">BitShares Mainnet</option>
-          <option value="testnet">BitShares Testnet</option>
-        </select>
-      </div>
       <div class="welcome-actions">
         <button id="btn-create-wallet" class="btn btn-primary">
           <span class="btn-icon">+</span>
@@ -791,10 +785,10 @@
           </div>
           <div class="settings-item" id="bridge-shortcut-item">
             <span>Bridge Shortcut</span>
-            <select id="bridge-shortcut-select">
-              <option value="off" selected>Off</option>
-              <option value="on">On</option>
-            </select>
+            <label class="switch">
+              <input type="checkbox" id="bridge-shortcut-toggle">
+              <span class="slider"></span>
+            </label>
           </div>
           <!-- Firefox: the icon behavior is fixed, but the sidebar can be toggled directly -->
           <div class="settings-item clickable" id="setting-open-sidebar" style="display: none;">

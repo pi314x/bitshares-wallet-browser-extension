@@ -257,14 +257,6 @@ function setupEventListeners() {
   document.getElementById('asset-search')?.addEventListener('input', handleAssetSearch);
   document.getElementById('btn-swap')?.addEventListener('click', handleShowSwap);
   document.getElementById('network-select')?.addEventListener('change', handleNetworkChange);
-  document.getElementById('welcome-network-select')?.addEventListener('change', (e) => {
-    const network = e.target.value;
-    // Keep the dashboard selector in sync so handleGenerateWallet/handleImportWallet read the right value
-    const networkSelect = document.getElementById('network-select');
-    if (networkSelect) networkSelect.value = network;
-    chrome.storage.local.set({ selectedNetwork: network });
-    updateNetworkBadges(network);
-  });
   document.getElementById('account-selector')?.addEventListener('change', handleAccountChange);
   document.getElementById('btn-add-account-submit')?.addEventListener('click', handleAddAccount);
 
@@ -299,7 +291,7 @@ function setupEventListeners() {
   });
   document.getElementById('autolock-timer')?.addEventListener('change', handleAutolockChange);
   document.getElementById('sidebar-mode-select')?.addEventListener('change', handleSidebarModeChange);
-  document.getElementById('bridge-shortcut-select')?.addEventListener('change', handleBridgeShortcutChange);
+  document.getElementById('bridge-shortcut-toggle')?.addEventListener('change', handleBridgeShortcutChange);
   document.getElementById('btn-bridge')?.addEventListener('click', openBridge);
   document.getElementById('setting-open-sidebar')?.addEventListener('click', handleOpenSidebarClick);
   document.getElementById('setting-explorer')?.addEventListener('click', handleShowExplorer);
@@ -410,8 +402,6 @@ async function initializeApp() {
       : (explorerResult.explorerUrl || DEFAULT_EXPLORER_MAINNET).replace(/\/+$/, '');
     const networkSelect = document.getElementById('network-select');
     if (networkSelect) networkSelect.value = savedNetwork;
-    const welcomeNetworkSelect = document.getElementById('welcome-network-select');
-    if (welcomeNetworkSelect) welcomeNetworkSelect.value = savedNetwork;
     updateNetworkBadges(savedNetwork);
 
     // Check if wallet exists
@@ -4013,20 +4003,20 @@ function applyBridgeShortcut(on) {
 }
 
 async function handleBridgeShortcutChange(e) {
-  const on = e.target.value === 'on';
+  const on = e.target.checked;
   await chrome.storage.local.set({ showBridgeShortcut: on });
   applyBridgeShortcut(on);
   showToast(on ? 'Bridge shortcut shown in the header' : 'Bridge shortcut hidden', 'info');
 }
 
 // Restore the bridge-shortcut preference: the header button and the Settings
-// dropdown both reflect the stored value (default off).
+// toggle both reflect the stored value (default off).
 async function loadBridgeShortcut() {
   const { showBridgeShortcut } = await chrome.storage.local.get(['showBridgeShortcut']);
   const on = !!showBridgeShortcut;
   applyBridgeShortcut(on);
-  const select = document.getElementById('bridge-shortcut-select');
-  if (select) select.value = on ? 'on' : 'off';
+  const toggle = document.getElementById('bridge-shortcut-toggle');
+  if (toggle) toggle.checked = on;
 }
 
 async function handleSidebarModeChange(e) {

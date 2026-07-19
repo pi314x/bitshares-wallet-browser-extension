@@ -229,35 +229,6 @@ body.sidebar-view .wallet-container {
   margin-top: var(--spacing-xl);
 }
 
-.welcome-network {
-  margin-top: var(--spacing-lg);
-  display: flex;
-  justify-content: center;
-}
-
-.welcome-network select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 13px;
-  padding: 6px 36px 6px 12px;
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 14px;
-}
-
-.welcome-network select:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.12);
-}
-
 .welcome-footer {
   margin-top: var(--spacing-xl);
   text-align: center;
@@ -2141,6 +2112,56 @@ body.sidebar-view .wallet-container {
 .settings-item select option {
   background: var(--bg-secondary);
   color: var(--text-primary);
+}
+
+/* Switch toggle for settings items */
+.settings-item .switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.settings-item .switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-item .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-secondary);
+  transition: .4s;
+  border-radius: 24px;
+  border: 1px solid var(--border-color);
+}
+
+.settings-item .slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 2px;
+  bottom: 1px;
+  background-color: var(--text-primary);
+  transition: .4s;
+  border-radius: 50%;
+}
+
+.settings-item input:checked + .slider {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+.settings-item input:checked + .slider:before {
+  transform: translateX(20px);
+  background-color: var(--bg-primary);
 }
 
 .settings-item.clickable {
