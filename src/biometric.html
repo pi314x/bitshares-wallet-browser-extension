@@ -27,18 +27,33 @@
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin: 0 auto 20px;
+      display: none;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     h2 { margin: 0 0 8px; font-size: 20px; }
-    p { margin: 0; color: #94a3b8; font-size: 14px; }
+    p { margin: 0 0 20px; color: #94a3b8; font-size: 14px; }
     .error { color: #ef4444; }
+    .hidden { display: none; }
+    button {
+      background: #00D4AA;
+      color: #0a0e17;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 32px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #00b894; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="spinner" id="spinner"></div>
     <h2 id="title">Biometric Authentication</h2>
-    <p id="status">Please complete the biometric prompt to continue...</p>
+    <p id="status">Click the button below to start the biometric verification.</p>
+    <button id="btn-start">Start Biometric Verification</button>
   </div>
   <script type="module" src="biometric.js"></script>
 </body>

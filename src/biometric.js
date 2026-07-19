@@ -3,43 +3,49 @@ import { bytesToBase64, base64ToBytes } from './lib/crypto-utils.js';
 const WEBAUTHN_TIMEOUT = 60000;
 
 async function main() {
-  try {
-    const result = await chrome.storage.session.get(['biometricPending']);
+  const result = await chrome.storage.session.get(['biometricPending']);
 
-    if (!result.biometricPending) {
-      document.getElementById('title').textContent = 'No pending request';
-      document.getElementById('status').textContent = 'No biometric request was found. You can close this tab.';
-      document.getElementById('spinner').style.display = 'none';
-      return;
-    }
-
-    const { mode, password } = result.biometricPending;
-
-    if (mode === 'register') {
-      await handleRegister(password);
-    } else if (mode === 'auth') {
-      await handleAuth();
-    } else {
-      throw new Error('Unknown biometric mode: ' + mode);
-    }
-  } catch (error) {
+  if (!result.biometricPending) {
+    document.getElementById('title').textContent = 'No pending request';
+    document.getElementById('status').textContent = 'No biometric request was found. You can close this tab.';
+    document.getElementById('btn-start').style.display = 'none';
     document.getElementById('spinner').style.display = 'none';
-    document.getElementById('title').textContent = 'Failed';
-    document.getElementById('title').className = 'error';
-    document.getElementById('status').textContent = error.message;
-    await chrome.storage.session.remove(['biometricPending']);
-    await chrome.storage.local.set({ biometricResult: { success: false, error: error.message } });
+    return;
   }
+
+  document.getElementById('btn-start').addEventListener('click', async () => {
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('spinner').style.display = 'block';
+    document.getElementById('status').textContent = 'Please complete the biometric prompt to continue...';
+
+    try {
+      const { mode, password } = result.biometricPending;
+
+      if (mode === 'register') {
+        await handleRegister(password);
+      } else if (mode === 'auth') {
+        await handleAuth();
+      } else {
+        throw new Error('Unknown biometric mode: ' + mode);
+      }
+    } catch (error) {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('title').textContent = 'Failed';
+      document.getElementById('title').className = 'error';
+      document.getElementById('status').textContent = error.message;
+      await chrome.storage.session.remove(['biometricPending']);
+      await chrome.storage.local.set({ biometricResult: { success: false, error: error.message } });
+    }
+  });
 }
 
 async function handleRegister(password) {
   const challenge = crypto.getRandomValues(new Uint8Array(32));
-  const rpId = chrome.runtime.id;
 
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge,
-      rp: { name: 'BitShares Wallet', id: rpId },
+      rp: { name: 'BitShares Wallet' },
       user: {
         id: crypto.getRandomValues(new Uint8Array(32)),
         name: 'bitshares-wallet@extension',
@@ -141,9 +147,6 @@ function base64ToArrayBuffer(base64) {
   return new Uint8Array(base64ToBytes(base64)).buffer;
 }
 
-main().catch((error) => {
-  console.error('Biometric error:', error);
-  document.getElementById('spinner').style.display = 'none';
-  document.getElementById('title').textContent = 'Error';
-  document.getElementById('status').textContent = error.message;
+document.addEventListener('DOMContentLoaded', () => {
+  main().catch(console.error);
 });
