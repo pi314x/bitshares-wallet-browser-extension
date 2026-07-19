@@ -1005,8 +1005,6 @@ body.sidebar-view .wallet-container {
 
 /* Settings selects */
 .settings-item .modern-select {
-  min-width: 100px;
-  max-width: 200px;
   width: fit-content;
 }
 
@@ -1016,27 +1014,9 @@ body.sidebar-view .wallet-container {
   width: fit-content;
 }
 
-/* Autolock timer */
-#autolock-timer {
-  min-width: 110px;
-  width: fit-content;
-}
-
-/* Sidebar mode */
-#sidebar-mode-select {
-  min-width: 100px;
-  width: fit-content;
-}
-
 /* Retrieve key account */
 #retrieve-key-account {
   min-width: 160px;
-  width: fit-content;
-}
-
-/* Key type select */
-#key-type-select {
-  min-width: 120px;
   width: fit-content;
 }
 
@@ -2166,11 +2146,6 @@ body.sidebar-view .wallet-container {
   cursor: pointer;
 }
 
-.settings-item .modern-select {
-  min-width: 100px;
-  max-width: 140px;
-}
-
 /* Switch toggle for settings items */
 .settings-item .switch {
   position: relative;
@@ -3056,7 +3031,8 @@ body.sidebar-view .wallet-container {
 }
 
 .settings-item .custom-dropdown {
-  width: 100%;
+  width: fit-content;
+  min-width: fit-content;
   flex-shrink: 0;
 }
 
