@@ -933,6 +933,108 @@ body.sidebar-view .wallet-container {
   padding: 8px;
 }
 
+/* Modern select dropdown - unified style for all selects */
+.modern-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 8px 32px 8px 12px;
+  transition: all var(--transition-fast);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px;
+  min-width: 100px;
+}
+
+.modern-select:hover {
+  border-color: var(--primary);
+  background-color: var(--bg-hover);
+}
+
+.modern-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.12);
+}
+
+.modern-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 8px;
+}
+
+/* Account selector specific width */
+.account-selector-wrapper .modern-select {
+  min-width: 180px;
+}
+
+/* Swap asset selects */
+.swap-asset-select {
+  min-width: 160px;
+}
+
+/* Settings selects */
+.settings-item .modern-select {
+  min-width: 100px;
+  max-width: 200px;
+  width: fit-content;
+}
+
+/* History filter */
+#history-filter-select {
+  min-width: 140px;
+  width: fit-content;
+}
+
+/* Autolock timer */
+#autolock-timer {
+  min-width: 110px;
+  width: fit-content;
+}
+
+/* Sidebar mode */
+#sidebar-mode-select {
+  min-width: 100px;
+  width: fit-content;
+}
+
+/* Retrieve key account */
+#retrieve-key-account {
+  min-width: 160px;
+  width: fit-content;
+}
+
+/* Key type select */
+#key-type-select {
+  min-width: 120px;
+  width: fit-content;
+}
+
+/* Network dropdown specific */
+.network-dropdown {
+  min-width: 100px;
+  padding: 6px 28px 6px 10px;
+  font-size: 12px;
+  background-color: transparent;
+  border: none;
+}
+
+.network-dropdown:hover {
+  background-color: var(--bg-hover);
+}
+
+.network-dropdown:focus {
+  box-shadow: none;
+}
+
 /* Account Card */
 .account-card {
   background: var(--gradient-card);
@@ -989,53 +1091,12 @@ body.sidebar-view .wallet-container {
   position: relative;
 }
 
-.account-selector {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-size: 16px;
-  font-weight: 600;
-  font-family: var(--font-primary);
-  padding: 0 22px 0 0;
-  cursor: pointer;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-selector-wrapper::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  pointer-events: none;
-}
-
 .account-id {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-muted);
   margin: 0 0 0 4px;
   padding: 0;
-}
-
-.account-selector:focus {
-  outline: none;
-}
-
-.account-selector option {
-  background: var(--bg-card);
-  color: var(--text-primary);
 }
 
 .btn-add-account {
@@ -1389,7 +1450,7 @@ body.sidebar-view .wallet-container {
   justify-content: center;
 }
 
-.receive-account-details .account-selector {
+.receive-account-details .account-selector-wrapper .modern-select {
   max-width: 280px;
   width: 100%;
   font-size: 15px;
@@ -2083,38 +2144,9 @@ body.sidebar-view .wallet-container {
   cursor: pointer;
 }
 
-.settings-item select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-primary);
-  font-family: var(--font-primary);
-  cursor: pointer;
-  padding: 4px 28px 4px 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  transition: all var(--transition-fast);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  background-size: 14px;
-}
-
-.settings-item select:hover {
-  border-color: var(--border-color);
-  background-color: rgba(255, 255, 255, 0.03);
-}
-
-.settings-item select:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.settings-item select option {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+.settings-item .modern-select {
+  min-width: 100px;
+  max-width: 140px;
 }
 
 /* Switch toggle for settings items */
@@ -2883,7 +2915,8 @@ body.sidebar-view .wallet-container {
 }
 
 .swap-asset-select:hover {
-  border-color: #3a5280;
+  border-color: var(--primary);
+  background-color: var(--bg-hover);
 }
 
 .swap-asset-select:focus {
@@ -2905,13 +2938,13 @@ body.sidebar-view .wallet-container {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 8px 12px;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   color: var(--text-primary);
   font-family: var(--font-primary);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
   transition: border-color var(--transition-fast);
@@ -2935,7 +2968,7 @@ body.sidebar-view .wallet-container {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
-  max-height: 220px;
+  max-height: 180px;
   overflow-y: auto;
   z-index: 300;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
@@ -2944,18 +2977,18 @@ body.sidebar-view .wallet-container {
 .ap-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 6px 10px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   transition: background var(--transition-fast);
 }
 .ap-item:hover,
 .ap-item--active { background: var(--bg-hover); }
 
 .ap-icon {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -2990,6 +3023,123 @@ body.sidebar-view .wallet-container {
   padding: 12px;
   text-align: center;
   font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Custom Dropdown Component - Generic version of asset picker */
+.custom-dropdown {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.settings-item .custom-dropdown {
+  width: fit-content;
+  flex-shrink: 0;
+}
+
+.custom-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.custom-dropdown-btn:hover {
+  border-color: var(--primary);
+  background-color: var(--bg-hover);
+}
+
+.custom-dropdown-btn:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.12);
+}
+
+.custom-dropdown-btn.open {
+  border-color: var(--primary);
+}
+
+.cd-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cd-placeholder {
+  color: var(--text-muted);
+}
+
+.cd-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.custom-dropdown-btn.open .cd-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-dropdown-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 300;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.cd-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background var(--transition-fast);
+}
+
+.cd-item:hover,
+.cd-item--active { background: var(--bg-hover); }
+
+.cd-filter {
+  position: sticky;
+  top: 0;
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.cd-empty {
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
   color: var(--text-muted);
 }
 

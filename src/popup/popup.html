@@ -407,7 +407,7 @@
           <svg class="account-avatar" id="account-avatar" width="80" height="80" data-jdenticon-value=""></svg>
           <div class="account-details">
             <div class="account-selector-wrapper">
-              <select id="account-selector" class="account-selector">
+              <select id="account-selector" class="modern-select">
                 <!-- Accounts populated dynamically -->
               </select>
             </div>
@@ -479,7 +479,7 @@
         </div>
         <div class="form-group">
           <label for="send-asset">Asset</label>
-          <select id="send-asset">
+          <select id="send-asset" class="modern-select">
             <option value="">Select asset</option>
             <option value="1.3.0">BTS (BitShares)</option>
           </select>
@@ -514,7 +514,7 @@
         <div class="receive-account-card">
           <div class="receive-account-details">
             <div class="account-selector-wrapper">
-              <select id="receive-account-selector" class="account-selector">
+              <select id="receive-account-selector" class="modern-select">
                 <!-- Accounts populated dynamically -->
               </select>
             </div>
@@ -581,7 +581,7 @@
           <p id="dapp-connect-network" class="connect-network-notice"></p>
           <div class="form-group" style="margin: var(--spacing-md) 0;">
             <label for="dapp-connect-account">Connect with account:</label>
-            <select id="dapp-connect-account" class="account-selector">
+            <select id="dapp-connect-account" class="modern-select">
               <!-- Accounts populated dynamically -->
             </select>
           </div>
@@ -719,7 +719,7 @@
         <h2>Transaction History</h2>
       </div>
       <div class="history-filter">
-        <select id="history-filter-select">
+        <select id="history-filter-select" class="modern-select">
           <option value="all">All Operations</option>
           <option value="transfer">Transfers</option>
           <option value="limit_order_create">Limit Orders</option>
@@ -764,7 +764,7 @@
           </div>
           <div class="settings-item">
             <span>Auto-lock Timer</span>
-            <select id="autolock-timer">
+            <select id="autolock-timer" class="modern-select">
               <option value="0">Never</option>
               <option value="5">5 minutes</option>
               <option value="15" selected>15 minutes</option>
@@ -778,7 +778,7 @@
           <!-- Chrome: choose whether the toolbar icon opens the popup or the side panel -->
           <div class="settings-item" id="sidebar-mode-item">
             <span>Toolbar Icon Opens</span>
-            <select id="sidebar-mode-select">
+            <select id="sidebar-mode-select" class="modern-select">
               <option value="popup" selected>Popup</option>
               <option value="sidebar">Sidebar</option>
             </select>
@@ -1140,13 +1140,13 @@ window.addEventListener(
         </div>
         <div class="form-group">
           <label for="retrieve-key-account">Account</label>
-          <select id="retrieve-key-account">
+          <select id="retrieve-key-account" class="modern-select">
             <!-- Accounts populated dynamically -->
           </select>
         </div>
         <div class="form-group">
           <label for="key-type-select">Key Type</label>
-          <select id="key-type-select">
+          <select id="key-type-select" class="modern-select">
             <option value="active">Active Key</option>
             <option value="owner">Owner Key</option>
             <option value="memo">Memo Key</option>
@@ -1221,7 +1221,7 @@ window.addEventListener(
         <div class="swap-card">
           <div class="swap-input-group">
             <label>From</label>
-            <select id="swap-from-asset" class="swap-asset-select">
+            <select id="swap-from-asset" class="modern-select">
               <option value="">Select asset</option>
             </select>
             <input type="number" id="swap-from-amount" placeholder="0.00" step="0.00001">
@@ -1235,7 +1235,7 @@ window.addEventListener(
 
           <div class="swap-input-group">
             <label>To</label>
-            <select id="swap-to-asset" class="swap-asset-select">
+            <select id="swap-to-asset" class="modern-select">
               <option value="">Select asset</option>
             </select>
             <input type="number" id="swap-to-amount" placeholder="0.00" step="0.00001">

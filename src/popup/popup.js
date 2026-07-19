@@ -375,6 +375,17 @@ function setupEventListeners() {
   initAssetPicker('send-asset');
   initAssetPicker('swap-from-asset');
   initAssetPicker('swap-to-asset');
+
+  // Upgrade other key dropdowns to custom dropdowns
+  initCustomDropdown('network-select');
+  initCustomDropdown('account-selector');
+  initCustomDropdown('receive-account-selector');
+  initCustomDropdown('dapp-connect-account');
+  initCustomDropdown('history-filter-select');
+  initCustomDropdown('autolock-timer');
+  initCustomDropdown('sidebar-mode-select');
+  initCustomDropdown('retrieve-key-account');
+  initCustomDropdown('key-type-select');
 }
 
 // Initialize the application
@@ -3745,6 +3756,145 @@ function initAssetPicker(selectId) {
 
   renderBtn();
   _assetPickers.set(selectId, renderBtn);
+}
+
+/**
+ * Generic custom dropdown component - creates a styled dropdown with rounded corners
+ * similar to the asset picker but without asset-specific features (icons, filtering).
+ * @param {string} selectId - ID of the select element to enhance
+ * @param {Object} options - Configuration options
+ * @param {boolean} options.searchable - Whether to show search/filter
+ * @param {Function} options.getLabel - Custom function to render option label
+ * @param {Function} options.getIcon - Custom function to render option icon
+ */
+function initCustomDropdown(selectId, options = {}) {
+  const select = document.getElementById(selectId);
+  if (!select || select.dataset.customDropdownInit) return;
+  select.dataset.customDropdownInit = '1';
+
+  const { searchable = false, getLabel, getIcon } = options;
+
+  // Wrap
+  const wrapper = document.createElement('div');
+  wrapper.className = 'custom-dropdown';
+  select.parentNode.insertBefore(wrapper, select);
+  wrapper.appendChild(select);
+  select.style.display = 'none';
+
+  // Trigger button
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'custom-dropdown-btn';
+  btn.setAttribute('aria-haspopup', 'listbox');
+  btn.setAttribute('aria-expanded', 'false');
+  wrapper.insertBefore(btn, select);
+
+  // Dropdown list
+  const list = document.createElement('div');
+  list.className = 'custom-dropdown-list';
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  wrapper.insertBefore(list, select);
+
+  function renderBtn() {
+    btn.replaceChildren();
+    const opt = select.options[select.selectedIndex];
+    if (opt && opt.value) {
+      if (getIcon) {
+        const icon = getIcon(opt);
+        if (icon) btn.appendChild(icon);
+      }
+      const label = document.createElement('span');
+      label.className = 'cd-label';
+      label.textContent = getLabel ? getLabel(opt) : opt.textContent;
+      btn.appendChild(label);
+    } else {
+      const label = document.createElement('span');
+      label.className = 'cd-label cd-placeholder';
+      label.textContent = opt?.textContent || 'Select...';
+      btn.appendChild(label);
+    }
+    const arrow = document.createElement('span');
+    arrow.className = 'cd-arrow';
+    arrow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
+    btn.appendChild(arrow);
+  }
+
+  let filter = '';
+
+  function renderList() {
+    list.replaceChildren();
+    if (searchable && filter) {
+      const tag = document.createElement('div');
+      tag.className = 'cd-filter';
+      tag.textContent = filter;
+      list.appendChild(tag);
+    }
+    let shown = 0;
+    for (const opt of select.options) {
+      if (!opt.value) continue;
+      const text = opt.textContent;
+      if (filter && !text.toLowerCase().includes(filter.toLowerCase())) continue;
+      shown++;
+      const item = document.createElement('div');
+      item.className = 'cd-item' + (opt.value === select.value ? ' cd-item--active' : '');
+      item.setAttribute('role', 'option');
+      if (getIcon) {
+        const icon = getIcon(opt);
+        if (icon) item.appendChild(icon);
+      }
+      const label = document.createElement('span');
+      label.className = 'cd-label';
+      label.textContent = getLabel ? getLabel(opt) : text;
+      item.appendChild(label);
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        select.value = opt.value;
+        closeList();
+        renderBtn();
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      list.appendChild(item);
+    }
+    if (!shown) {
+      const empty = document.createElement('div');
+      empty.className = 'cd-empty';
+      empty.textContent = searchable ? `No matches for "${filter}"` : 'No options';
+      list.appendChild(empty);
+    }
+  }
+
+  function openList() { filter = ''; renderList(); list.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.classList.add('open'); }
+  function closeList() { list.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('open'); }
+
+  btn.addEventListener('click', (e) => { e.stopPropagation(); list.hidden ? openList() : closeList(); });
+  btn.addEventListener('blur', () => setTimeout(closeList, 150));
+  document.addEventListener('click', (e) => { if (!wrapper.contains(e.target)) closeList(); });
+  wrapper.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (!list.hidden && filter) { filter = ''; renderList(); } else { closeList(); }
+      return;
+    }
+    if (list.hidden) return;
+    if (e.key === 'Backspace') {
+      if (filter) { filter = filter.slice(0, -1); renderList(); }
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      list.querySelector('.cd-item')?.dispatchEvent(new MouseEvent('mousedown', { cancelable: true }));
+      e.preventDefault();
+    } else if (searchable && e.key.length === 1 && /[a-z0-9.]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      filter += e.key.toLowerCase();
+      renderList();
+      e.preventDefault();
+    }
+  });
+
+  // Re-render button when options change
+  new MutationObserver(renderBtn).observe(select, { childList: true });
+  select.addEventListener('change', renderBtn);
+
+  renderBtn();
+  return { refresh: renderBtn };
 }
 
 function updateSendAvailableBalance() {
