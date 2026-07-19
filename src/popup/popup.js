@@ -595,6 +595,11 @@ function showScreen(screenId) {
   if (screenId === 'dashboard-screen') {
     refreshDashboardData();
   }
+
+  // Hide backup brainkey option in settings when no brainkey exists
+  if (screenId === 'settings-screen') {
+    updateBackupSettingVisibility();
+  }
 }
 
 // Approval dismiss bar — auto-rejects after APPROVAL_TIMEOUT_MS milliseconds
@@ -4128,15 +4133,7 @@ async function handleResetWallet() {
   showToast('Wallet has been reset', 'info');
 }
 
-async function handleShowSettings() {
-  showScreen('settings-screen');
-  // Always read the version from the manifest so it can't drift from releases
-  const versionEl = document.getElementById('settings-version');
-  if (versionEl) versionEl.textContent = chrome.runtime.getManifest().version;
-  await loadAutolockSetting();
-  await loadSidebarModeSetting();
-  
-  // Check if wallet has a brainkey and show/hide backup option accordingly
+async function updateBackupSettingVisibility() {
   try {
     const brainkey = await walletManager.getBrainkey();
     const backupSetting = document.getElementById('setting-backup');
@@ -4144,12 +4141,21 @@ async function handleShowSettings() {
       backupSetting.style.display = brainkey ? 'flex' : 'none';
     }
   } catch (error) {
-    // If we can't get brainkey (e.g., wallet locked), hide the backup option
     const backupSetting = document.getElementById('setting-backup');
     if (backupSetting) {
       backupSetting.style.display = 'none';
     }
   }
+}
+
+async function handleShowSettings() {
+  showScreen('settings-screen');
+  // Always read the version from the manifest so it can't drift from releases
+  const versionEl = document.getElementById('settings-version');
+  if (versionEl) versionEl.textContent = chrome.runtime.getManifest().version;
+  await loadAutolockSetting();
+  await loadSidebarModeSetting();
+  await updateBackupSettingVisibility();
 }
 
 async function handleShowExplorer() {
