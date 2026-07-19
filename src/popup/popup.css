@@ -150,6 +150,15 @@ body.sidebar-view .wallet-container {
   text-align: center;
 }
 
+/* Welcome Screen — vertically centered */
+#welcome-screen.active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+}
+
 .logo-with-spinner {
   position: relative;
   display: inline-block;
@@ -237,6 +246,16 @@ body.sidebar-view .wallet-container {
 .security-note {
   color: var(--text-muted);
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.security-note .lock-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--primary);
 }
 
 /* Buttons */
@@ -507,6 +526,8 @@ body.sidebar-view .wallet-container {
   background-position: right 10px center;
   background-size: 16px;
   cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .form-group select:hover {
@@ -943,7 +964,7 @@ body.sidebar-view .wallet-container {
   border-radius: var(--border-radius-sm);
   color: var(--text-primary);
   font-family: var(--font-primary);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   padding: 8px 32px 8px 12px;
   transition: all var(--transition-fast);
@@ -951,7 +972,8 @@ body.sidebar-view .wallet-container {
   background-repeat: no-repeat;
   background-position: right 8px center;
   background-size: 12px;
-  min-width: 100px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .modern-select:hover {
@@ -3029,12 +3051,12 @@ body.sidebar-view .wallet-container {
 /* Custom Dropdown Component - Generic version of asset picker */
 .custom-dropdown {
   position: relative;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
 }
 
 .settings-item .custom-dropdown {
-  width: fit-content;
+  width: 100%;
   flex-shrink: 0;
 }
 
@@ -3050,7 +3072,7 @@ body.sidebar-view .wallet-container {
   border-radius: var(--border-radius-sm);
   color: var(--text-primary);
   font-family: var(--font-primary);
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
   transition: all var(--transition-fast);
   text-align: left;
@@ -3069,6 +3091,7 @@ body.sidebar-view .wallet-container {
 
 .custom-dropdown-btn.open {
   border-color: var(--primary);
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
 }
 
 .cd-label {
@@ -3104,7 +3127,8 @@ body.sidebar-view .wallet-container {
   right: 0;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-sm);
+  border-top: none;
+  border-radius: 0 0 var(--border-radius-sm) var(--border-radius-sm);
   max-height: 180px;
   overflow-y: auto;
   z-index: 300;
@@ -3117,7 +3141,7 @@ body.sidebar-view .wallet-container {
   gap: 6px;
   padding: 6px 10px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   transition: background var(--transition-fast);
 }
 

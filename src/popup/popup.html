@@ -74,7 +74,7 @@
         </button>
       </div>
       <div class="welcome-footer">
-        <p class="security-note">🔒 Your keys never leave your device</p>
+        <p class="security-note"><svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> Your keys never leave your device</p>
       </div>
     </div>
 
@@ -86,7 +86,13 @@
       </div>
       <div class="form-container">
 
-        <div id="create-wallet-network-badge" class="network-badge mainnet">Mainnet</div>
+        <div class="form-group">
+          <label for="create-wallet-network">Network</label>
+          <select id="create-wallet-network" class="modern-select">
+            <option value="mainnet">BitShares Mainnet</option>
+            <option value="testnet">BitShares Testnet</option>
+          </select>
+        </div>
 
         <div class="form-section-label">BitShares Account</div>
         <div class="form-group">
@@ -174,6 +180,7 @@
     <!-- Backup Brainkey Screen -->
     <div id="backup-brainkey-screen" class="screen">
       <div class="screen-header">
+        <button class="btn-back" data-target="create-wallet-screen"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
         <h2>🔐 Backup Your Brainkey</h2>
       </div>
       <div class="brainkey-container">
@@ -204,7 +211,14 @@
         <button class="tab-btn" data-tab="import-brainkey">Brainkey</button>
       </div>
       <div class="form-container">
-        <div id="import-wallet-network-badge" class="network-badge mainnet">Mainnet</div>
+        <div class="form-group">
+          <label for="import-wallet-network">Network</label>
+          <select id="import-wallet-network" class="modern-select">
+            <option value="mainnet">BitShares Mainnet</option>
+            <option value="testnet">BitShares Testnet</option>
+          </select>
+        </div>
+
         <!-- Import by Account -->
         <div id="import-account" class="import-tab-content active">
           <div class="form-group">
@@ -233,8 +247,8 @@
         <!-- Import by Brainkey -->
         <div id="import-brainkey" class="import-tab-content">
           <div class="form-group">
-            <label for="import-brainkey-input">Brainkey (24 words)</label>
-            <textarea id="import-brainkey-input" rows="4" placeholder="Enter your 24-word brainkey..."></textarea>
+            <label for="import-brainkey-input">Brainkey (16 or 24 words)</label>
+            <textarea id="import-brainkey-input" rows="4" placeholder="Enter your 16 or 24-word brainkey..."></textarea>
           </div>
         </div>
         

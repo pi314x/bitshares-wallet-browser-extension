@@ -170,43 +170,20 @@ function cacheElements() {
   elements.dappConnectModal = document.getElementById('dapp-connect-modal');
 }
 
-/**
- * True when this popup.js instance is running inside the standalone window
- * opened by openInExpandedWindow() (marked via the ?expanded=1 URL param),
- * as opposed to the toolbar action-popup.
- */
-function isExpandedWindow() {
-  return new URLSearchParams(window.location.search).get('expanded') === '1';
-}
-
-/**
- * The toolbar action-popup closes the instant it loses focus — e.g. the user
- * alt-tabs to a password manager to copy an account name or brainkey — which
- * silently discards whatever the user had typed into a multi-field form like
- * wallet import. Re-open the same UI as a normal standalone browser window
- * (which does NOT close on blur) and hand off to it instead.
- */
-async function openInExpandedWindow(screenId) {
-  const url = chrome.runtime.getURL(`src/popup/popup.html?expanded=1&screen=${screenId}`);
-  await chrome.windows.create({ url, type: 'popup', width: 400, height: 680 });
-  window.close();
-}
-
 // Setup all event listeners
 function setupEventListeners() {
   // Welcome screen buttons
   document.getElementById('btn-create-wallet')?.addEventListener('click', () => showScreen('create-wallet-screen'));
-  document.getElementById('btn-import-wallet')?.addEventListener('click', () => {
-    // Only pop out from the toolbar popup — an already-expanded window just switches screens.
-    if (isExpandedWindow()) {
-      showScreen('import-wallet-screen');
-    } else {
-      openInExpandedWindow('import-wallet-screen');
-    }
-  });
+  document.getElementById('btn-import-wallet')?.addEventListener('click', () => showScreen('import-wallet-screen'));
   
   // Create wallet flow
   document.getElementById('btn-generate-wallet')?.addEventListener('click', handleGenerateWallet);
+  document.getElementById('create-wallet-network')?.addEventListener('change', (e) => {
+    updateNetworkBadges(e.target.value);
+  });
+  document.getElementById('import-wallet-network')?.addEventListener('change', (e) => {
+    updateNetworkBadges(e.target.value);
+  });
   document.getElementById('wallet-account-name')?.addEventListener('input', handleAccountNameInput);
   document.getElementById('wallet-password')?.addEventListener('input', handlePasswordInput);
   document.getElementById('wallet-password-confirm')?.addEventListener('input', validatePasswordMatch);
@@ -386,6 +363,8 @@ function setupEventListeners() {
   initCustomDropdown('sidebar-mode-select');
   initCustomDropdown('retrieve-key-account');
   initCustomDropdown('key-type-select');
+  initCustomDropdown('create-wallet-network');
+  initCustomDropdown('import-wallet-network');
 }
 
 // Initialize the application
@@ -437,9 +416,7 @@ async function initializeApp() {
         await showPendingApprovalIndicator();
       }
     } else {
-      // openInExpandedWindow() hands off to this fresh window via ?screen=,
-      // so the popped-out import flow lands on the right screen instead of
-      // back at the welcome screen.
+      // Handle deep-link to specific screen via ?screen= parameter
       const requestedScreen = new URLSearchParams(window.location.search).get('screen');
       if (requestedScreen && document.getElementById(requestedScreen)) {
         showScreen(requestedScreen);
@@ -680,6 +657,67 @@ function hideModal(modalId) {
   }
 }
 
+/**
+ * Show a confirmation modal with custom title, message, and button labels.
+ * Returns a Promise that resolves to true (confirmed) or false (cancelled).
+ */
+function showConfirmModal(title, message, confirmText = 'Confirm', cancelText = 'Cancel') {
+  return new Promise((resolve) => {
+    // Create modal element
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>${title}</h3>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>${message}</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary confirm-cancel">${cancelText}</button>
+          <button class="btn btn-danger confirm-ok">${confirmText}</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Show modal
+    requestAnimationFrame(() => modal.classList.add('active'));
+    
+    const cleanup = () => {
+      modal.classList.remove('active');
+      setTimeout(() => modal.remove(), 300);
+    };
+    
+    // Event listeners
+    modal.querySelector('.confirm-ok').addEventListener('click', () => {
+      cleanup();
+      resolve(true);
+    });
+    
+    modal.querySelector('.confirm-cancel').addEventListener('click', () => {
+      cleanup();
+      resolve(false);
+    });
+    
+    modal.querySelector('.modal-close').addEventListener('click', () => {
+      cleanup();
+      resolve(false);
+    });
+    
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        cleanup();
+        resolve(false);
+      }
+    });
+  });
+}
+
 // Toast notification
 function showToast(message, type = 'info') {
   const toast = document.createElement('div');
@@ -915,7 +953,7 @@ async function handleGenerateWallet() {
   const originalText = btn.textContent;
 
   try {
-    const network = document.getElementById('network-select')?.value || 'mainnet';
+    const network = document.getElementById('create-wallet-network')?.value || 'mainnet';
     const keyPrefix = getKeyPrefix(network);
 
     // Derive the keys that will control the on-chain account
@@ -1058,7 +1096,7 @@ async function handleImportWallet() {
     let importData = {};
 
     // Determine network before the switch so key verification can use it
-    const importNetwork = document.getElementById('network-select')?.value || 'mainnet';
+    const importNetwork = document.getElementById('import-wallet-network')?.value || 'mainnet';
     const importKeyPrefix = getKeyPrefix(importNetwork);
 
     switch (tabId) {
@@ -3158,16 +3196,23 @@ async function loadAccountsList() {
   // Add event listeners for remove
   accountsList.querySelectorAll('.account-btn.remove').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to remove this account from the wallet?')) {
-        try {
-          await walletManager.removeAccount(btn.dataset.id);
-          await loadAccountsList();
-          // Also refresh dashboard to update account selector dropdown
-          await loadDashboard();
-          showToast('Account removed', 'info');
-        } catch (error) {
-          showToast('Failed to remove: ' + error.message, 'error');
-        }
+      const confirmed = await showConfirmModal(
+        'Remove Account',
+        'Are you sure you want to remove this account from the wallet?',
+        'Remove',
+        'Cancel'
+      );
+      
+      if (!confirmed) return;
+      
+      try {
+        await walletManager.removeAccount(btn.dataset.id);
+        await loadAccountsList();
+        // Also refresh dashboard to update account selector dropdown
+        await loadDashboard();
+        showToast('Account removed', 'info');
+      } catch (error) {
+        showToast('Failed to remove: ' + error.message, 'error');
       }
     });
   });
@@ -4007,7 +4052,7 @@ async function handleReceiveAccountChange() {
 
 function updateNetworkBadges(network) {
   const label = network === 'testnet' ? 'Testnet' : 'Mainnet';
-  const ids = ['create-wallet-network-badge', 'import-wallet-network-badge'];
+  const ids = [];
   for (const id of ids) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -4067,13 +4112,20 @@ async function handleShowBackup() {
 }
 
 async function handleResetWallet() {
-  if (confirm('Are you sure you want to reset your wallet? This action cannot be undone. Make sure you have backed up your brainkey!')) {
-    await walletManager.resetWallet();
-    clearCreateWalletForm();
-    clearImportWalletForm();
-    showScreen('welcome-screen');
-    showToast('Wallet has been reset', 'info');
-  }
+  const confirmed = await showConfirmModal(
+    'Reset Wallet',
+    'This will permanently delete your wallet data. Make sure you have backed up your brainkey! This action cannot be undone.',
+    'Reset Wallet',
+    'Cancel'
+  );
+  
+  if (!confirmed) return;
+  
+  await walletManager.resetWallet();
+  clearCreateWalletForm();
+  clearImportWalletForm();
+  showScreen('welcome-screen');
+  showToast('Wallet has been reset', 'info');
 }
 
 async function handleShowSettings() {
@@ -4083,6 +4135,21 @@ async function handleShowSettings() {
   if (versionEl) versionEl.textContent = chrome.runtime.getManifest().version;
   await loadAutolockSetting();
   await loadSidebarModeSetting();
+  
+  // Check if wallet has a brainkey and show/hide backup option accordingly
+  try {
+    const brainkey = await walletManager.getBrainkey();
+    const backupSetting = document.getElementById('setting-backup');
+    if (backupSetting) {
+      backupSetting.style.display = brainkey ? 'flex' : 'none';
+    }
+  } catch (error) {
+    // If we can't get brainkey (e.g., wallet locked), hide the backup option
+    const backupSetting = document.getElementById('setting-backup');
+    if (backupSetting) {
+      backupSetting.style.display = 'none';
+    }
+  }
 }
 
 async function handleShowExplorer() {
@@ -4578,12 +4645,19 @@ async function handleTestAllNodes() {
 async function handleResetNodes() {
   const network = document.getElementById('network-select')?.value || 'mainnet';
   const networkLabel = network === 'testnet' ? 'testnet' : 'mainnet';
-  if (confirm(`Reset to default ${networkLabel} nodes? Custom nodes for this network will be removed.`)) {
-    await saveCustomNodesForNetwork(network, []);
-    nodeStatuses.clear();
-    await loadNodesList();
-    showToast('Nodes reset to defaults', 'info');
-  }
+  const confirmed = await showConfirmModal(
+    'Reset Nodes',
+    `Reset to default ${networkLabel} nodes? Custom nodes for this network will be removed.`,
+    'Reset',
+    'Cancel'
+  );
+  
+  if (!confirmed) return;
+  
+  await saveCustomNodesForNetwork(network, []);
+  nodeStatuses.clear();
+  await loadNodesList();
+  showToast('Nodes reset to defaults', 'info');
 }
 
 // === Connected Sites Management ===
