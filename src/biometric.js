@@ -3,62 +3,53 @@ import { bytesToBase64, base64ToBytes } from './lib/crypto-utils.js';
 const WEBAUTHN_TIMEOUT = 60000;
 
 async function main() {
-  const result = await chrome.storage.session.get(['biometricPending']);
+  try {
+    const result = await chrome.storage.session.get(['biometricPending']);
 
-  if (!result.biometricPending) {
-    document.getElementById('title').textContent = 'No pending request';
-    document.getElementById('status').textContent = 'No biometric request was found. You can close this tab.';
-    document.getElementById('btn-start').style.display = 'none';
-    document.getElementById('spinner').style.display = 'none';
-    return;
-  }
-
-  document.getElementById('btn-start').addEventListener('click', async () => {
-    document.getElementById('btn-start').style.display = 'none';
-    document.getElementById('spinner').style.display = 'block';
-    document.getElementById('status').textContent = 'Please complete the biometric prompt to continue...';
-
-    try {
-      const { mode, password } = result.biometricPending;
-
-      if (mode === 'register') {
-        await handleRegister(password);
-      } else if (mode === 'auth') {
-        await handleAuth();
-      } else {
-        throw new Error('Unknown biometric mode: ' + mode);
-      }
-    } catch (error) {
+    if (!result.biometricPending) {
+      document.getElementById('title').textContent = 'No pending request';
+      document.getElementById('status').textContent = 'No biometric request was found. You can close this tab.';
       document.getElementById('spinner').style.display = 'none';
-      document.getElementById('title').textContent = 'Failed';
-      document.getElementById('title').className = 'error';
-      document.getElementById('status').textContent = error.message;
-      await chrome.storage.session.remove(['biometricPending']);
-      await chrome.storage.local.set({ biometricResult: { success: false, error: error.message } });
+      return;
     }
-  });
+
+    const { mode, password } = result.biometricPending;
+
+    if (mode === 'register') {
+      await handleRegister(password);
+    } else if (mode === 'auth') {
+      await handleAuth();
+    } else {
+      throw new Error('Unknown biometric mode: ' + mode);
+    }
+  } catch (error) {
+    document.getElementById('spinner').style.display = 'none';
+    document.getElementById('title').textContent = 'Failed';
+    document.getElementById('title').className = 'error';
+    document.getElementById('status').textContent = error.message;
+    await chrome.storage.session.remove(['biometricPending']);
+    await chrome.storage.local.set({ biometricResult: { success: false, error: error.message } });
+  }
 }
 
 async function handleRegister(password) {
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const challenge = crypto.getRandomValues(new Uint8Array(64));
 
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge,
-      rp: { name: 'BitShares Wallet' },
+      rp: { name: 'BitShares Wallet', id: chrome.runtime.id },
       user: {
-        id: crypto.getRandomValues(new Uint8Array(32)),
+        id: crypto.getRandomValues(new Uint8Array(64)),
         name: 'bitshares-wallet@extension',
         displayName: 'BitShares Wallet'
       },
       pubKeyCredParams: [
-        { alg: -7, type: 'public-key' },
-        { alg: -257, type: 'public-key' }
+        { alg: -7, type: 'public-key' }
       ],
       authenticatorSelection: {
-        userVerification: 'required'
+        userVerification: 'preferred'
       },
-      attestation: 'none',
       timeout: WEBAUTHN_TIMEOUT
     }
   });
@@ -97,16 +88,17 @@ async function handleAuth() {
     throw new Error('Biometric authentication is not configured');
   }
 
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const challenge = crypto.getRandomValues(new Uint8Array(64));
 
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge,
+      rpId: chrome.runtime.id,
       allowCredentials: [{
         id: base64ToArrayBuffer(stored.biometricCredentialId),
         type: 'public-key'
       }],
-      userVerification: 'required',
+      userVerification: 'preferred',
       timeout: WEBAUTHN_TIMEOUT
     }
   });
