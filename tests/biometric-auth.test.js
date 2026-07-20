@@ -9,8 +9,8 @@
 import {
   isBiometricSupported,
   isBiometricEnabled,
+  isBiometricCosmetic,
   disableBiometric,
-  migrateLegacyBiometric,
 } from '../src/lib/biometric-auth.js';
 
 // ---------------------------------------------------------------------------
@@ -74,12 +74,12 @@ describe('isBiometricEnabled', () => {
 // ---------------------------------------------------------------------------
 
 describe('disableBiometric', () => {
-  test('removes sensitive biometric keys (incl. PRF salt + legacy key) but keeps credentialId for reuse', async () => {
+  test('removes sensitive biometric keys (incl. PRF salt + cosmetic key) but keeps credentialId for reuse', async () => {
     await chrome.storage.local.set({
       biometricCredentialId: [1, 2, 3],
       biometricEncryptedPassword: { iv: 'iv', data: 'data' },
       biometricPrfSalt: 'c2FsdA==',
-      biometricEncryptionKey: 'a2V5', // legacy field, must also be purged
+      biometricEncryptionKey: 'a2V5', // cosmetic-mode field, must also be purged
       biometricEnabled: true,
     });
     await disableBiometric();
@@ -101,11 +101,11 @@ describe('disableBiometric', () => {
 });
 
 // ---------------------------------------------------------------------------
-// migrateLegacyBiometric — retire pre-PRF enrollments
+// isBiometricCosmetic — flag reduced-protection (no PRF) enrollments
 // ---------------------------------------------------------------------------
 
-describe('migrateLegacyBiometric', () => {
-  test('clears a legacy enrollment (stored key, no PRF salt) and turns it off', async () => {
+describe('isBiometricCosmetic', () => {
+  test('true for an enabled enrollment with a cosmetic key and no PRF salt', async () => {
     await chrome.storage.local.set({
       biometricCredentialId: [1, 2, 3],
       biometricEncryptedPassword: { iv: 'iv', data: 'data' },
@@ -113,20 +113,10 @@ describe('migrateLegacyBiometric', () => {
       biometricEnabled: true,
     });
 
-    const migrated = await migrateLegacyBiometric();
-    expect(migrated).toBe(true);
-
-    const result = await chrome.storage.local.get([
-      'biometricEncryptionKey',
-      'biometricEncryptedPassword',
-      'biometricEnabled',
-    ]);
-    expect(result.biometricEncryptionKey).toBeUndefined();
-    expect(result.biometricEncryptedPassword).toBeUndefined();
-    expect(result.biometricEnabled).toBeUndefined();
+    expect(await isBiometricCosmetic()).toBe(true);
   });
 
-  test('is a no-op for a PRF enrollment (has salt, no legacy key)', async () => {
+  test('false for a PRF-backed enrollment (has salt)', async () => {
     await chrome.storage.local.set({
       biometricCredentialId: [1, 2, 3],
       biometricEncryptedPassword: { iv: 'iv', data: 'data' },
@@ -134,17 +124,11 @@ describe('migrateLegacyBiometric', () => {
       biometricEnabled: true,
     });
 
-    const migrated = await migrateLegacyBiometric();
-    expect(migrated).toBe(false);
-
-    const result = await chrome.storage.local.get(['biometricEnabled', 'biometricPrfSalt']);
-    expect(result.biometricEnabled).toBe(true);
-    expect(result.biometricPrfSalt).toBe('c2FsdA==');
+    expect(await isBiometricCosmetic()).toBe(false);
   });
 
-  test('is a no-op when biometric is not configured', async () => {
-    const migrated = await migrateLegacyBiometric();
-    expect(migrated).toBe(false);
+  test('false when biometric is not enabled', async () => {
+    expect(await isBiometricCosmetic()).toBe(false);
   });
 });
 

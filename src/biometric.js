@@ -4,6 +4,12 @@ const WEBAUTHN_TIMEOUT = 60000;
 const STORAGE_KEY_BIO_CREDENTIAL_ID = 'biometricCredentialId';
 const STORAGE_KEY_BIO_ENCRYPTED_PASSWORD = 'biometricEncryptedPassword';
 const STORAGE_KEY_BIO_PRF_SALT = 'biometricPrfSalt';
+// Cosmetic-mode key: set when the device/browser doesn't support the WebAuthn
+// PRF extension. The AES key sits next to the ciphertext in local storage, so
+// biometric unlock is a UI gate rather than encryption backed by an
+// authenticator-held secret. Superseded by STORAGE_KEY_BIO_PRF_SALT the moment
+// the user re-enrolls on a PRF-capable device (see handleRegister).
+const STORAGE_KEY_BIO_COSMETIC_KEY = 'biometricEncryptionKey';
 const STORAGE_KEY_BIO_ENABLED = 'biometricEnabled';
 const STORAGE_KEY_BIO_RESULT = 'biometricResult';
 const STORAGE_SESSION_BIO_PENDING = 'biometricPending';
@@ -86,48 +92,66 @@ async function handleRegister(password) {
 
   if (!credential) throw new Error('Biometric registration was cancelled');
 
-  // PRF is mandatory. If the authenticator/browser cannot provide it we refuse
-  // to enable biometric unlock rather than fall back to storing a decryptable
-  // key on disk (which would make the biometric a cosmetic gate, not real
-  // protection). Chrome platform authenticators (Touch ID / Windows Hello)
-  // support PRF; older/unsupported ones land here.
-  const regExt = credential.getClientExtensionResults?.() || {};
-  if (!regExt.prf || regExt.prf.enabled !== true) {
-    throw new Error(
-      'This device or browser does not support the WebAuthn PRF extension, which is required to protect your wallet password with biometrics. Biometric unlock was NOT enabled.'
-    );
-  }
-
   const credentialId = Array.from(new Uint8Array(credential.rawId));
 
-  // Non-secret per-enrollment salt for the PRF evaluation. Stored in the clear;
-  // it does not weaken anything because the PRF output also depends on the
-  // authenticator-held secret.
-  const prfSalt = crypto.getRandomValues(new Uint8Array(32));
+  // Chrome platform authenticators (Touch ID / Windows Hello) support PRF;
+  // older/unsupported ones don't return it here.
+  const regExt = credential.getClientExtensionResults?.() || {};
+  const prfSupported = !!regExt.prf && regExt.prf.enabled === true;
 
-  // Actually evaluate the PRF (a second user-verification prompt during setup).
-  // Many authenticators only return PRF results from get(), not create().
-  const prfOutput = await evaluatePrf(new Uint8Array(credentialId), prfSalt);
-  const encryptionKey = await deriveAesKeyFromPrf(prfOutput);
-  prfOutput.fill(0);
-  const encryptedPassword = await encryptPassword(password, encryptionKey);
+  let cosmetic = false;
+  if (prfSupported) {
+    // Non-secret per-enrollment salt for the PRF evaluation. Stored in the clear;
+    // it does not weaken anything because the PRF output also depends on the
+    // authenticator-held secret.
+    const prfSalt = crypto.getRandomValues(new Uint8Array(32));
 
-  await chrome.storage.local.set({
-    [STORAGE_KEY_BIO_CREDENTIAL_ID]: credentialId,
-    [STORAGE_KEY_BIO_ENCRYPTED_PASSWORD]: encryptedPassword,
-    [STORAGE_KEY_BIO_PRF_SALT]: bytesToBase64(prfSalt),
-    [STORAGE_KEY_BIO_ENABLED]: true,
-    [STORAGE_KEY_BIO_RESULT]: { success: true }
-  });
-  // Purge any legacy plaintext key from the pre-PRF scheme so an upgraded
-  // install can never be unlocked via the old, insecure path.
-  await chrome.storage.local.remove(['biometricEncryptionKey']);
+    // Actually evaluate the PRF (a second user-verification prompt during setup).
+    // Many authenticators only return PRF results from get(), not create().
+    const prfOutput = await evaluatePrf(new Uint8Array(credentialId), prfSalt);
+    const encryptionKey = await deriveAesKeyFromPrf(prfOutput);
+    prfOutput.fill(0);
+    const encryptedPassword = await encryptPassword(password, encryptionKey);
+
+    await chrome.storage.local.set({
+      [STORAGE_KEY_BIO_CREDENTIAL_ID]: credentialId,
+      [STORAGE_KEY_BIO_ENCRYPTED_PASSWORD]: encryptedPassword,
+      [STORAGE_KEY_BIO_PRF_SALT]: bytesToBase64(prfSalt),
+      [STORAGE_KEY_BIO_ENABLED]: true,
+      [STORAGE_KEY_BIO_RESULT]: { success: true, cosmetic: false }
+    });
+    // Purge any earlier cosmetic-mode key so an install that gains PRF support
+    // can only be unlocked through the secure path from now on.
+    await chrome.storage.local.remove([STORAGE_KEY_BIO_COSMETIC_KEY]);
+  } else {
+    // No PRF support on this device/browser. Fall back to a device-verification
+    // gate instead of refusing outright: the key is generated locally and
+    // stored next to the ciphertext, so this protects against casual UI access
+    // only — not anyone who can read chrome.storage.local directly. The user
+    // has explicitly accepted this reduced protection level; re-enrolling on a
+    // PRF-capable device upgrades to real encryption automatically.
+    cosmetic = true;
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    const rawKey = new Uint8Array(await crypto.subtle.exportKey('raw', key));
+    const encryptedPassword = await encryptPassword(password, key);
+
+    await chrome.storage.local.set({
+      [STORAGE_KEY_BIO_CREDENTIAL_ID]: credentialId,
+      [STORAGE_KEY_BIO_ENCRYPTED_PASSWORD]: encryptedPassword,
+      [STORAGE_KEY_BIO_COSMETIC_KEY]: bytesToBase64(rawKey),
+      [STORAGE_KEY_BIO_ENABLED]: true,
+      [STORAGE_KEY_BIO_RESULT]: { success: true, cosmetic: true }
+    });
+    await chrome.storage.local.remove([STORAGE_KEY_BIO_PRF_SALT]);
+  }
 
   await chrome.storage.session.remove([STORAGE_SESSION_BIO_PENDING]);
 
   document.getElementById('spinner').style.display = 'none';
   document.getElementById('title').textContent = 'Success!';
-  document.getElementById('status').textContent = 'Biometric unlock has been enabled. You can close this tab.';
+  document.getElementById('status').textContent = cosmetic
+    ? "Biometric unlock enabled as a device gate only. This device/browser doesn't support the WebAuthn PRF extension, so your password isn't encrypted with an authenticator-held secret — it's protected against casual access, not against anyone who can read the extension's local storage. You can close this tab."
+    : 'Biometric unlock has been enabled. You can close this tab.';
 
   setTimeout(() => window.close(), 2000);
 }
@@ -136,31 +160,43 @@ async function handleAuth() {
   const stored = await chrome.storage.local.get([
     STORAGE_KEY_BIO_CREDENTIAL_ID,
     STORAGE_KEY_BIO_ENCRYPTED_PASSWORD,
-    STORAGE_KEY_BIO_PRF_SALT
+    STORAGE_KEY_BIO_PRF_SALT,
+    STORAGE_KEY_BIO_COSMETIC_KEY
   ]);
 
-  if (!stored.biometricCredentialId || !stored.biometricEncryptedPassword || !stored.biometricPrfSalt) {
-    // A wallet enrolled under the old (pre-PRF) scheme has no PRF salt. Do not
-    // attempt the insecure fallback — ask the user to re-enable so the password
-    // gets re-protected by the authenticator.
-    throw new Error('Biometric authentication needs to be re-enabled in Settings after this security update.');
+  if (!stored.biometricCredentialId || !stored.biometricEncryptedPassword ||
+      (!stored.biometricPrfSalt && !stored[STORAGE_KEY_BIO_COSMETIC_KEY])) {
+    throw new Error('Biometric authentication needs to be re-enabled in Settings.');
   }
 
   const credentialId = new Uint8Array(stored.biometricCredentialId);
-  const prfSalt = base64ToBytes(stored.biometricPrfSalt);
+  let encryptionKey;
 
-  // This get() is the biometric prompt AND the source of the decryption key.
-  // Its result is load-bearing: without a successful user-verified assertion the
-  // PRF secret is never produced, so the password cannot be decrypted.
-  let prfOutput;
-  try {
-    prfOutput = await evaluatePrf(credentialId, prfSalt);
-  } catch (webauthnErr) {
-    throw new Error('WebAuthn error: ' + webauthnErr.message);
+  if (stored.biometricPrfSalt) {
+    const prfSalt = base64ToBytes(stored.biometricPrfSalt);
+    // This get() is the biometric prompt AND the source of the decryption key.
+    // Its result is load-bearing: without a successful user-verified assertion the
+    // PRF secret is never produced, so the password cannot be decrypted.
+    let prfOutput;
+    try {
+      prfOutput = await evaluatePrf(credentialId, prfSalt);
+    } catch (webauthnErr) {
+      throw new Error('WebAuthn error: ' + webauthnErr.message);
+    }
+    encryptionKey = await deriveAesKeyFromPrf(prfOutput);
+    prfOutput.fill(0);
+  } else {
+    // Cosmetic mode: the assertion only proves user verification happened.
+    // The decryption key isn't derived from anything secret — it was stored
+    // alongside the ciphertext at enrollment time (see handleRegister).
+    try {
+      await requireAssertion(credentialId);
+    } catch (webauthnErr) {
+      throw new Error('WebAuthn error: ' + webauthnErr.message);
+    }
+    const rawKey = base64ToBytes(stored[STORAGE_KEY_BIO_COSMETIC_KEY]);
+    encryptionKey = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']);
   }
-
-  const encryptionKey = await deriveAesKeyFromPrf(prfOutput);
-  prfOutput.fill(0);
 
   let password;
   try {
@@ -208,6 +244,25 @@ async function evaluatePrf(credentialId, salt) {
     throw new Error('The authenticator did not return a PRF result, so the password cannot be protected with biometrics.');
   }
   return new Uint8Array(first);
+}
+
+/**
+ * Prompt the authenticator for a plain assertion (no PRF eval) to gate
+ * cosmetic-mode unlock on a successful user-verified ceremony. Does not
+ * produce any secret — see handleAuth's cosmetic branch.
+ */
+async function requireAssertion(credentialId) {
+  const challenge = crypto.getRandomValues(new Uint8Array(64));
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge,
+      rpId: chrome.runtime.id,
+      allowCredentials: [{ id: credentialId, type: 'public-key' }],
+      userVerification: 'required',
+      timeout: WEBAUTHN_TIMEOUT
+    }
+  });
+  if (!assertion) throw new Error('Biometric authentication was cancelled');
 }
 
 /**

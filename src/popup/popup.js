@@ -14,10 +14,10 @@ import { updateSvg as jdenticonUpdateSvg } from '../lib/jdenticon.js';
 import {
   isBiometricSupported,
   isBiometricEnabled,
+  isBiometricCosmetic,
   enableBiometric,
   disableBiometric,
-  biometricUnlock,
-  migrateLegacyBiometric
+  biometricUnlock
 } from '../lib/biometric-auth.js';
 
 // Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
@@ -381,10 +381,6 @@ async function initializeApp() {
   try {
     // Initialize wallet manager
     walletManager = new WalletManager();
-
-    // Retire any pre-PRF biometric enrollment (stored a decryptable key on disk)
-    // before any biometric UI is shown, so the toggle reflects reality.
-    migrateLegacyBiometric().catch(() => {});
 
     // Start logo cache — loads stored data URLs into memory, then checks the
     // manifest in the background; calls updateAssetsList() if new logos arrive.
@@ -4279,6 +4275,10 @@ async function loadBiometricSetting() {
   }
   const enabled = await isBiometricEnabled();
   toggle.checked = enabled;
+  const warning = document.getElementById('biometric-cosmetic-warning');
+  if (warning) {
+    warning.style.display = (enabled && await isBiometricCosmetic()) ? '' : 'none';
+  }
 }
 
 async function handleBiometricToggleChange(e) {
@@ -4289,10 +4289,18 @@ async function handleBiometricToggleChange(e) {
       if (!success) throw new Error('Invalid password');
       await enableBiometric(pw);
     });
-    if (!password) e.target.checked = false;
+    if (!password) {
+      e.target.checked = false;
+    } else {
+      if (await isBiometricCosmetic()) {
+        showToast('Biometric unlock enabled as a device gate only — this device/browser doesn\'t support the WebAuthn PRF extension, so the password isn\'t encrypted at rest', 'info');
+      }
+      await loadBiometricSetting();
+    }
   } else {
     await disableBiometric();
     showToast('Biometric unlock disabled', 'info');
+    await loadBiometricSetting();
   }
 }
 

@@ -799,7 +799,9 @@
             </select>
           </div>
           <div class="settings-item" id="setting-biometric">
-            <span>Biometric Unlock</span>
+            <span>Biometric Unlock
+              <small id="biometric-cosmetic-warning" style="display:none; color:#c47a00;" title="This device/browser doesn't support the WebAuthn PRF extension, so the password is not encrypted with a device-held secret. Biometric unlock only gates the UI, it does not protect data at rest.">&nbsp;(gate only, not encrypted)</small>
+            </span>
             <label class="switch">
               <input type="checkbox" id="biometric-toggle">
               <span class="slider"></span>
