@@ -371,3 +371,85 @@ describe('CryptoUtils.encrypt() + CryptoUtils.decrypt()', () => {
     await expect(CryptoUtils.decrypt(tampered, encryptionKey)).rejects.toThrow();
   });
 }, 30000);
+
+// ---------------------------------------------------------------------------
+// ECDSA signing (noble-backed, constant-time secret path) + BitShares canonical
+// ---------------------------------------------------------------------------
+describe('CryptoUtils.signHash() / verifySignature()', () => {
+  const SECP256K1_N = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
+
+  test('produces a 65-byte, graphene-canonical, low-S signature that recovers the signer', async () => {
+    const keys = await CryptoUtils.generateKeysFromPassword('signtest', 'pw');
+    const priv = keys.active.privateKey;
+    for (let i = 0; i < 5; i++) {
+      const hash = await CryptoUtils.sha256(new Uint8Array([i, 1, 2, 3]));
+      const sig = await CryptoUtils.signHash(hash, priv);
+      expect(sig).toHaveLength(65);
+      // header = 27 + 4 (compressed) + recovery(0..3)
+      expect(sig[0]).toBeGreaterThanOrEqual(31);
+      expect(sig[0]).toBeLessThanOrEqual(34);
+      // graphene canonical: r and s high bit clear
+      expect(sig[1]).toBeLessThan(0x80);
+      expect(sig[33]).toBeLessThan(0x80);
+      // low-S
+      const s = BigInt('0x' + CryptoUtils.bytesToHex(sig.slice(33, 65)));
+      expect(s <= SECP256K1_N / 2n).toBe(true);
+      // recovers to the signer (this is what the chain checks)
+      expect(await CryptoUtils.verifySignature(hash, sig, priv)).toBe(true);
+    }
+  }, 30000);
+
+  test('a signature does not verify against a different key', async () => {
+    const a = await CryptoUtils.generateKeysFromPassword('signer-a', 'pw');
+    const b = await CryptoUtils.generateKeysFromPassword('signer-b', 'pw');
+    const hash = await CryptoUtils.sha256(new Uint8Array([9, 9, 9]));
+    const sig = await CryptoUtils.signHash(hash, a.active.privateKey);
+    expect(await CryptoUtils.verifySignature(hash, sig, b.active.privateKey)).toBe(false);
+  }, 30000);
+
+  test('signing the same hash twice both verify (nonce hedging on retry is safe)', async () => {
+    const keys = await CryptoUtils.generateKeysFromPassword('signtwice', 'pw');
+    const hash = await CryptoUtils.sha256(new Uint8Array([5, 5, 5, 5]));
+    const s1 = await CryptoUtils.signHash(hash, keys.active.privateKey);
+    const s2 = await CryptoUtils.signHash(hash, keys.active.privateKey);
+    expect(await CryptoUtils.verifySignature(hash, s1, keys.active.privateKey)).toBe(true);
+    expect(await CryptoUtils.verifySignature(hash, s2, keys.active.privateKey)).toBe(true);
+  }, 30000);
+});
+
+// ---------------------------------------------------------------------------
+// ECIES memo encryption (noble-backed ECDH shared secret)
+// ---------------------------------------------------------------------------
+describe('CryptoUtils.encryptMemo() / decryptMemo()', () => {
+  test('round-trips between two accounts; both parties can decrypt', async () => {
+    const A = await CryptoUtils.generateKeysFromPassword('memo-a', 'pwA');
+    const B = await CryptoUtils.generateKeysFromPassword('memo-b', 'pwB');
+    const plaintext = 'route 1.2.3456 — pay for order #42';
+    const memo = await CryptoUtils.encryptMemo(plaintext, A.memo.privateKey, B.memo.publicKey);
+
+    expect(memo.from).toBe(A.memo.publicKey);
+    expect(memo.to).toBe(B.memo.publicKey);
+    expect(typeof memo.nonce).toBe('string');
+    expect(await CryptoUtils.decryptMemo(memo, B.memo.privateKey)).toBe(plaintext);
+    expect(await CryptoUtils.decryptMemo(memo, A.memo.privateKey)).toBe(plaintext);
+  }, 30000);
+
+  test('a third party cannot decrypt the memo', async () => {
+    const A = await CryptoUtils.generateKeysFromPassword('memo-a2', 'pwA');
+    const B = await CryptoUtils.generateKeysFromPassword('memo-b2', 'pwB');
+    const C = await CryptoUtils.generateKeysFromPassword('memo-c2', 'pwC');
+    const memo = await CryptoUtils.encryptMemo('secret', A.memo.privateKey, B.memo.publicKey);
+    await expect(CryptoUtils.decryptMemo(memo, C.memo.privateKey)).rejects.toThrow();
+  }, 30000);
+});
+
+// ---------------------------------------------------------------------------
+// WIF round-trip (uses noble getPublicKey for the pubkey side)
+// ---------------------------------------------------------------------------
+describe('CryptoUtils.wifToKeys()', () => {
+  test('re-derives the same public key from the private key string', async () => {
+    const keys = await CryptoUtils.generateKeysFromPassword('wif-acct', 'pw');
+    const rt = await CryptoUtils.wifToKeys(keys.active.privateKey);
+    expect(rt.publicKey).toBe(keys.active.publicKey);
+  }, 30000);
+});

@@ -67,6 +67,13 @@
     "activeTab",
     "notifications",
     "alarms",
+    "wss://*.bitshares.ws/*",
+    "wss://*.bitshares.org/*",
+    "wss://*.bitshares.dev/*",
+    "wss://*.xbts.io/*",
+    "wss://btsws.roelandp.nl/*",
+    "wss://dex.iobanker.com/*",
+    "wss://*.dex.trading/*",
     "https://faucet.xbts.io/*",
     "https://testnet-faucet.xbts.io/*"
   ],

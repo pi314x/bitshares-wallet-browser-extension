@@ -1480,6 +1480,15 @@ export class WalletManager {
       const precision = Math.pow(10, asset.precision);
       const amountInt = Math.round(parseFloat(amount) * precision);
 
+      // Validate the *base-unit* amount, not the human amount. A modest human
+      // figure times a high asset precision can overflow the safe-integer range
+      // and silently lose value before it is serialized as an int64. Reject
+      // here where precision is finally known, rather than sending a wrong
+      // amount on-chain.
+      if (!Number.isSafeInteger(amountInt) || amountInt <= 0) {
+        throw new Error('Transfer amount is invalid or exceeds the maximum precise value for this asset — the transfer was NOT sent.');
+      }
+
       // Build transfer operation
       let memoObject = null;
       if (memo && memo.trim()) {

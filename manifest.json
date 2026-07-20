@@ -63,6 +63,10 @@
     "wss://*.bitshares.ws/*",
     "wss://*.bitshares.org/*",
     "wss://*.bitshares.dev/*",
+    "wss://*.xbts.io/*",
+    "wss://btsws.roelandp.nl/*",
+    "wss://dex.iobanker.com/*",
+    "wss://*.dex.trading/*",
     "https://*.bitshares.org/*",
     "https://faucet.xbts.io/*",
     "https://testnet-faucet.xbts.io/*"

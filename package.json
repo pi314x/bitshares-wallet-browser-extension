@@ -51,5 +51,8 @@
     "moduleNameMapper": {
       "^./bitshares-api\\.js$": "<rootDir>/tests/__mocks__/bitshares-api.js"
     }
+  },
+  "dependencies": {
+    "@noble/secp256k1": "^2.3.0"
   }
 }

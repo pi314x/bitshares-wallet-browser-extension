@@ -6,6 +6,17 @@
  */
 
 import { WORD_LIST } from './bip39-wordlist.js';
+// Audited, constant-time secp256k1 (vendored). Used for every operation that
+// touches a SECRET scalar — public-key derivation, ECDSA signing, and ECDH —
+// so private keys never flow through the non-constant-time BigInt EC math in
+// this file. That BigInt math (ECPoint/G/multiply/recoverPublicKey) is kept
+// only for PUBLIC operations: signature recovery and the on-curve checks, where
+// no secret is involved and timing is irrelevant.
+import {
+  getPublicKey as nobleGetPublicKey,
+  getSharedSecret as nobleGetSharedSecret,
+  signAsync as nobleSignAsync,
+} from './noble-secp256k1.js';
 
 // secp256k1 curve parameters
 const SECP256K1 = {
@@ -538,9 +549,7 @@ export class CryptoUtils {
    * Convert raw 32-byte private key to a WIF + BTS public key pair.
    */
   static async privateKeyBytesToKeyPair(privateKeyBytes) {
-    const privateKeyBigInt = bytesToBigInt(privateKeyBytes);
-    const publicPoint      = G.multiply(privateKeyBigInt);
-    const publicKeyBytes   = publicPoint.toCompressed();
+    const publicKeyBytes = nobleGetPublicKey(privateKeyBytes, true);
     return {
       privateKey: await this.privateKeyToWIF(privateKeyBytes),
       publicKey:  await this.publicKeyToBTS(publicKeyBytes)
@@ -569,14 +578,21 @@ export class CryptoUtils {
     // Hash the seed to get 32 bytes for private key
     const seedHash = await sha256(seed);
 
-    // Use SHA256 hash directly as private key (matches bitsharesjs behavior)
-    // SHA256 output is uniformly distributed and virtually always valid for secp256k1
-    const privateKeyBigInt = bytesToBigInt(seedHash);
+    // Use the SHA-256 hash as the secp256k1 scalar. A valid private key must lie
+    // in [1, n). A 256-bit hash exceeds n only with negligible (~2^-128)
+    // probability, but reduce mod n and reject 0 anyway so the private key and
+    // the public key derived from it stay internally consistent (otherwise a
+    // hash >= n would be stored un-reduced in the WIF while G.multiply reduced it
+    // in the curve group, yielding a mismatched pair). For every real seed
+    // `mod` is a no-op, so this does not change any existing wallet.
+    const privateKeyBigInt = mod(bytesToBigInt(seedHash), SECP256K1.N);
+    if (privateKeyBigInt === 0n) {
+      throw new Error('Derived an invalid (zero) private key from the seed; choose a different account name or password.');
+    }
     const privateKeyBytes = bigIntToBytes(privateKeyBigInt, 32);
 
-    // Generate public key
-    const publicPoint = G.multiply(privateKeyBigInt);
-    const publicKeyBytes = publicPoint.toCompressed();
+    // Generate public key (constant-time secret-scalar multiply via noble)
+    const publicKeyBytes = nobleGetPublicKey(privateKeyBytes, true);
 
     // Convert to WIF and BTS format
     const privateKeyWIF = await this.privateKeyToWIF(privateKeyBytes);
@@ -682,11 +698,9 @@ export class CryptoUtils {
 
     try {
       const privateKeyBytes = await this.wifToPrivateKey(wif);
-      const privateKeyBigInt = bytesToBigInt(privateKeyBytes);
 
-      // Generate public key
-      const publicPoint = G.multiply(privateKeyBigInt);
-      const publicKeyBytes = publicPoint.toCompressed();
+      // Generate public key (constant-time secret-scalar multiply via noble)
+      const publicKeyBytes = nobleGetPublicKey(privateKeyBytes, true);
       const publicKeyBTS = await this.publicKeyToBTS(publicKeyBytes);
 
       return {
@@ -705,89 +719,54 @@ export class CryptoUtils {
    */
   static async signHash(hash, privateKeyWIF) {
     const privateKeyBytes = await this.wifToPrivateKey(privateKeyWIF);
-    const privateKey = bytesToBigInt(privateKeyBytes);
-    const z = bytesToBigInt(hash);
-    const { N } = SECP256K1;
 
-    // Calculate expected public key for recovery ID verification
-    const expectedPubPoint = G.multiply(privateKey);
-    const expectedPubKey = expectedPubPoint.toCompressed();
+    // Expected signer public key, derived in constant time, used to pin the
+    // recovery id below.
+    const expectedPubKey = nobleGetPublicKey(privateKeyBytes, true);
+    const expectedHex = bytesToHex(expectedPubKey);
 
-    let nonce = 0;
+    // noble produces a valid low-S ECDSA signature with RFC-6979 nonces in
+    // constant time (the secret k*G and k^-1 never touch this file's BigInt
+    // math). BitShares additionally requires the stricter "graphene canonical"
+    // form — both r and s must have their top bit clear — which low-S alone does
+    // not guarantee. When a signature fails that check we re-sign with fresh
+    // added entropy (RFC-6979 §3.6 hedging) until one passes; the chain accepts
+    // any valid canonical signature, so resampling the nonce is safe.
+    for (let attempt = 0; attempt < 128; attempt++) {
+      // First attempt is pure deterministic RFC-6979; retries add entropy.
+      const opts = attempt === 0
+        ? { lowS: true }
+        : { lowS: true, extraEntropy: crypto.getRandomValues(new Uint8Array(32)) };
 
-    // Loop until we find a signature that passes BitShares' strict canonical check
-    while (true) {
-      // 1. Generate deterministic k using RFC 6979 style approach
-      const k = await this.generateK(hash, privateKeyBytes, nonce);
+      const sig = await nobleSignAsync(hash, privateKeyBytes, opts);
+      const rBytes = bigIntToBytes(sig.r, 32);
+      const sBytes = bigIntToBytes(sig.s, 32);
 
-      // 2. Calculate R point = k * G
-      const R = G.multiply(k);
+      // Graphene canonical: the node's is_canonical also rejects a leading
+      // 0x00 byte when the next byte lacks its top bit (non-minimal padding),
+      // not just a set top bit — use the full check, or ~0.4% of signatures
+      // pass here and still bounce off the chain.
+      if (!this.isCanonicalSignature(rBytes, sBytes)) continue;
 
-      // 3. Calculate r = R.x mod N
-      const r = mod(R.x, N);
-
-      if (r === 0n) {
-        nonce++; continue;
-      }
-
-      // 4. Calculate s = k^-1 * (z + r * priv) mod N
-      let s = mod(modInverse(k, N) * (z + r * privateKey), N);
-
-      if (s === 0n) {
-        nonce++; continue;
-      }
-
-      // 5. Enforce Low S (BIP-62) - required for canonical signatures
-      if (s > N / 2n) {
-        s = N - s;
-      }
-
-      // 6. Convert to bytes
-      const rBytes = bigIntToBytes(r, 32);
-      const sBytes = bigIntToBytes(s, 32);
-
-      // 7. Canonical check: both R and S must have first byte < 0x80
-      if (rBytes[0] >= 0x80 || sBytes[0] >= 0x80) {
-        nonce++;
-        if (nonce > 100) throw new Error("Unable to find canonical signature after 100 attempts");
-        continue;
-      }
-
-      // 8. Find the correct recovery ID by testing possibilities
-      let recoveryId = -1;
-
-      for (let i = 0; i < 4; i++) {
-        try {
-          const testSig = new Uint8Array(65);
-          testSig[0] = 27 + 4 + i;
-          testSig.set(rBytes, 1);
-          testSig.set(sBytes, 33);
-
-          const recoveredPubKey = this.recoverPublicKey(hash, testSig);
-
-          if (bytesToHex(recoveredPubKey) === bytesToHex(expectedPubKey)) {
-            recoveryId = i;
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-
-      if (recoveryId === -1) {
-        nonce++;
-        if (nonce > 100) throw new Error("Unable to find valid recovery factor");
-        continue;
-      }
-
-      // 9. Construct the final 65-byte Compact Signature
+      // BitShares compact-signature header: 27 + 4 (compressed) + recovery id.
+      // noble's recovery id uses the same convention as recoverPublicKey below.
       const signature = new Uint8Array(65);
-      signature[0] = 27 + 4 + recoveryId;
+      signature[0] = 27 + 4 + (sig.recovery & 3);
       signature.set(rBytes, 1);
       signature.set(sBytes, 33);
 
-      return signature;
+      // Belt-and-suspenders: confirm the header actually recovers the signer's
+      // key using this file's independent (public-only) recovery routine. If it
+      // somehow doesn't, resample rather than emit a signature the chain would
+      // attribute to the wrong key.
+      try {
+        if (bytesToHex(this.recoverPublicKey(hash, signature)) === expectedHex) {
+          return signature;
+        }
+      } catch (_) { /* fall through and retry */ }
     }
+
+    throw new Error('Unable to find a canonical signature after 128 attempts');
   }
 
   /**
@@ -914,88 +893,12 @@ export class CryptoUtils {
     try {
       const recoveredPubKey = this.recoverPublicKey(hash, signature);
       const privateKeyBytes = await this.wifToPrivateKey(expectedPublicKeyWIF);
-      const privateKey = bytesToBigInt(privateKeyBytes);
-      const expectedPubPoint = G.multiply(privateKey);
-      const expectedPubKey = expectedPubPoint.toCompressed();
+      const expectedPubKey = nobleGetPublicKey(privateKeyBytes, true);
 
       return constantTimeEqual(recoveredPubKey, expectedPubKey);
     } catch (error) {
       return false;
     }
-  }
-
-  /**
-   * Generate deterministic k using RFC 6979 (HMAC-SHA256 based).
-   * The `extraEntropy` counter is mixed in as additional data per the
-   * RFC 6979 §3.6 "additional data" mechanism, used when the canonical
-   * signature check requires retrying with a different k.
-   */
-  static async generateK(hash, privateKeyBytes, extraEntropy = 0) {
-    const { N } = SECP256K1;
-
-    // --- RFC 6979 §3.2 steps a–f ---
-    // Build the initial seed: privateKey || hash || extra counter
-    const x = privateKeyBytes;            // 32 bytes
-    const h1 = hash;                      // 32 bytes (already hashed)
-
-    // Extra entropy for retry (§3.6 additional_data)
-    const extra = new Uint8Array(4);
-    new DataView(extra.buffer).setUint32(0, extraEntropy, false);
-
-    // b. V = 0x01 * 32
-    let V = new Uint8Array(32).fill(0x01);
-    // c. K = 0x00 * 32
-    let K = new Uint8Array(32).fill(0x00);
-
-    // d. K = HMAC_K(V || 0x00 || x || h1 || extra)
-    const d_data = new Uint8Array(V.length + 1 + x.length + h1.length + extra.length);
-    d_data.set(V, 0);
-    d_data[V.length] = 0x00;
-    d_data.set(x, V.length + 1);
-    d_data.set(h1, V.length + 1 + x.length);
-    d_data.set(extra, V.length + 1 + x.length + h1.length);
-    K = new Uint8Array(await this._hmacSHA256(K, d_data));
-
-    // e. V = HMAC_K(V)
-    V = new Uint8Array(await this._hmacSHA256(K, V));
-
-    // f. K = HMAC_K(V || 0x01 || x || h1 || extra)
-    const f_data = new Uint8Array(V.length + 1 + x.length + h1.length + extra.length);
-    f_data.set(V, 0);
-    f_data[V.length] = 0x01;
-    f_data.set(x, V.length + 1);
-    f_data.set(h1, V.length + 1 + x.length);
-    f_data.set(extra, V.length + 1 + x.length + h1.length);
-    K = new Uint8Array(await this._hmacSHA256(K, f_data));
-
-    // g. V = HMAC_K(V)
-    V = new Uint8Array(await this._hmacSHA256(K, V));
-
-    // h. Loop until valid k found
-    for (let attempts = 0; attempts < 100; attempts++) {
-      V = new Uint8Array(await this._hmacSHA256(K, V));
-      const kBigInt = bytesToBigInt(V);
-      if (kBigInt >= 1n && kBigInt < N) {
-        return kBigInt;
-      }
-      // Retry: K = HMAC_K(V || 0x00), V = HMAC_K(V)
-      const retry = new Uint8Array(V.length + 1);
-      retry.set(V, 0);
-      retry[V.length] = 0x00;
-      K = new Uint8Array(await this._hmacSHA256(K, retry));
-      V = new Uint8Array(await this._hmacSHA256(K, V));
-    }
-    throw new Error('RFC 6979: unable to generate valid k after 100 attempts');
-  }
-
-  /**
-   * HMAC-SHA256 using Web Crypto API
-   */
-  static async _hmacSHA256(key, data) {
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-    );
-    return await crypto.subtle.sign('HMAC', cryptoKey, data);
   }
 
   /**
@@ -1165,19 +1068,17 @@ export class CryptoUtils {
   static async encryptMemo(message, fromPrivateKeyWIF, toPublicKeyBTS, nonce = null) {
     // Parse sender's private key
     const fromPrivateKeyBytes = await this.wifToPrivateKey(fromPrivateKeyWIF);
-    const fromPrivateKey = bytesToBigInt(fromPrivateKeyBytes);
 
     // Get sender's public key — infer prefix from recipient's key
-    const fromPublicPoint = G.multiply(fromPrivateKey);
     let memoPrefix = 'BTS';
     for (const p of ['BTS', 'TEST', 'GPH']) {
       if (toPublicKeyBTS.startsWith(p)) { memoPrefix = p; break; }
     }
-    const fromPublicKeyBTS = await this.publicKeyToBTS(fromPublicPoint.toCompressed(), memoPrefix);
+    const fromPublicKeyBytes = nobleGetPublicKey(fromPrivateKeyBytes, true);
+    const fromPublicKeyBTS = await this.publicKeyToBTS(fromPublicKeyBytes, memoPrefix);
 
-    // Parse recipient's public key
+    // Parse recipient's public key (noble validates it is a real curve point)
     const toPublicKeyBytes = await this.btsToPublicKeyBytes(toPublicKeyBTS);
-    const toPublicPoint = ECPoint.fromCompressed(toPublicKeyBytes);
 
     // Generate nonce if not provided.
     // Use 64 fully random bits — this avoids any collision risk even when
@@ -1188,12 +1089,12 @@ export class CryptoUtils {
       nonce = randBytes.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n);
     }
 
-    // Compute shared secret: S = fromPrivateKey * toPublicKey
-    const sharedPoint = toPublicPoint.multiply(fromPrivateKey);
+    // Compute the ECDH shared secret x-coordinate (constant-time via noble):
+    // S = fromPrivateKey * toPublicKey; getSharedSecret returns [prefix || x].
+    const sharedXBytes = nobleGetSharedSecret(fromPrivateKeyBytes, toPublicKeyBytes, true).slice(1, 33);
 
     // Derive encryption key using SHA-512 of (nonce || shared_x)
     const nonceBytes = bigIntToBytes(nonce, 8);
-    const sharedXBytes = bigIntToBytes(sharedPoint.x, 32);
     const preKey = new Uint8Array(8 + 32);
     preKey.set(nonceBytes, 0);
     preKey.set(sharedXBytes, 8);
@@ -1234,15 +1135,14 @@ export class CryptoUtils {
 
     // Parse private key
     const privateKeyBytes = await this.wifToPrivateKey(privateKeyWIF);
-    const privateKey = bytesToBigInt(privateKeyBytes);
 
     // Determine if we are sender or recipient — infer prefix from memo's from key
-    const myPublicPoint = G.multiply(privateKey);
     let memoPrefix = 'BTS';
     for (const p of ['BTS', 'TEST', 'GPH']) {
       if (from.startsWith(p)) { memoPrefix = p; break; }
     }
-    const myPublicKeyBTS = await this.publicKeyToBTS(myPublicPoint.toCompressed(), memoPrefix);
+    const myPublicKeyBytes = nobleGetPublicKey(privateKeyBytes, true);
+    const myPublicKeyBTS = await this.publicKeyToBTS(myPublicKeyBytes, memoPrefix);
 
     let otherPublicKeyBTS;
     if (myPublicKeyBTS === from) {
@@ -1257,15 +1157,14 @@ export class CryptoUtils {
 
     // Parse the other party's public key
     const otherPublicKeyBytes = await this.btsToPublicKeyBytes(otherPublicKeyBTS);
-    const otherPublicPoint = ECPoint.fromCompressed(otherPublicKeyBytes);
 
-    // Compute shared secret: S = privateKey * otherPublicKey
-    const sharedPoint = otherPublicPoint.multiply(privateKey);
+    // Compute the ECDH shared secret x-coordinate (constant-time via noble):
+    // S = privateKey * otherPublicKey; getSharedSecret returns [prefix || x].
+    const sharedXBytes = nobleGetSharedSecret(privateKeyBytes, otherPublicKeyBytes, true).slice(1, 33);
 
     // Derive decryption key using SHA-512 of (nonce || shared_x)
     const nonceBigInt = BigInt(nonce);
     const nonceBytes = bigIntToBytes(nonceBigInt, 8);
-    const sharedXBytes = bigIntToBytes(sharedPoint.x, 32);
     const preKey = new Uint8Array(8 + 32);
     preKey.set(nonceBytes, 0);
     preKey.set(sharedXBytes, 8);

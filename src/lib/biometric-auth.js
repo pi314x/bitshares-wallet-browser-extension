@@ -1,7 +1,11 @@
 const STORAGE_KEY_CREDENTIAL_ID = 'biometricCredentialId';
 const STORAGE_KEY_ENABLED = 'biometricEnabled';
 const STORAGE_KEY_ENCRYPTED_PASSWORD = 'biometricEncryptedPassword';
-const STORAGE_KEY_ENCRYPTION_KEY = 'biometricEncryptionKey';
+const STORAGE_KEY_PRF_SALT = 'biometricPrfSalt';
+// Legacy (pre-PRF) key: the raw AES key used to sit next to the ciphertext in
+// local storage, which made the biometric a cosmetic gate. Kept here only so it
+// can be purged from upgraded installs.
+const STORAGE_KEY_LEGACY_ENCRYPTION_KEY = 'biometricEncryptionKey';
 const STORAGE_KEY_RESULT = 'biometricResult';
 const SESSION_KEY_PENDING = 'biometricPending';
 const SESSION_KEY_DECRYPTED = 'biometricDecryptedPassword';
@@ -22,6 +26,30 @@ export function isBiometricSupported() {
 export async function isBiometricEnabled() {
   const result = await chrome.storage.local.get([STORAGE_KEY_ENABLED]);
   return !!result[STORAGE_KEY_ENABLED];
+}
+
+/**
+ * One-time upgrade: an install enrolled under the old (pre-PRF) scheme stored a
+ * decryptable AES key in local storage and no PRF salt. Such an enrollment can
+ * no longer be unlocked (biometric.js requires the PRF salt), and the stored key
+ * is a standing at-rest exposure, so wipe it and turn the toggle off. The user
+ * re-enables under the secure PRF scheme. No-op for fresh/PRF enrollments.
+ *
+ * @returns {boolean} true if a legacy enrollment was migrated (cleared).
+ */
+export async function migrateLegacyBiometric() {
+  const stored = await chrome.storage.local.get([
+    STORAGE_KEY_LEGACY_ENCRYPTION_KEY,
+    STORAGE_KEY_PRF_SALT
+  ]);
+  const isLegacy = !!stored[STORAGE_KEY_LEGACY_ENCRYPTION_KEY] && !stored[STORAGE_KEY_PRF_SALT];
+  if (!isLegacy) return false;
+  await chrome.storage.local.remove([
+    STORAGE_KEY_LEGACY_ENCRYPTION_KEY,
+    STORAGE_KEY_ENCRYPTED_PASSWORD,
+    STORAGE_KEY_ENABLED
+  ]);
+  return true;
 }
 
 function openBiometricTab() {
@@ -75,10 +103,13 @@ export async function enableBiometric(password) {
 
 export async function disableBiometric() {
   // Keep biometricCredentialId so re-enable reuses it via excludeCredentials
-  // (prevents duplicate passkeys on the authenticator)
+  // (prevents duplicate passkeys on the authenticator). Everything that could
+  // decrypt the password — ciphertext, PRF salt, and any legacy plaintext key —
+  // is removed.
   await chrome.storage.local.remove([
     STORAGE_KEY_ENCRYPTED_PASSWORD,
-    STORAGE_KEY_ENCRYPTION_KEY,
+    STORAGE_KEY_PRF_SALT,
+    STORAGE_KEY_LEGACY_ENCRYPTION_KEY,
     STORAGE_KEY_ENABLED
   ]);
 }
@@ -91,10 +122,14 @@ export async function biometricUnlock() {
   const stored = await chrome.storage.local.get([
     STORAGE_KEY_CREDENTIAL_ID,
     STORAGE_KEY_ENCRYPTED_PASSWORD,
-    STORAGE_KEY_ENCRYPTION_KEY
+    STORAGE_KEY_PRF_SALT
   ]);
 
-  if (!stored[STORAGE_KEY_CREDENTIAL_ID] || !stored[STORAGE_KEY_ENCRYPTED_PASSWORD]) {
+  if (!stored[STORAGE_KEY_CREDENTIAL_ID] ||
+      !stored[STORAGE_KEY_ENCRYPTED_PASSWORD] ||
+      !stored[STORAGE_KEY_PRF_SALT]) {
+    // Missing PRF salt means either not configured or a stale legacy enrollment
+    // that migrateLegacyBiometric() should have cleared.
     throw new Error('Biometric authentication is not configured');
   }
 

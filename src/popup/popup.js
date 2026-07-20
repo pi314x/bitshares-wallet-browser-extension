@@ -16,7 +16,8 @@ import {
   isBiometricEnabled,
   enableBiometric,
   disableBiometric,
-  biometricUnlock
+  biometricUnlock,
+  migrateLegacyBiometric
 } from '../lib/biometric-auth.js';
 
 // Async-inject Google Fonts — avoids render-blocking and CSP issues with inline onload handlers
@@ -380,6 +381,10 @@ async function initializeApp() {
   try {
     // Initialize wallet manager
     walletManager = new WalletManager();
+
+    // Retire any pre-PRF biometric enrollment (stored a decryptable key on disk)
+    // before any biometric UI is shown, so the toggle reflects reality.
+    migrateLegacyBiometric().catch(() => {});
 
     // Start logo cache — loads stored data URLs into memory, then checks the
     // manifest in the background; calls updateAssetsList() if new logos arrive.

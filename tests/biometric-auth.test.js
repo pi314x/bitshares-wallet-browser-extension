@@ -10,6 +10,7 @@ import {
   isBiometricSupported,
   isBiometricEnabled,
   disableBiometric,
+  migrateLegacyBiometric,
 } from '../src/lib/biometric-auth.js';
 
 // ---------------------------------------------------------------------------
@@ -73,11 +74,12 @@ describe('isBiometricEnabled', () => {
 // ---------------------------------------------------------------------------
 
 describe('disableBiometric', () => {
-  test('removes sensitive biometric keys but keeps credentialId for reuse', async () => {
+  test('removes sensitive biometric keys (incl. PRF salt + legacy key) but keeps credentialId for reuse', async () => {
     await chrome.storage.local.set({
       biometricCredentialId: [1, 2, 3],
       biometricEncryptedPassword: { iv: 'iv', data: 'data' },
-      biometricEncryptionKey: 'a2V5',
+      biometricPrfSalt: 'c2FsdA==',
+      biometricEncryptionKey: 'a2V5', // legacy field, must also be purged
       biometricEnabled: true,
     });
     await disableBiometric();
@@ -85,14 +87,64 @@ describe('disableBiometric', () => {
     const result = await chrome.storage.local.get([
       'biometricCredentialId',
       'biometricEncryptedPassword',
+      'biometricPrfSalt',
       'biometricEncryptionKey',
       'biometricEnabled',
     ]);
     // credentialId is kept so re-enable can exclude it and avoid duplicates
     expect(result.biometricCredentialId).toEqual([1, 2, 3]);
     expect(result.biometricEncryptedPassword).toBeUndefined();
+    expect(result.biometricPrfSalt).toBeUndefined();
     expect(result.biometricEncryptionKey).toBeUndefined();
     expect(result.biometricEnabled).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// migrateLegacyBiometric — retire pre-PRF enrollments
+// ---------------------------------------------------------------------------
+
+describe('migrateLegacyBiometric', () => {
+  test('clears a legacy enrollment (stored key, no PRF salt) and turns it off', async () => {
+    await chrome.storage.local.set({
+      biometricCredentialId: [1, 2, 3],
+      biometricEncryptedPassword: { iv: 'iv', data: 'data' },
+      biometricEncryptionKey: 'a2V5',
+      biometricEnabled: true,
+    });
+
+    const migrated = await migrateLegacyBiometric();
+    expect(migrated).toBe(true);
+
+    const result = await chrome.storage.local.get([
+      'biometricEncryptionKey',
+      'biometricEncryptedPassword',
+      'biometricEnabled',
+    ]);
+    expect(result.biometricEncryptionKey).toBeUndefined();
+    expect(result.biometricEncryptedPassword).toBeUndefined();
+    expect(result.biometricEnabled).toBeUndefined();
+  });
+
+  test('is a no-op for a PRF enrollment (has salt, no legacy key)', async () => {
+    await chrome.storage.local.set({
+      biometricCredentialId: [1, 2, 3],
+      biometricEncryptedPassword: { iv: 'iv', data: 'data' },
+      biometricPrfSalt: 'c2FsdA==',
+      biometricEnabled: true,
+    });
+
+    const migrated = await migrateLegacyBiometric();
+    expect(migrated).toBe(false);
+
+    const result = await chrome.storage.local.get(['biometricEnabled', 'biometricPrfSalt']);
+    expect(result.biometricEnabled).toBe(true);
+    expect(result.biometricPrfSalt).toBe('c2FsdA==');
+  });
+
+  test('is a no-op when biometric is not configured', async () => {
+    const migrated = await migrateLegacyBiometric();
+    expect(migrated).toBe(false);
   });
 });
 
@@ -101,19 +153,22 @@ describe('disableBiometric', () => {
 // ---------------------------------------------------------------------------
 
 describe('biometric storage contract', () => {
-  test('enable stores biometricCredentialId, biometricEncryptedPassword, biometricEncryptionKey, biometricEnabled', async () => {
-    // This is what biometric.html stores on successful registration
-    const encryptionKey = crypto.getRandomValues(new Uint8Array(32));
+  test('enable stores biometricCredentialId, biometricEncryptedPassword, biometricPrfSalt, biometricEnabled (no raw key)', async () => {
+    // This is what biometric.html stores on successful PRF registration.
+    // Crucially, NO decryptable key is stored — only the ciphertext and a
+    // non-secret PRF salt. The AES key is re-derived from the authenticator.
+    const prfSalt = crypto.getRandomValues(new Uint8Array(32));
     await chrome.storage.local.set({
       biometricCredentialId: 'a2V5X2NyZWRlbnRpYWw=',
       biometricEncryptedPassword: { iv: 'aXZfZGF0YQ==', data: 'ZW5jcnlwdGVkX2RhdGE=' },
-      biometricEncryptionKey: bytesToBase64(encryptionKey),
+      biometricPrfSalt: bytesToBase64(prfSalt),
       biometricEnabled: true,
     });
 
     const result = await chrome.storage.local.get([
       'biometricCredentialId',
       'biometricEncryptedPassword',
+      'biometricPrfSalt',
       'biometricEncryptionKey',
       'biometricEnabled',
     ]);
@@ -121,16 +176,18 @@ describe('biometric storage contract', () => {
     expect(result.biometricEncryptedPassword).toBeTruthy();
     expect(result.biometricEncryptedPassword.iv).toBeTruthy();
     expect(result.biometricEncryptedPassword.data).toBeTruthy();
-    expect(result.biometricEncryptionKey).toBeTruthy();
+    expect(result.biometricPrfSalt).toBeTruthy();
+    // The old plaintext key must NOT be part of the contract anymore.
+    expect(result.biometricEncryptionKey).toBeUndefined();
     expect(result.biometricEnabled).toBe(true);
   });
 
-  test('unlock reads biometricCredentialId, biometricEncryptedPassword, biometricEncryptionKey', async () => {
+  test('unlock reads biometricCredentialId, biometricEncryptedPassword, biometricPrfSalt', async () => {
     // This is what biometricUnlock reads from storage
     const stored = await chrome.storage.local.get([
       'biometricCredentialId',
       'biometricEncryptedPassword',
-      'biometricEncryptionKey',
+      'biometricPrfSalt',
     ]);
     // Should not throw if all present
     expect(stored).toBeDefined();

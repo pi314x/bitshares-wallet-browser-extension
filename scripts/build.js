@@ -19,8 +19,16 @@ const SHARED_FILES = [
   'src/lib/bitshares-api.js',
   'src/lib/bip39-wordlist.js',
   'src/lib/crypto-utils.js',
+  // Vendored constant-time secp256k1 — crypto-utils.js imports it, so the wallet
+  // cannot sign or derive keys without it. Must ship.
+  'src/lib/noble-secp256k1.js',
   'src/lib/qr-generator.js',
   'src/lib/jdenticon.js',
+  // Biometric unlock: popup.js imports biometric-auth.js, and biometric.html
+  // (opened in its own tab) loads biometric.js.
+  'src/lib/biometric-auth.js',
+  'src/biometric.html',
+  'src/biometric.js',
   'src/background/service-worker.js',
   'src/content/inject.js',
   'src/content/inpage.js'
