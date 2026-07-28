@@ -408,19 +408,41 @@ export class BitSharesAPI {
    * Get accounts by public key
    */
   async getAccountsByKey(publicKey) {
-    // Validate public key format before making API call
-    if (!publicKey || typeof publicKey !== 'string' || !publicKey.startsWith('BTS') || publicKey.length < 50) {
+    // Accept any graphene address prefix — BTS (mainnet), TEST (testnet), GPH.
+    // Requiring 'BTS' here made this return [] for every testnet key (TEST…),
+    // which broke brainkey account auto-discovery on testnet (findAndAddAccount
+    // → getAccountsByKey), since get_key_references then never ran.
+    if (!publicKey || typeof publicKey !== 'string' ||
+        !/^(BTS|TEST|GPH)/.test(publicKey) || publicKey.length < 50) {
       console.warn('Invalid public key format:', publicKey);
       return [];
     }
 
     try {
-      const accounts = await this.call(this.apiIds.database, 'get_key_references', [[publicKey]]);
+      // get_key_references parses the key using the CONNECTED chain's address
+      // prefix, so a BTS-prefixed key (what brainkey derivation always emits)
+      // is rejected by a testnet node and vice-versa. Re-encode to the prefix
+      // this chain expects first.
+      const key = this._keyForChainPrefix(publicKey);
+      const accounts = await this.call(this.apiIds.database, 'get_key_references', [[key]]);
       return accounts[0] || [];
     } catch (error) {
       console.error('Get accounts by key error:', error);
       return [];
     }
+  }
+
+  /**
+   * Re-prefix a public key to match the connected chain's address prefix.
+   * The base58 body is prefix-independent (the RIPEMD-160 checksum is computed
+   * over the key bytes only, not the prefix), so this is a pure string swap —
+   * BTS…, TEST… and GPH… of the same key share an identical body.
+   */
+  _keyForChainPrefix(publicKey) {
+    const TESTNET_CHAIN_ID = '39f5e2ede1f8bc1a3a54a7914414e3779e33193f1f5693510e73cb7a87617447';
+    const prefix = this.chainId === TESTNET_CHAIN_ID ? 'TEST' : 'BTS';
+    if (publicKey.startsWith(prefix)) return publicKey;
+    return prefix + publicKey.replace(/^(BTS|TEST|GPH)/, '');
   }
 
   /**
