@@ -3246,12 +3246,16 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeAssetAmount(op.fee));
     buffers.push(this.serializeObjectId(op.account));
     buffers.push(this.serializeObjectId(op.pool));
+    // Wire field names are taker_fee_percent / withdrawal_fee_percent (no "new_"
+    // prefix). Reading only op.new_* meant a canonical dApp op serialized both as
+    // absent, so the node's validate() rejected it ("at least one must be set").
+    // Prefer the canonical names; keep new_* as a fallback for older callers.
     buffers.push(this.serializeOptional(
-      op.new_taker_fee_percent ?? null,
+      op.taker_fee_percent ?? op.new_taker_fee_percent ?? null,
       v => this.writeUint16LE(v)
     ));
     buffers.push(this.serializeOptional(
-      op.new_withdrawal_fee_percent ?? null,
+      op.withdrawal_fee_percent ?? op.new_withdrawal_fee_percent ?? null,
       v => this.writeUint16LE(v)
     ));
     buffers.push(this.encodeVarint(0)); // extensions
@@ -3468,7 +3472,11 @@ serializeOperationData(opType, opData) {
   serializeCreditDealUpdateOp(op) {
     const buffers = [];
     buffers.push(this.serializeAssetAmount(op.fee));
-    buffers.push(this.serializeObjectId(op.borrower));
+    // Wire field is `account` (as in credit_deal_repay), not `borrower`. Reading
+    // op.borrower meant a canonical dApp op left `account` unset, which the node
+    // defaulted to 1.2.0 (the committee account) -> "committee account cannot
+    // directly approve". Prefer op.account; keep op.borrower as a fallback.
+    buffers.push(this.serializeObjectId(op.account ?? op.borrower));
     buffers.push(this.serializeObjectId(op.deal_id));
     buffers.push(this.writeUint8(op.auto_repay ?? 0));
     buffers.push(this.encodeVarint(0)); // extensions
