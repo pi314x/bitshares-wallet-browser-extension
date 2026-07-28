@@ -870,20 +870,27 @@ class BackgroundService {
       const balances = await this.api.getAccountBalances(account.id);
 
       if (assetFilter) {
-        // Find specific asset
-        const targetAssetId = assetFilter === 'BTS' ? '1.3.0' : assetFilter;
-        const balance = balances.find(b => b.asset_id === targetAssetId);
-
-        if (balance) {
-          const asset = await this.api.getAsset(targetAssetId);
-          const precision = Math.pow(10, asset.precision);
-          return {
-            balance: (balance.amount / precision).toFixed(asset.precision),
-            asset: asset.symbol,
-            assetId: targetAssetId
-          };
+        // Accept either a "1.3.x" id or a symbol ("TEST", "BTS", "XBTSX.USDT",
+        // …). Resolve it to the canonical asset first — symbol→id is
+        // network-specific (1.3.0 is "BTS" on mainnet but "TEST" on the
+        // testnet), so never hardcode the mapping. getAsset() already handles
+        // both forms and returns { id, symbol, precision }.
+        let asset = null;
+        try {
+          asset = await this.api.getAsset(assetFilter);
+        } catch (e) {
+          asset = null; // unknown/malformed symbol or id → report a clean zero
         }
-        return { balance: '0', asset: assetFilter, assetId: targetAssetId };
+        if (!asset) {
+          return { balance: '0', asset: assetFilter, assetId: null };
+        }
+        const balance = balances.find(b => b.asset_id === asset.id);
+        const precision = Math.pow(10, asset.precision);
+        return {
+          balance: balance ? (balance.amount / precision).toFixed(asset.precision) : '0',
+          asset: asset.symbol,
+          assetId: asset.id
+        };
       }
 
       // Return all balances
