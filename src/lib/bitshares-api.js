@@ -1774,14 +1774,20 @@ serializeOperationData(opType, opData) {
       ts => this.serializeTimestamp(ts)
     ));
 
-    // on_fill (Optional<vector<limit_order_auto_action>>)
-    // python-bitshares defaults to [] when absent, serialised as Optional present + empty array.
-    const onFill = op.on_fill ?? [];
-    buffers.push(new Uint8Array([1])); // Optional present
-    buffers.push(this.encodeVarint(onFill.length));
-    for (const action of onFill) {
-      buffers.push(this.serializeLimitOrderAutoAction(action));
-    }
+    // on_fill (Optional<vector<limit_order_auto_action>>).
+    // Must be ABSENT when the caller didn't supply it: the node parses a JSON op
+    // with no on_fill field as the empty optional (0x00). Previously this always
+    // wrote "present + empty" (0x01 0x00), so the bytes signed here disagreed with
+    // the bytes the node reconstructs from the same JSON, and the recovered signer
+    // was wrong — the chain rejected it with "Missing Active Authority".
+    buffers.push(this.serializeOptional(
+      (op.on_fill === undefined || op.on_fill === null) ? null : op.on_fill,
+      actions => {
+        const b = [this.encodeVarint(actions.length)];
+        for (const action of actions) b.push(this.serializeLimitOrderAutoAction(action));
+        return this.concatBytes(b);
+      }
+    ));
 
     // extensions (Set — always empty)
     buffers.push(this.encodeVarint(0));
@@ -2110,18 +2116,24 @@ serializeOperationData(opType, opData) {
    * [1] = cdd_vesting_policy_initializer
    */
   serializeVestingPolicyInitializer(policy) {
-    if (!policy) return new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    const type = policy.type || 0;
+    if (!policy) return new Uint8Array(13); // type 0 + begin(4) + cliff(4) + duration(4)
+    // Accept the canonical wire form [type, data] as well as the legacy
+    // {type, ...} object. The node's JSON parser only accepts the array form for
+    // this static_variant, so a caller must send [type, data]; reading the data
+    // out of array[1] here keeps the serialized bytes matching what the node
+    // computes from that same JSON (otherwise the signature fails to verify).
+    const type = Array.isArray(policy) ? policy[0] : (policy.type || 0);
+    const d = Array.isArray(policy) ? (policy[1] || {}) : policy;
     const buffers = [this.encodeVarint(type)];
     if (type === 0) {
       // linear: begin_timestamp, vesting_cliff_seconds, vesting_duration_seconds
-      buffers.push(this.serializeTimestamp(policy.begin_timestamp || 0));
-      buffers.push(this.writeUint32LE(policy.vesting_cliff_seconds || 0));
-      buffers.push(this.writeUint32LE(policy.vesting_duration_seconds || 0));
+      buffers.push(this.serializeTimestamp(d.begin_timestamp || 0));
+      buffers.push(this.writeUint32LE(d.vesting_cliff_seconds || 0));
+      buffers.push(this.writeUint32LE(d.vesting_duration_seconds || 0));
     } else {
       // cdd: start_claim, vesting_seconds
-      buffers.push(this.serializeTimestamp(policy.start_claim || 0));
-      buffers.push(this.writeUint32LE(policy.vesting_seconds || 0));
+      buffers.push(this.serializeTimestamp(d.start_claim || 0));
+      buffers.push(this.writeUint32LE(d.vesting_seconds || 0));
     }
     return this.concatBytes(buffers);
   }
@@ -2134,11 +2146,14 @@ serializeOperationData(opType, opData) {
    */
   serializeWorkerInitializer(init) {
     if (!init) return new Uint8Array([0]);
-    const type = init.type || 0;
+    // Accept the canonical wire form [type, data] as well as legacy {type, ...}.
+    // (The node's JSON parser requires the array form for this static_variant.)
+    const type = Array.isArray(init) ? init[0] : (init.type || 0);
+    const d = Array.isArray(init) ? (init[1] || {}) : init;
     const buffers = [this.encodeVarint(type)];
     if (type === 1) {
       // vesting_balance_worker_initializer: pay_vesting_period_days (uint16)
-      buffers.push(this.writeUint16LE(init.pay_vesting_period_days || 0));
+      buffers.push(this.writeUint16LE(d.pay_vesting_period_days || 0));
     }
     // type 0 (refund) and type 2 (burn) have no fields
     return this.concatBytes(buffers);
@@ -2778,19 +2793,22 @@ serializeOperationData(opType, opData) {
     const predicates = op.predicates || [];
     buffers.push(this.encodeVarint(predicates.length));
     for (const pred of predicates) {
-      const predType = pred.type || 0;
+      // Accept the canonical wire form [type, data] as well as legacy {type, ...};
+      // the node's JSON parser only accepts the array form for this static_variant.
+      const predType = Array.isArray(pred) ? pred[0] : (pred.type || 0);
+      const pd = Array.isArray(pred) ? (pred[1] || {}) : pred;
       buffers.push(this.encodeVarint(predType));
       if (predType === 0) {
         // account_name_eq_lit_predicate: account_id, name
-        buffers.push(this.serializeObjectId(pred.account_id));
-        buffers.push(this.serializeString(pred.name || ''));
+        buffers.push(this.serializeObjectId(pd.account_id));
+        buffers.push(this.serializeString(pd.name || ''));
       } else if (predType === 1) {
         // asset_symbol_eq_lit_predicate: asset_id, symbol
-        buffers.push(this.serializeObjectId(pred.asset_id));
-        buffers.push(this.serializeString(pred.symbol || ''));
+        buffers.push(this.serializeObjectId(pd.asset_id));
+        buffers.push(this.serializeString(pd.symbol || ''));
       } else if (predType === 2) {
         // block_id_predicate: id (20 bytes)
-        buffers.push(this.serializeFixedBytes(pred.id, 20));
+        buffers.push(this.serializeFixedBytes(pd.id, 20));
       }
     }
     buffers.push(this.serializeSet(op.required_auths || [], id => this.serializeObjectId(id)));
