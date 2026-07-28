@@ -113,8 +113,8 @@ function buildOps() {
     72:{fee,borrower:A,offer_id:'1.21.0',borrow_amount:amt(1000),collateral:amt(2000,'1.3.1'),max_fee_rate:20000,min_duration_seconds:3600},
     73:{fee,account:A,deal_id:'1.22.0',repay_amount:amt(1000),credit_fee:amt(10)},
     74:{fee,deal_id:'1.22.1',offer_id:'1.21.1',offer_owner:A,borrower:B,unpaid_amount:amt(100),collateral:amt(200,'1.3.1'),fee_rate:10000},
-    75:{fee,account:A,pool:'1.19.0',new_taker_fee_percent:12,new_withdrawal_fee_percent:6},
-    76:{fee,borrower:A,deal_id:'1.22.0',auto_repay:1},
+    75:{fee,account:A,pool:'1.19.0',taker_fee_percent:12,withdrawal_fee_percent:6},
+    76:{fee,account:A,deal_id:'1.22.0',auto_repay:1},
     77:{fee,seller:A,order:'1.7.1',new_price:price,delta_amount_to_sell:amt(10),new_expiration:ts},
   };
 }
