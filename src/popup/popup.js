@@ -1329,6 +1329,7 @@ async function loadDashboard(forceReconnect = false) {
     const accountIdEl = document.getElementById('account-id');
     accountIdEl.textContent = isWatchOnly ? `${account.id} (Watch Only)` : account.id;
     accountIdEl.dataset.accountId = account.id; // Store raw ID for comparisons
+    accountIdEl.dataset.network = network; // Which network this account/id belongs to (see refreshDashboardData)
 
     // Update avatar with jdenticon — SHA256 pre-hash matches open-explorer/btslens
     const avatarEl = document.getElementById('account-avatar');
@@ -1369,11 +1370,21 @@ async function refreshDashboardData() {
   try {
     if (isLocked) return;
     // Only after loadDashboard's first full pass has populated the account.
-    const accountId = document.getElementById('account-id')?.dataset.accountId;
+    const accountIdEl = document.getElementById('account-id');
+    const accountId = accountIdEl?.dataset.accountId;
     if (!accountId) return;
     // Don't force a reconnect from here — if the socket is down, the next full
     // loadDashboard (or the user's next action) will re-establish it.
     if (!btsAPI || !btsAPI.isConnected) return;
+    // Guard against the network-switch race: handleNetworkChange reconnects
+    // btsAPI to the new network and only afterwards does loadDashboard() update
+    // account-id's dataset to an account that actually exists on it. If this
+    // timer/visibility-triggered refresh lands in that gap, accountId still
+    // belongs to the OLD network while btsAPI is already on the new one —
+    // querying it throws "account_ptr: no such account" (Assert Exception).
+    // Skip and let the in-flight loadDashboard() resolve the correct account.
+    const currentNetwork = document.getElementById('network-select')?.value || 'mainnet';
+    if (accountIdEl.dataset.network && accountIdEl.dataset.network !== currentNetwork) return;
     // Balances only: loadHistory() clears the list before its async fetch, so
     // refreshing it on a timer would flicker the activity list. The balance is
     // the field that was going stale; the History screen refreshes itself on
