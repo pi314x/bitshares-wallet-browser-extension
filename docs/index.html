@@ -20,7 +20,7 @@
     "name": "BitShares Wallet Extension",
     "operatingSystem": "Chrome, Brave, Firefox",
     "applicationCategory": "FinanceApplication",
-    "softwareVersion": "0.8.5",
+    "softwareVersion": "0.8.6",
     "description": "A secure browser extension for the BitShares blockchain. Sign all 78 operation types with human-readable confirmations. Free, open source, and non-custodial.",
     "url": "https://pi314x.github.io/bitshares-wallet-browser-extension/",
     "downloadUrl": "https://github.com/pi314x/bitshares-wallet-browser-extension/releases",
@@ -932,6 +932,93 @@
       margin-top: 2px;
     }
 
+    /* dApp Spotlight */
+    .spotlight {
+      padding: 80px 0;
+    }
+
+    .spotlight-eyebrow {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--primary);
+      background: rgba(0, 212, 170, 0.1);
+      border: 1px solid rgba(0, 212, 170, 0.2);
+      border-radius: 20px;
+      padding: 5px 14px;
+      margin-bottom: 16px;
+    }
+
+    .spotlight-box {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      background: var(--bg-card);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 20px;
+      padding: 40px;
+    }
+
+    .spotlight-visual {
+      width: 100%;
+      max-width: 780px;
+      margin: 0 auto;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    .spotlight-visual img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .spotlight-content {
+      max-width: 720px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .spotlight-content p {
+      text-align: left;
+    }
+
+    .spotlight-content h3 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .spotlight-content p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.7;
+      margin-bottom: 12px;
+    }
+
+    .spotlight-content p strong {
+      color: var(--primary);
+    }
+
+    .spotlight-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .spotlight-note {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
     .carousel-btn {
       position: absolute;
       top: 50%;
@@ -1096,6 +1183,7 @@
       .lightbox-nav.next { right: 8px; }
 
       .callout-box { flex-direction: column; text-align: center; padding: 32px; gap: 24px; }
+      .spotlight-box { padding: 24px; gap: 24px; }
 
       .footer-content {
         flex-direction: column;
@@ -1653,7 +1741,7 @@
             <rect x="20" y="418" width="320" height="44" rx="8" fill="#1a2235"/><text x="36" y="445" fill="#f1f5f9" font-size="13" font-family="sans-serif">Manage Nodes</text><text x="324" y="445" text-anchor="end" fill="#64748b" font-size="13">&#x2192;</text>
             <!-- About -->
             <text x="24" y="500" fill="#64748b" font-size="11" font-weight="500" letter-spacing="0.5" font-family="sans-serif">ABOUT</text>
-            <rect x="266" y="488" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="503" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.8.5</text>
+            <rect x="266" y="488" width="74" height="22" rx="4" fill="#1a2235"/><text x="303" y="503" text-anchor="middle" fill="#64748b" font-size="11" font-family="monospace">v0.8.6</text>
           </svg></div>
           <h4>Settings</h4>
           <p>Customize your wallet</p>
@@ -1675,6 +1763,25 @@
       <div class="lightbox-caption" id="lightbox-caption"></div>
     </div>
   </div>
+
+  <!-- dApp Spotlight: trade.xbts.io -->
+  <section class="spotlight">
+    <div class="container">
+      <div class="spotlight-box">
+        <div class="spotlight-visual">
+          <img src="screenshots/trade-xbts-io.png" alt="trade.xbts.io live trading interface showing the BTS/USDT order book, price chart, and buy/sell limit order panels" loading="lazy" width="1400" height="900">
+        </div>
+        <div class="spotlight-content">
+          <span class="spotlight-eyebrow">dApp Spotlight</span>
+          <h3>Trade on XBTS DEX</h3>
+          <p><a href="https://trade.xbts.io" target="_blank" rel="noopener">trade.xbts.io</a> is the BitShares ecosystem's flagship community exchange &mdash; and it's a full DEX, not just a swap widget: order-book <strong>limit order</strong> trading, <strong>DeFi</strong> liquidity pools, <strong>Credit Offers</strong>, SmartHolder staking, and a Grid Bot, all running on-chain with no custodial order book behind any of it.</p>
+          <p>Connect this wallet and every one of those actions &mdash; a limit order, a pool swap, a credit deal &mdash; routes through its real BitShares operation (<code>limit_order_create</code>, <code>liquidity_pool_exchange</code>, <code>credit_offer_accept</code>, and so on), decoded field-by-field into a plain-English confirmation before you ever sign. That's the same human-readable review this wallet gives all 78 operation types, from a basic transfer to a SameT Fund borrow.</p>
+          <a class="spotlight-link" href="https://trade.xbts.io" target="_blank" rel="noopener">Visit trade.xbts.io &#x2197;</a>
+          <p class="spotlight-note">Independent community dApp shown as a usage example &mdash; not affiliated with or endorsed by this extension.</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- Callout: Why BitShares -->
   <section class="callout">
@@ -2204,7 +2311,7 @@
             </defs>
             <path d="M40 32 L40 96 L72 96 C88 96 96 84 96 72 C96 62 90 54 80 52 C88 50 92 42 92 34 C92 22 84 32 72 32 L40 32 Z M52 44 L68 44 C76 44 80 48 80 54 C80 60 76 64 68 64 L52 64 L52 44 Z M52 72 L72 72 C80 72 84 76 84 82 C84 88 80 84 72 84 L52 84 L52 72 Z" fill="url(#fGrad)"/>
           </svg>
-          BitShares Wallet v0.8.5 &middot; MIT License
+          BitShares Wallet v0.8.6 &middot; MIT License
         </div>
         <div class="footer-links">
           <a href="https://github.com/pi314x/bitshares-wallet-browser-extension" target="_blank">GitHub</a>

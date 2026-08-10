@@ -1654,24 +1654,57 @@ export class WalletManager {
           1,  // limit_order_create
           2,  // limit_order_cancel
           3,  // call_order_update
+          32, // vesting_balance_create
+          33, // vesting_balance_withdraw
+          37, // balance_claim
+          39, // transfer_to_blind
+          40, // blind_transfer
+          41, // transfer_from_blind
+          45, // bid_collateral
+          47, // asset_claim_pool
           49, // htlc_create
           50, // htlc_redeem
           52, // htlc_extend
+          57, // ticket_create
+          58, // ticket_update
+          59, // liquidity_pool_create
+          60, // liquidity_pool_delete
+          61, // liquidity_pool_deposit
+          62, // liquidity_pool_withdraw
           63, // liquidity_pool_exchange
+          64, // samet_fund_create
+          65, // samet_fund_delete
+          66, // samet_fund_update
+          67, // samet_fund_borrow
+          68, // samet_fund_repay
           69, // credit_offer_create
           70, // credit_offer_delete
           71, // credit_offer_update
           72, // credit_offer_accept
           73, // credit_deal_repay
-          76  // credit_deal_update
+          75, // liquidity_pool_update
+          76, // credit_deal_update
+          77  // limit_order_update
         ]);
         const OP_NAMES = {
           0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
-          3: 'call_order_update', 49: 'htlc_create', 50: 'htlc_redeem',
-          52: 'htlc_extend', 63: 'liquidity_pool_exchange',
+          3: 'call_order_update',
+          32: 'vesting_balance_create', 33: 'vesting_balance_withdraw',
+          37: 'balance_claim', 39: 'transfer_to_blind',
+          40: 'blind_transfer', 41: 'transfer_from_blind',
+          45: 'bid_collateral', 47: 'asset_claim_pool',
+          49: 'htlc_create', 50: 'htlc_redeem', 52: 'htlc_extend',
+          57: 'ticket_create', 58: 'ticket_update',
+          59: 'liquidity_pool_create',
+          60: 'liquidity_pool_delete', 61: 'liquidity_pool_deposit',
+          62: 'liquidity_pool_withdraw', 63: 'liquidity_pool_exchange',
+          64: 'samet_fund_create', 65: 'samet_fund_delete',
+          66: 'samet_fund_update', 67: 'samet_fund_borrow',
+          68: 'samet_fund_repay',
           69: 'credit_offer_create', 70: 'credit_offer_delete',
           71: 'credit_offer_update', 72: 'credit_offer_accept',
-          73: 'credit_deal_repay', 76: 'credit_deal_update'
+          73: 'credit_deal_repay', 75: 'liquidity_pool_update',
+          76: 'credit_deal_update', 77: 'limit_order_update'
         };
         for (const op of tx.operations) {
           const opType = Array.isArray(op) ? op[0] : (typeof op.type === 'number' ? op.type : null);

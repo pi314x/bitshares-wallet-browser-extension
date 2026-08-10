@@ -1020,6 +1020,21 @@ export class BitSharesAPI {
         if (!Array.isArray(map)) opData[key] = pairs;
       };
 
+      // Helper: normalise a scalar object-id field (e.g. samet_fund_*'s fund_id)
+      // that some dApps send as a bare instance number (33) instead of the
+      // qualified "space.type.instance" string ("1.20.33") the node's JSON
+      // deserializer requires — same "Bad Cast: Invalid cast from type
+      // 'uint64_type' to Object" failure mode as repairIdMap's keys, above.
+      const resolveIdField = (opData, key, idPrefix) => {
+        const v = opData[key];
+        if (typeof v === 'number' && Number.isInteger(v) && v >= 0) {
+          opData[key] = idPrefix + v;
+        } else if (typeof v === 'string') {
+          const repaired = this._repairDoubledId(v);
+          opData[key] = /^\d+$/.test(repaired) ? idPrefix + repaired : repaired;
+        }
+      };
+
       // All operations: ensure fee is a valid asset object
       if (!d.fee || typeof d.fee !== 'object') d.fee = { amount: 0, asset_id: '1.3.0' };
       if (d.fee.amount === undefined || d.fee.amount === null) d.fee.amount = 0;
@@ -1131,13 +1146,23 @@ export class BitSharesAPI {
           break;
         case 50: // htlc_redeem
           await resolveAccount(d, 'redeemer');
-          d.htlc_id = this._repairDoubledId(d.htlc_id);
+          resolveIdField(d, 'htlc_id', '1.16.');
           // preimage: bytes — the node expects lowercase hex
           if (typeof d.preimage === 'string') d.preimage = d.preimage.toLowerCase();
           break;
         case 52: // htlc_extend
           await resolveAccount(d, 'update_issuer');
-          d.htlc_id = this._repairDoubledId(d.htlc_id);
+          resolveIdField(d, 'htlc_id', '1.16.');
+          break;
+        case 59: // liquidity_pool_create
+          await resolveAccount(d, 'account');
+          await resolveAssetField(d, 'asset_a');
+          await resolveAssetField(d, 'asset_b');
+          await resolveAssetField(d, 'share_asset');
+          break;
+        case 60: // liquidity_pool_delete
+          await resolveAccount(d, 'account');
+          resolveIdField(d, 'pool', '1.19.');
           break;
         case 63: // liquidity_pool_exchange
           await resolveAccount(d, 'account');
@@ -1164,6 +1189,30 @@ export class BitSharesAPI {
             );
           }
           break;
+        case 64: // samet_fund_create
+          await resolveAccount(d, 'owner_account');
+          await resolveAssetField(d, 'asset_type');
+          break;
+        case 65: // samet_fund_delete
+          await resolveAccount(d, 'owner_account');
+          resolveIdField(d, 'fund_id', '1.20.');
+          break;
+        case 66: // samet_fund_update
+          await resolveAccount(d, 'owner_account');
+          resolveIdField(d, 'fund_id', '1.20.');
+          if (d.delta_amount) await resolveAssetId(d.delta_amount);
+          break;
+        case 67: // samet_fund_borrow
+          await resolveAccount(d, 'borrower');
+          resolveIdField(d, 'fund_id', '1.20.');
+          await resolveAssetId(d.borrow_amount);
+          break;
+        case 68: // samet_fund_repay
+          await resolveAccount(d, 'account');
+          resolveIdField(d, 'fund_id', '1.20.');
+          await resolveAssetId(d.repay_amount);
+          await resolveAssetId(d.fund_fee);
+          break;
         case 69: // credit_offer_create
           await resolveAccount(d, 'owner_account');
           await resolveAssetField(d, 'asset_type');
@@ -1172,36 +1221,38 @@ export class BitSharesAPI {
           break;
         case 70: // credit_offer_delete
           await resolveAccount(d, 'owner_account');
-          d.offer_id = this._repairDoubledId(d.offer_id);
+          resolveIdField(d, 'offer_id', '1.21.');
           break;
         case 71: // credit_offer_update
           await resolveAccount(d, 'owner_account');
-          d.offer_id = this._repairDoubledId(d.offer_id);
+          resolveIdField(d, 'offer_id', '1.21.');
           if (d.delta_amount) await resolveAssetId(d.delta_amount);
           repairIdMap(d, 'acceptable_collateral', '1.3.');
           repairIdMap(d, 'acceptable_borrowers', '1.2.');
           break;
         case 72: // credit_offer_accept
           await resolveAccount(d, 'borrower');
-          d.offer_id = this._repairDoubledId(d.offer_id);
+          resolveIdField(d, 'offer_id', '1.21.');
           await resolveAssetId(d.borrow_amount);
           await resolveAssetId(d.collateral);
           break;
         case 73: // credit_deal_repay
           await resolveAccount(d, 'account');
-          d.deal_id = this._repairDoubledId(d.deal_id);
+          resolveIdField(d, 'deal_id', '1.22.');
           await resolveAssetId(d.repay_amount);
           await resolveAssetId(d.credit_fee);
           break;
         case 75: // liquidity_pool_update
           await resolveAccount(d, 'account');
+          resolveIdField(d, 'pool', '1.19.');
           break;
         case 76: // credit_deal_update
           await resolveAccount(d, 'borrower');
-          d.deal_id = this._repairDoubledId(d.deal_id);
+          resolveIdField(d, 'deal_id', '1.22.');
           break;
         case 77: // limit_order_update
           await resolveAccount(d, 'seller');
+          resolveIdField(d, 'order', '1.7.');
           if (d.new_price) {
             await resolveAssetId(d.new_price.base);
             await resolveAssetId(d.new_price.quote);
@@ -1209,6 +1260,48 @@ export class BitSharesAPI {
           if (d.delta_amount_to_sell) {
             await resolveAssetId(d.delta_amount_to_sell);
           }
+          break;
+        case 32: // vesting_balance_create
+          await resolveAccount(d, 'creator');
+          await resolveAccount(d, 'owner');
+          await resolveAssetId(d.amount);
+          break;
+        case 33: // vesting_balance_withdraw
+          await resolveAccount(d, 'owner');
+          resolveIdField(d, 'vesting_balance', '1.13.');
+          await resolveAssetId(d.amount);
+          break;
+        case 37: // balance_claim
+          await resolveAccount(d, 'deposit_to_account');
+          resolveIdField(d, 'balance_to_claim', '1.15.');
+          await resolveAssetId(d.total_claimed);
+          break;
+        case 39: // transfer_to_blind
+          await resolveAccount(d, 'from');
+          await resolveAssetId(d.amount);
+          break;
+        case 41: // transfer_from_blind
+          await resolveAccount(d, 'to');
+          await resolveAssetId(d.amount);
+          break;
+        case 45: // bid_collateral
+          await resolveAccount(d, 'bidder');
+          await resolveAssetId(d.additional_collateral);
+          await resolveAssetId(d.debt_covered);
+          break;
+        case 47: // asset_claim_pool
+          await resolveAccount(d, 'issuer');
+          await resolveAssetField(d, 'asset_id');
+          await resolveAssetId(d.amount_to_claim);
+          break;
+        case 57: // ticket_create
+          await resolveAccount(d, 'account');
+          await resolveAssetId(d.amount);
+          break;
+        case 58: // ticket_update
+          await resolveAccount(d, 'account');
+          resolveIdField(d, 'ticket', '1.18.');
+          if (d.amount_for_new_target) await resolveAssetId(d.amount_for_new_target);
           break;
         default:
           // For any unknown op: resolve a top-level "account" field if present
