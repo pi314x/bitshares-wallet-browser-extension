@@ -419,7 +419,10 @@ export class WalletManager {
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: normalizedBrainkey,
         bitsharesAccountName: bitsharesAccountName || null,
-        // Note: bitsharesPassword is intentionally NOT stored — only derived keys are kept.
+        // Stored inside the PBKDF2-encrypted blob (same trust level as the
+        // brainkey) so Retrieve Private Key can show it later — matches
+        // addAccountByCredentials.
+        bitsharesPassword: bitsharesPassword || null,
         keys: keys,
         accounts: []
       }, encryptionKey);
@@ -472,6 +475,7 @@ export class WalletManager {
       let brainkey = null;
 
       let bitsharesAccountName = null;
+      let bitsharesPassword = null;
 
       const keyPrefix = network === 'testnet' ? 'TEST' : 'BTS';
 
@@ -484,6 +488,7 @@ export class WalletManager {
             keyPrefix
           );
           bitsharesAccountName = importData.accountName;
+          bitsharesPassword = importData.password;
           break;
 
         case 'brainkey':
@@ -503,8 +508,10 @@ export class WalletManager {
       const encryptedData = await CryptoUtils.encrypt({
         brainkey: brainkey,
         bitsharesAccountName: bitsharesAccountName,
-        // bitsharesPassword intentionally NOT stored — only derived keys are kept.
-        // Storing the source password would expose it if the wallet password is compromised.
+        // Stored inside the PBKDF2-encrypted blob (same trust level as the
+        // brainkey) so Retrieve Private Key can show it later — matches
+        // addAccountByCredentials.
+        bitsharesPassword: bitsharesPassword,
         keys: keys,
         accounts: []
       }, encryptionKey);
