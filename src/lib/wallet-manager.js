@@ -6,6 +6,43 @@
 import { CryptoUtils, bytesToBase64, base64ToBytes } from './crypto-utils.js';
 import { BitSharesAPI } from './bitshares-api.js';
 
+/**
+ * The operation field whose account actually signs.
+ *
+ * Recipients like `to` are deliberately absent: who receives value should not constrain who
+ * is allowed to sign for it.
+ */
+export const AUTH_FIELDS = ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account'];
+
+/**
+ * Operations whose signer is named by a field the generic list does not carry.
+ *
+ * These cannot simply be appended to AUTH_FIELDS. 'owner' means the BENEFICIARY in
+ * vesting_balance_create -- the signer there is `creator` -- so treating it as an authority
+ * field everywhere would start rejecting legitimate vesting transfers to third parties.
+ * Binding the field to the operation type keeps both correct.
+ */
+export const OP_AUTH_FIELD = {
+  78: 'owner',      // oracle_create
+  79: 'owner',      // oracle_update
+  80: 'owner',      // oracle_delete
+  81: 'producer',   // oracle_publish  -- a producer, NOT the oracle's owner
+  82: 'owner',      // futures_market_create
+  83: 'owner',      // futures_market_update
+  84: 'owner',      // futures_order_create
+  85: 'owner',      // futures_order_cancel
+  87: 'owner',      // futures_position_adjust_margin
+  88: 'liquidator', // futures_liquidate -- permissionless, so not the position owner
+  89: 'owner'       // futures_settle
+};
+
+/// Which fields to consult for one operation, given as [opType, opData].
+export function authFieldsFor(op) {
+  const type = Array.isArray(op) ? op[0] : null;
+  const specific = OP_AUTH_FIELD[type];
+  return specific ? [specific] : AUTH_FIELDS;
+}
+
 export class WalletManager {
   constructor() {
     this.isUnlockedState = false;
@@ -1581,7 +1618,6 @@ export class WalletManager {
       // Account-authority fields: the operation fields whose account's active
       // authority is what actually signs (NOT recipients like `to`, which
       // shouldn't constrain who signs).
-      const AUTH_FIELDS = ['from', 'account', 'seller', 'fee_paying_account', 'registrar', 'account_id', 'issuer', 'funding_account'];
       const ops = tx.operations || [];
 
       let resolvedId = accountId;
@@ -1590,7 +1626,7 @@ export class WalletManager {
         for (const op of ops) {
           const opData = Array.isArray(op) ? op[1] : op;
           if (!opData || typeof opData !== 'object') continue;
-          for (const field of AUTH_FIELDS) {
+          for (const field of authFieldsFor(op)) {
             const val = opData[field];
             if (typeof val === 'string' && /^1\.2\.\d+$/.test(val)) {
               resolvedId = val;
@@ -1629,7 +1665,7 @@ export class WalletManager {
         for (const op of ops) {
           const opData = Array.isArray(op) ? op[1] : op;
           if (!opData || typeof opData !== 'object') continue;
-          for (const field of AUTH_FIELDS) {
+          for (const field of authFieldsFor(op)) {
             const val = opData[field];
             if (typeof val === 'string' && /^1\.2\.\d+$/.test(val) && !inBoundary(val)) {
               throw new Error(`Transaction references account ${val}, which is not connected to this site`);
@@ -1691,7 +1727,22 @@ export class WalletManager {
           73, // credit_deal_repay
           75, // liquidity_pool_update
           76, // credit_deal_update
-          77  // limit_order_update
+          77, // limit_order_update
+          // Oracles. oracle_delete is included because it only ever removes an object the
+          // signing account owns, and cannot touch balances.
+          78, // oracle_create
+          79, // oracle_update
+          80, // oracle_delete
+          81, // oracle_publish
+          // Futures. 86 (futures_fill) is deliberately absent: it is a VIRTUAL operation
+          // the chain emits itself, and no wallet should ever be asked to sign one.
+          82, // futures_market_create
+          83, // futures_market_update
+          84, // futures_order_create
+          85, // futures_order_cancel
+          87, // futures_position_adjust_margin
+          88, // futures_liquidate
+          89  // futures_settle
         ]);
         const OP_NAMES = {
           0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
@@ -1711,7 +1762,13 @@ export class WalletManager {
           69: 'credit_offer_create', 70: 'credit_offer_delete',
           71: 'credit_offer_update', 72: 'credit_offer_accept',
           73: 'credit_deal_repay', 75: 'liquidity_pool_update',
-          76: 'credit_deal_update', 77: 'limit_order_update'
+          76: 'credit_deal_update', 77: 'limit_order_update',
+          78: 'oracle_create', 79: 'oracle_update',
+          80: 'oracle_delete', 81: 'oracle_publish',
+          82: 'futures_market_create', 83: 'futures_market_update',
+          84: 'futures_order_create', 85: 'futures_order_cancel',
+          87: 'futures_position_adjust_margin', 88: 'futures_liquidate',
+          89: 'futures_settle'
         };
         for (const op of tx.operations) {
           const opType = Array.isArray(op) ? op[0] : (typeof op.type === 'number' ? op.type : null);

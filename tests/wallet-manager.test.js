@@ -12,7 +12,7 @@
  * via setupFiles in jest config and is available on global.chrome.
  */
 
-import { WalletManager } from '../src/lib/wallet-manager.js';
+import { WalletManager, AUTH_FIELDS, OP_AUTH_FIELD, authFieldsFor } from '../src/lib/wallet-manager.js';
 
 // ---------------------------------------------------------------------------
 // Global teardown: clear any lingering auto-lock timers after all tests
@@ -339,3 +339,47 @@ describe('WalletManager.isUnlocked()', () => {
     expect(result).toBe(true);
   });
 }, 60000);
+
+describe('authority fields per operation type', () => {
+    // These decide two things at once: which account the wallet signs with, and which
+    // accounts the connected-site boundary check constrains. Getting the field wrong
+    // therefore either blocks a legitimate transaction or, worse, fails to constrain one.
+
+    test('generic operations still use the shared field list', () => {
+        // transfer (0) names its signer with `from`
+        expect(authFieldsFor([0, {from: '1.2.17', to: '1.2.18'}])).toBe(AUTH_FIELDS);
+    });
+
+    test('vesting_balance_create is NOT treated as owner-signed', () => {
+        // The regression this guards: `owner` there is the beneficiary and `creator` signs.
+        // If `owner` were added to AUTH_FIELDS globally, creating a vesting balance for
+        // somebody else would start being rejected as "not connected to this site".
+        const fields = authFieldsFor([32, {creator: '1.2.17', owner: '1.2.99'}]);
+        expect(fields).toBe(AUTH_FIELDS);
+        expect(fields).not.toContain('owner');
+    });
+
+    test('oracle_publish resolves to the producer, not the owner', () => {
+        // An oracle's owner may not publish to it unless separately listed as a producer,
+        // so signing a publish as the owner would produce a guaranteed rejection.
+        expect(authFieldsFor([81, {producer: '1.2.17', oracle_id: '1.23.0'}])).toEqual([
+            'producer'
+        ]);
+    });
+
+    test('futures_liquidate resolves to the liquidator', () => {
+        // Liquidation is permissionless: the signer is whoever calls it, never the owner
+        // of the position being liquidated.
+        expect(authFieldsFor([88, {liquidator: '1.2.17'}])).toEqual(['liquidator']);
+    });
+
+    test('every futures and oracle operation has an authority field', () => {
+        // 86 is futures_fill, a virtual operation the chain emits itself -- no wallet
+        // should ever be asked to sign one, so it must NOT appear here.
+        const signable = [78, 79, 80, 81, 82, 83, 84, 85, 87, 88, 89];
+        signable.forEach(type => {
+            expect(OP_AUTH_FIELD[type]).toBeDefined();
+        });
+        expect(OP_AUTH_FIELD[86]).toBeUndefined();
+    });
+});
