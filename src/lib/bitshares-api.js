@@ -4029,7 +4029,43 @@ serializeOperationData(opType, opData) {
       buffers.push(this.encodeVarint(0));
     }
 
+    // pq_ciphertext -- gated, wie pq_key_auths.
+    //
+    // Ohne diese Zeilen fehlt jedem Memo nach der Aktivierung das Optional-Byte, und zwar
+    // JEDEM, nicht nur den post-quantum verschluesselten. Die Signatur deckte dann andere
+    // Bytes ab als der Knoten berechnet, und jede Ueberweisung mit Memo wuerde abgewiesen.
+    buffers.push(this.serializePqCiphertext(memo.pq_ciphertext));
+
     return this.concatBytes(buffers);
+  }
+
+  /**
+   * Der ML-KEM-Chiffretext eines hybriden Memos, als optional<vector<char>> und gated.
+   *
+   * Vorhanden zu sein, waehrend die Kette das alte Format fahrt, ist keine Kleinigkeit: das
+   * Feld faellt beim Schreiben weg, der KEM-Anteil ist aber die halbe AES-Schluessel, und das
+   * Memo waere bestaetigt und fuer immer unlesbar. Darum ein Fehler statt stillem Verwerfen.
+   */
+  serializePqCiphertext(ciphertext) {
+    if (!this.pqSerializationActive) {
+      if (ciphertext) {
+        throw new Error(
+          'This memo is post-quantum encrypted, but the connected chain has not enabled ' +
+          'post-quantum serialization. The ciphertext would be dropped on the wire and the ' +
+          'memo would be permanently unreadable.'
+        );
+      }
+      return new Uint8Array([]);
+    }
+    if (!ciphertext) return new Uint8Array([0]);
+    const bytes = typeof ciphertext === 'string'
+      ? hexToBytes(ciphertext)
+      : Uint8Array.from(ciphertext);
+    return this.concatBytes([
+      new Uint8Array([1]),
+      this.encodeVarint(bytes.length),
+      bytes
+    ]);
   }
 
   /**
