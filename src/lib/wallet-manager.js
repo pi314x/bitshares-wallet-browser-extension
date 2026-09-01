@@ -1487,6 +1487,74 @@ export class WalletManager {
   }
 
   /**
+   * Den post-quantum Schluessel dieses Kontos an seine aktive Autoritaet anhaengen.
+   *
+   * ANHAENGEN, nicht ersetzen: die klassischen Schluessel bleiben mit ihrem Gewicht stehen,
+   * also kann ein Fehler hier das Konto nicht aussperren. Das ist auch der Grund, warum es
+   * fuer sich genommen noch KEIN Schutz ist -- solange ein klassischer Schluessel in der
+   * Autoritaet steht, bleibt das Konto quantenangreifbar. Es ist der erste von zwei
+   * Schritten, und der zweite (die klassischen Schluessel entfernen) gehoert nicht in eine
+   * Browser-Erweiterung: er ist unumkehrbar und braucht eine gesicherte Kopie.
+   *
+   * Der Schluessel wird aus Kontoname und Kontopasswort abgeleitet, wie in der
+   * Referenz-Wallet. Es gibt also nichts zusaetzlich zu sichern.
+   */
+  async attachPostQuantumKey(accountId = null) {
+    try {
+      await this.ensureUnlocked();
+
+      const account = accountId
+        ? (await this.getAllAccounts()).find(a => a.id === accountId)
+        : await this.getCurrentAccount();
+      if (!account) {
+        return {success: false, error: 'Account not found in this wallet'};
+      }
+
+      const creds = await this._pqCredentialsFor(account.id)();
+      if (!creds) {
+        return {
+          success: false,
+          error: 'This wallet has no account password to derive a post-quantum key from. ' +
+                 'Brainkey-only wallets cannot do this yet.'
+        };
+      }
+
+      const chainAccount = await this.api.getAccount(account.id);
+      if (!chainAccount) {
+        return {success: false, error: `Account ${account.id} not found on chain`};
+      }
+
+      const kp = await this.api.derivePqKey(creds.accountName, creds.rootSecret);
+      const mine = this.api.pqPublicKeyToBase58(kp.publicKey, 2, 'BTS');
+
+      const existing = (chainAccount.active && chainAccount.active.pq_key_auths) || [];
+      if (existing.some(([key]) => key === mine)) {
+        return {success: true, alreadyPresent: true, publicKey: mine};
+      }
+
+      const active = JSON.parse(JSON.stringify(chainAccount.active));
+      active.pq_key_auths = existing.concat([[mine, 1]]);
+
+      const keys = await this.getAccountKeys(account.id);
+      const result = await this.api.broadcastTransaction(
+        'account_update',
+        {
+          account: account.id,
+          active,
+          extensions: {}
+        },
+        keys.active.privateKey,
+        this._pqCredentialsFor(account.id)
+      );
+
+      return {success: true, publicKey: mine, result};
+    } catch (error) {
+      console.error('Attach post-quantum key error:', error);
+      return {success: false, error: error.message};
+    }
+  }
+
+  /**
    * Get brainkey (requires unlock)
    */
   async getBrainkey() {

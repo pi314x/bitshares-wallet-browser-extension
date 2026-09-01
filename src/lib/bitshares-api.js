@@ -837,7 +837,8 @@ export class BitSharesAPI {
           : await this.signTransaction(transaction, privateKey);
 
       // Broadcast and wait for the real confirmation (see broadcastWithConfirmation)
-      return await this.broadcastWithConfirmation(signedTx);
+      const confirmation = await this.broadcastWithConfirmation(signedTx);
+      return {...confirmation, signedWith: signedTx._signedWith || 'classical'};
     } catch (error) {
       console.error('Broadcast transaction error:', error);
       throw error;
@@ -1426,7 +1427,8 @@ export class BitSharesAPI {
 
     // 4. Broadcast and wait for the real confirmation (see broadcastWithConfirmation)
     try {
-      return await this.broadcastWithConfirmation(signedTx);
+      const confirmation = await this.broadcastWithConfirmation(signedTx);
+      return {...confirmation, signedWith: signedTx._signedWith || 'classical'};
     } catch (broadcastErr) {
       // Re-throw with the operation JSON attached so it's visible in the dApp
       // console (inpage.js propagates the message string back to the page).
@@ -1579,6 +1581,11 @@ export class BitSharesAPI {
       key: this.pqPublicKeyToBase58(kp.publicKey, 2, prefix),
       signature: bytesToHex(signature)
     }];
+    // Nicht Teil der Transaktion auf der Leitung -- die Serialisierung liest nur benannte
+    // Felder --, sondern fuer den Aufrufer, damit die Oberflaeche sagen kann, was geschah.
+    Object.defineProperty(transaction, '_signedWith', {
+      value: 'post-quantum', enumerable: false, configurable: true
+    });
     return transaction;
   }
 
@@ -1602,6 +1609,9 @@ export class BitSharesAPI {
       // 4. Sign the hash using our CryptoUtils
       const signature = await CryptoUtils.signHash(msgHash, privateKeyWIF);
       transaction.signatures = [bytesToHex(signature)];
+      Object.defineProperty(transaction, '_signedWith', {
+        value: 'classical', enumerable: false, configurable: true
+      });
 
       return transaction;
     } catch (error) {
