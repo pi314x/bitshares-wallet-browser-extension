@@ -800,7 +800,7 @@ export class BitSharesAPI {
   /**
    * Build and broadcast a transaction
    */
-  async broadcastTransaction(operationType, operationData, privateKey) {
+  async broadcastTransaction(operationType, operationData, privateKey, pqCredentials = null) {
     try {
       // Get required fee
       const feeAsset = await this.getAsset('1.3.0');
@@ -812,25 +812,29 @@ export class BitSharesAPI {
 
       operationData.fee = requiredFees[0];
 
-      // Verify public key matches account's active authority (silent check)
-      const localPubKey = await CryptoUtils.wifToKeys(privateKey);
+      // Womit signiert wird, entscheidet die Autoritaet -- derselbe Weg wie in
+      // signAndBroadcast. Hier stand vorher nur ein console.warn und es wurde trotzdem
+      // klassisch signiert: fuer ein Konto mit rein post-quantum Autoritaet hiess das eine
+      // Ablehnung durch die Kette mit einer Meldung, die den Grund nicht nannte.
       const accountId = operationData.from || operationData.account;
+      let method = {mode: 'classical'};
       if (accountId) {
-        const accountInfo = await this.getAccount(accountId);
-        if (accountInfo) {
-          const activeKeys = accountInfo.active.key_auths;
-          const keyFound = activeKeys.some(([pubKey]) => pubKey === localPubKey.publicKey);
-          if (!keyFound) {
-            console.warn('Key mismatch: local key not found in account active authority');
-          }
-        }
+        method = await this.chooseSigningMethod(accountId, privateKey, pqCredentials);
       }
 
       // Build transaction
       const transaction = await this.buildTransaction(operationType, operationData);
 
       // Sign transaction
-      const signedTx = await this.signTransaction(transaction, privateKey);
+      const signedTx =
+        method.mode === 'post-quantum'
+          ? await this.signTransactionPq(
+              transaction,
+              method.credentials.accountName,
+              method.credentials.rootSecret,
+              method.credentials.prefix || 'BTS'
+            )
+          : await this.signTransaction(transaction, privateKey);
 
       // Broadcast and wait for the real confirmation (see broadcastWithConfirmation)
       return await this.broadcastWithConfirmation(signedTx);
