@@ -1057,6 +1057,30 @@ export class CryptoUtils {
   }
 
   /**
+   * Der AES-Schluessel eines Memos, genau wie ihn die Kette bildet.
+   *
+   *   sha512( to_string(nonce) + ecdh_secret.str() )
+   *
+   * -- memo_aes_key in libraries/protocol/memo.cpp. Drei Feinheiten, an denen die frueher
+   * hier stehende Fassung scheiterte, mit dem Ergebnis, dass jedes verschluesselte Memo
+   * dieser Extension fuer jede andere BitShares-Wallet unlesbar war:
+   *
+   *   - die nonce geht als DEZIMALE ZEICHENKETTE ein, nicht als acht rohe Bytes;
+   *   - das ECDH-Geheimnis ist sha512 der x-Koordinate, als HEX-ZEICHENKETTE angehaengt,
+   *     nicht die 32 rohen Bytes von x;
+   *   - Schluessel und IV sind die ersten 32 beziehungsweise die naechsten 16 Bytes des
+   *     Ergebnisses -- das war als einziges schon richtig.
+   *
+   */
+  static async memoAesKey(nonce, sharedXBytes) {
+    const ecdhSecret = await this.sha512(sharedXBytes);
+    const seedText = String(nonce) + bytesToHex(ecdhSecret);
+
+    const keyHash = await this.sha512(new TextEncoder().encode(seedText));
+    return {key: keyHash.slice(0, 32), iv: keyHash.slice(32, 48)};
+  }
+
+  /**
    * Encrypt memo using ECIES (Elliptic Curve Integrated Encryption Scheme)
    * Compatible with BitShares memo encryption standard
    * @param {string} message - The plaintext message to encrypt
@@ -1093,34 +1117,26 @@ export class CryptoUtils {
     // S = fromPrivateKey * toPublicKey; getSharedSecret returns [prefix || x].
     const sharedXBytes = nobleGetSharedSecret(fromPrivateKeyBytes, toPublicKeyBytes, true).slice(1, 33);
 
-    // Derive encryption key using SHA-512 of (nonce || shared_x)
-    const nonceBytes = bigIntToBytes(nonce, 8);
-    const preKey = new Uint8Array(8 + 32);
-    preKey.set(nonceBytes, 0);
-    preKey.set(sharedXBytes, 8);
+    const {key: encryptionKey, iv} = await this.memoAesKey(
+      nonce.toString(), sharedXBytes);
 
-    const keyHash = await this.sha512(preKey);
-    const encryptionKey = keyHash.slice(0, 32);  // First 32 bytes for AES key
-    const iv = keyHash.slice(32, 48);            // Next 16 bytes for IV
-
-    // Encrypt message with AES-256-CBC
+    // Die Pruefsumme liegt INNERHALB des Chiffrats, nicht davor. Die Kette verschluesselt
+    // memo_message = checksum(4, LE) || text am Stueck; eine vorangestellte Klartext-
+    // Pruefsumme verschiebt alles um vier Bytes und verraet nebenbei sha256(Klartext).
     const messageBytes = new TextEncoder().encode(message);
-    const encryptedBytes = await this.aes256CbcEncrypt(messageBytes, encryptionKey, iv);
-
-    // Calculate checksum (first 4 bytes of SHA-256 of message)
     const messageChecksum = await sha256(messageBytes);
-    const checksum = messageChecksum.slice(0, 4);
 
-    // Prepend checksum to encrypted message
-    const finalMessage = new Uint8Array(4 + encryptedBytes.length);
-    finalMessage.set(checksum, 0);
-    finalMessage.set(encryptedBytes, 4);
+    const payload = new Uint8Array(4 + messageBytes.length);
+    payload.set(messageChecksum.slice(0, 4), 0);
+    payload.set(messageBytes, 4);
+
+    const encryptedBytes = await this.aes256CbcEncrypt(payload, encryptionKey, iv);
 
     return {
       from: fromPublicKeyBTS,
       to: toPublicKeyBTS,
       nonce: nonce.toString(),
-      message: bytesToHex(finalMessage)
+      message: bytesToHex(encryptedBytes)
     };
   }
 
@@ -1162,36 +1178,69 @@ export class CryptoUtils {
     // S = privateKey * otherPublicKey; getSharedSecret returns [prefix || x].
     const sharedXBytes = nobleGetSharedSecret(privateKeyBytes, otherPublicKeyBytes, true).slice(1, 33);
 
-    // Derive decryption key using SHA-512 of (nonce || shared_x)
-    const nonceBigInt = BigInt(nonce);
-    const nonceBytes = bigIntToBytes(nonceBigInt, 8);
-    const preKey = new Uint8Array(8 + 32);
-    preKey.set(nonceBytes, 0);
-    preKey.set(sharedXBytes, 8);
+    const {key: decryptionKey, iv} = await this.memoAesKey(
+      String(nonce), sharedXBytes);
 
-    const keyHash = await this.sha512(preKey);
-    const decryptionKey = keyHash.slice(0, 32);
-    const iv = keyHash.slice(32, 48);
-
-    // Parse message (hex -> bytes)
-    const messageBytes = hexToBytes(message);
-
-    // Extract checksum (first 4 bytes) and encrypted data
-    const checksum = messageBytes.slice(0, 4);
-    const encryptedBytes = messageBytes.slice(4);
-
-    // Decrypt with AES-256-CBC
-    const decryptedBytes = await this.aes256CbcDecrypt(encryptedBytes, decryptionKey, iv);
-
-    // Verify checksum
-    const decryptedChecksum = await sha256(decryptedBytes);
-    for (let i = 0; i < 4; i++) {
-      if (checksum[i] !== decryptedChecksum[i]) {
-        throw new Error('Memo checksum verification failed');
-      }
+    // Das gesamte Chiffrat entschluesseln; die Pruefsumme steckt darin. Ein falscher
+    // Schluessel scheitert meist schon an der Blockauffuellung, also wirft aes256CbcDecrypt
+    // hier -- was ohne dieses try den Rueckfall unten unerreichbar machen wuerde.
+    let decrypted = null;
+    try {
+      decrypted = await this.aes256CbcDecrypt(hexToBytes(message), decryptionKey, iv);
+    } catch (e) {
+      decrypted = null;
     }
+    const plaintext = await this.verifyMemoChecksum(decrypted);
+    if (plaintext !== null) return new TextDecoder().decode(plaintext);
 
-    return new TextDecoder().decode(decryptedBytes);
+    // Bis zur Korrektur der Ableitung schrieb diese Extension Memos, die keine andere
+    // BitShares-Wallet lesen konnte. Sie liegen unveraenderlich in der Kette, und der
+    // Nutzer soll wenigstens seine eigenen alten noch oeffnen koennen. Nur als Rueckfall,
+    // nie zum Schreiben: was hier gelesen wird, wurde nach der Korrektur nie erzeugt.
+    const legacy = await this.decryptMemoLegacy(nonce, sharedXBytes, message);
+    if (legacy !== null) return legacy;
+
+    throw new Error('Memo checksum verification failed');
+  }
+
+  /// Pruefsumme im entschluesselten Block pruefen. Klartext oder null, nie eine Ausnahme:
+  /// der Aufrufer entscheidet, ob es noch etwas zu versuchen gibt.
+  static async verifyMemoChecksum(decrypted) {
+    if (!decrypted || decrypted.length < 4) return null;
+    const checksum = decrypted.slice(0, 4);
+    const plaintext = decrypted.slice(4);
+    const expected = await sha256(plaintext);
+    for (let i = 0; i < 4; i++) {
+      if (checksum[i] !== expected[i]) return null;
+    }
+    return plaintext;
+  }
+
+  /**
+   * Die alte, mit nichts anderem kompatible Fassung: nonce als acht rohe Bytes, die rohe
+   * x-Koordinate statt ihres sha512, und die Pruefsumme im Klartext VOR dem Chiffrat.
+   * Ausschliesslich zum Lesen von Altbestand.
+   */
+  static async decryptMemoLegacy(nonce, sharedXBytes, message) {
+    try {
+      const preKey = new Uint8Array(8 + 32);
+      preKey.set(bigIntToBytes(BigInt(nonce), 8), 0);
+      preKey.set(sharedXBytes, 8);
+
+      const keyHash = await this.sha512(preKey);
+      const messageBytes = hexToBytes(message);
+      const decrypted = await this.aes256CbcDecrypt(
+        messageBytes.slice(4), keyHash.slice(0, 32), keyHash.slice(32, 48));
+
+      const checksum = messageBytes.slice(0, 4);
+      const expected = await sha256(decrypted);
+      for (let i = 0; i < 4; i++) {
+        if (checksum[i] !== expected[i]) return null;
+      }
+      return new TextDecoder().decode(decrypted);
+    } catch (e) {
+      return null;
+    }
   }
 
   /**

@@ -453,3 +453,44 @@ describe('CryptoUtils.wifToKeys()', () => {
     expect(rt.publicKey).toBe(keys.active.publicKey);
   }, 30000);
 });
+
+// ---------------------------------------------------------------------------
+// Compatibility with the rest of BitShares.
+//
+// The tests above only check this wallet against itself, which is exactly why the memo
+// derivation could be wrong for as long as it was: encrypt and decrypt were wrong in the
+// same way, so every round trip passed while every memo this extension sent was unreadable
+// by the recipient. For a memo that carries a gateway deposit id, unreadable means the
+// money is stranded.
+//
+// So these vectors come from outside. They were produced by bitsharesjs, which is what the
+// reference wallet uses and which is verified against the chain's own memo.cpp. The keys
+// are synthetic, generated from fixed seed strings for this file alone.
+// ---------------------------------------------------------------------------
+describe('memo compatibility with bitsharesjs / the chain', () => {
+  const V = {
+    "aliceWif": "5J8kgL4tauReryvBny4AWkGC4EVo6BucHysTBDQL5SoXxUa29ya",
+    "alicePub": "BTS8g9Uhs5WFAFtp8QbwhotamFApRUcx6SGEjDc4Mw2QMmX1Sqq4V",
+    "bobWif": "5JNxWXucnrvsZAcBvRatf2NnTjG7zSsWc1tzCmmUziL73zLdgT3",
+    "bobPub": "BTS6XFoP7CtdZMiCA78T689UachQh8bAvJx7kXh5ST17QeKwqatxn",
+    "nonce": "1234567890123456789",
+    "text": "route 1.2.3456 — pay for order #42",
+    "klassischMessage": "c30cf672df9fb18721c1bed101fb5c73b9c2809b81aba928856a1542f6e81670cd7718303e84dfcf3e8a28643e16ed70",
+    "kemPub58": "BTSPTLeZV6zyDFWjxsT69ctNtckixcBmduU5CybQA4qwy4X3DvmTMgxRjENvTBwSFyB1UbxAJ92FbTrkppjNsKeWYqASNNjNR1asowFhbgZ6VSHBrs6xK1oe3HLkPiDHYSopWRBpnsJuwEJgm1r2s3KY9mYvPMw3bXU15cUPXx3287Q5wUYDKU6GiHsjc5JSy6WEkxMmySFu3psEyHMiEQvzpipKLGSTXUNnWPBfp4AbDryBPLw9UV3ywqimsSFbcfyKCRVV7cmNa79AT9JmUpfnw93Y3uhdRFU1DqhASE87LPV1hNKiqLmfwSGeDXASY3kJQCGFaCYKJdFm48Tmc75jdwa41Q6nddZP1ZS61TPQo43GhuotmZsVjuoy37ohr8m3ghRdvf8VbZhq37WCiBrVkTLBNtFUPozR1ELEYa75TunevKfHnrkUoDjsTMHbsy88Yt63YTzrYc9eJaes4EPp1B5uwmVcbBRba7369rohL9G8HEcsdmNbETgZ45nWZUgc1hAycVZ3yUhzS7CvEPyp9A1Zp88EgzDyYi52jtWXnYnJvryiUpC7oE74RkZPvteZmDDyXzVHvS8LdimhSswrpn7VkpVXNpWo161LqukFaEYaMs3h3WMKm13r88dgL3deBvCcK66geWpLBp9cTy75uZWSePoHrRqk9PiRJWgAffnJdmFZz3EerP5KnB1MBp5gb7QWEL5Bs6nifkBYoCQSbo7VM64H9g87r3D66bUoySfhMqn7uUUjS9teyQ3y3Uy8AxscG9rZ3UFDPfta9sSVeSmRJpYYdFTkNyAuKqvuj6ozMkkz1VZK2Rsy8kCWQUdKfXrfHim9Yv5wTiXVFfXWVAgECEBDUGqDvMwfdKGGo9uLWPoA7HuPEF4XFMBq8hi1hMHpYdcorJ3ey1u5mQjoQ8qxjSvkc7Fi8KvwWo6L2RYADTwkxhkEtMnRorzysYgatCbeHQkJvrYkJEP3K9kkBNpZt3cuKSPBMVkYLvaQ8RjHGDazn3iPMLc8daxgrsA7ovK3PU6JYMRdZEsPzLncU9vRqT1xN5MaKtMsLqcL91i35zdzxPhfKiPwM9x1ASJoGWNm5tDgU2dYJBo2h5miB16dce4QXViNT1iW4hriaHWD5AFVH4PsvktZz8LuPHmw2p1JBKwpWJyxYSQVvVwgjJv3JWvqcfXfUaWX45vLKiQkDuQAzk3Lfsu6GURc3TCnroLGZoWbTU4f1dx8XRbMhkEyVhRbRgEUJxixYKE1qBFTwPDzuxQdmR7iu9tWeeyVj9RDSypeuCrnWGvLoTni41mbM5zENhV4daEckNSrAszZakXtZoZgACUdnGVyZWRetyzgq7cF2V7vjgYHMoE9DUGi7LCknM8qQBeoYiL6qKdooN2MnpQsMPxtQyucWbGwNE1VLXcpPFcm7TcsfGH3db89dtVcyed9KwevkRaNogfsYA7WaryF9R6FHqqiDH57zUBWdKChUpGU6UnenmdmUoNERXnJRCzJeP1wNfRafvekqaWadhQzDXarhGcwYhjegGyNNwVidzZsLMpihzLhHNGWpLu8Ve72Q9FvJxtvyH9kYCoMNNe2CuBDguARFVYUVGC8qedHYjVyuopPhH7TTv4",
+    "hybridMessage": "7c7af26253fa4afd719bc16374f33e6cbc40d579f2e6a0b2dcc7770d15bbb565a97026fda296ae573830de8e21bd0dae",
+    "hybridSharedSecret": "0c48e89f684323b656bc0fd259c5c802d776246c6f91fe67dc5778622f5894e9"
+};
+
+  test('decrypts a memo produced by bitsharesjs', async () => {
+    const text = await CryptoUtils.decryptMemo({
+      from: V.alicePub, to: V.bobPub, nonce: V.nonce, message: V.klassischMessage
+    }, V.bobWif);
+    expect(text).toBe(V.text);
+  }, 30000);
+
+  test('produces byte-identical output for the same nonce', async () => {
+    const memo = await CryptoUtils.encryptMemo(
+      V.text, V.aliceWif, V.bobPub, BigInt(V.nonce));
+    expect(memo.message).toBe(V.klassischMessage);
+  }, 30000);
+});
