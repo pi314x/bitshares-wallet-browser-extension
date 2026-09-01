@@ -1164,6 +1164,23 @@ export class BitSharesAPI {
           await resolveAccount(d, 'account');
           resolveIdField(d, 'pool', '1.19.');
           break;
+        case 61: // liquidity_pool_deposit
+          await resolveAccount(d, 'account');
+          resolveIdField(d, 'pool', '1.19.');
+          await resolveAssetId(d.amount_a);
+          await resolveAssetId(d.amount_b);
+          break;
+        case 62: // liquidity_pool_withdraw
+          // Beide Operationen fehlten hier. Sie wurden dem Nutzer also mit rohen IDs
+          // vorgelegt -- und seit die typisierte Erweiterung etwas transportiert, waere
+          // auch nicht sichtbar gewesen, dass einseitig ausgezahlt wird.
+          await resolveAccount(d, 'account');
+          resolveIdField(d, 'pool', '1.19.');
+          await resolveAssetId(d.share_amount);
+          if (d.extensions && d.extensions.withdraw_one_asset) {
+            await resolveAssetField(d.extensions, 'withdraw_one_asset');
+          }
+          break;
         case 63: // liquidity_pool_exchange
           await resolveAccount(d, 'account');
           await resolveAssetId(d.amount_to_sell);
@@ -3301,17 +3318,50 @@ serializeOperationData(opType, opData) {
   }
 
   /**
+   * Serialize a typed extension: varint count, then for each field present a varint index
+   * followed by its value, in ascending index order.
+   *
+   * The pool operations used to hardcode encodeVarint(0) here, which is the encoding of an
+   * EMPTY extension. That was correct while the operations had no typed fields, and stopped
+   * being correct the moment they did: a single-sided withdrawal, or a minimum a user sets
+   * to bound what a withdrawal pays out, cannot be expressed at all if the extension is
+   * always written as empty. The extension signed something other than what the caller
+   * asked for, and silently.
+   *
+   * @param {Array<{index:number, value:*, encode:Function}>} fields
+   */
+  serializeTypedExtension(fields) {
+    const present = fields
+      .filter(f => f.value !== undefined && f.value !== null)
+      .sort((a, b) => a.index - b.index);
+    const buffers = [this.encodeVarint(present.length)];
+    for (const f of present) {
+      buffers.push(this.encodeVarint(f.index));
+      buffers.push(f.encode(f.value));
+    }
+    return this.concatBytes(buffers);
+  }
+
+  /**
    * Serialize liquidity_pool_deposit operation (op 61)
-   * { fee, account, pool, amount_a, amount_b, extensions }
+   * { fee, account, pool, amount_a, amount_b, extensions: { min_to_receive } }
+   *
+   * min_to_receive is the fewest share units the deposit may mint. An imbalanced deposit
+   * pays a fee that depends on the pool's state when it executes, and whoever builds the
+   * block decides what happens immediately before that -- so the depositor gets to say how
+   * much of that they will accept.
    */
   serializeLiquidityPoolDepositOp(op) {
+    const ext = op.extensions || {};
     const buffers = [];
     buffers.push(this.serializeAssetAmount(op.fee));
     buffers.push(this.serializeObjectId(op.account));
     buffers.push(this.serializeObjectId(op.pool));
     buffers.push(this.serializeAssetAmount(op.amount_a));
     buffers.push(this.serializeAssetAmount(op.amount_b));
-    buffers.push(this.encodeVarint(0)); // extensions
+    buffers.push(this.serializeTypedExtension([
+      { index: 0, value: ext.min_to_receive, encode: v => this.writeInt64LE(v) }
+    ]));
     return this.concatBytes(buffers);
   }
 
@@ -3320,12 +3370,21 @@ serializeOperationData(opType, opData) {
    * { fee, account, pool, share_amount, extensions }
    */
   serializeLiquidityPoolWithdrawOp(op) {
+    const ext = op.extensions || {};
     const buffers = [];
     buffers.push(this.serializeAssetAmount(op.fee));
     buffers.push(this.serializeObjectId(op.account));
     buffers.push(this.serializeObjectId(op.pool));
     buffers.push(this.serializeAssetAmount(op.share_amount));
-    buffers.push(this.encodeVarint(0)); // extensions
+    // 0: withdraw_one_asset -- take the whole payout in one asset (stable pools only).
+    // 1/2: min_a / min_b -- the least each side may pay out. Both sides get their own
+    // bound because a proportional withdrawal pays out both, and a bound on one leg says
+    // nothing about the other.
+    buffers.push(this.serializeTypedExtension([
+      { index: 0, value: ext.withdraw_one_asset, encode: v => this.serializeObjectId(v) },
+      { index: 1, value: ext.min_a, encode: v => this.writeInt64LE(v) },
+      { index: 2, value: ext.min_b, encode: v => this.writeInt64LE(v) }
+    ]));
     return this.concatBytes(buffers);
   }
 
