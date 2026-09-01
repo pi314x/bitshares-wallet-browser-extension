@@ -1414,9 +1414,9 @@ export class BitSharesAPI {
       method.mode === 'post-quantum'
         ? await this.signTransactionPq(
             freshTx,
-            pqCredentials.accountName,
-            pqCredentials.rootSecret,
-            pqCredentials.prefix || 'BTS'
+            method.credentials.accountName,
+            method.credentials.rootSecret,
+            method.credentials.prefix || 'BTS'
           )
         : await this.signTransaction(freshTx, privateKeyWIF);
 
@@ -1488,11 +1488,19 @@ export class BitSharesAPI {
     }
 
     const pqKeys = (account.active && account.active.pq_key_auths) || [];
-    if (pqKeys.length && pqCredentials && pqCredentials.accountName && pqCredentials.rootSecret) {
-      const kp = await this.derivePqKey(pqCredentials.accountName, pqCredentials.rootSecret);
-      const mine = this.pqPublicKeyToBase58(kp.publicKey, 2, pqCredentials.prefix || 'BTS');
-      if (pqKeys.some(([key]) => key === mine)) {
-        return {mode: 'post-quantum', keypair: kp, publicKey: mine};
+    if (pqKeys.length && pqCredentials) {
+      // Erst hier aufloesen, nicht vorher: pqCredentials darf eine Funktion sein, und der
+      // klassische Weg -- der weit haeufigere -- soll das Kontopasswort gar nicht erst
+      // anfassen. Ein Geheimnis, das nicht geholt wird, kann auch nicht liegenbleiben.
+      const creds = typeof pqCredentials === 'function'
+        ? await pqCredentials()
+        : pqCredentials;
+      if (creds && creds.accountName && creds.rootSecret) {
+        const kp = await this.derivePqKey(creds.accountName, creds.rootSecret);
+        const mine = this.pqPublicKeyToBase58(kp.publicKey, 2, creds.prefix || 'BTS');
+        if (pqKeys.some(([key]) => key === mine)) {
+          return {mode: 'post-quantum', keypair: kp, publicKey: mine, credentials: creds};
+        }
       }
     }
 

@@ -1796,7 +1796,26 @@ export class WalletManager {
       const keys = await this.getAccountKeys(signingAccount.id);
 
       // Sign the transaction AND broadcast it (fills fees, refreshes headers, signs, broadcasts)
-      const result = await this.api.signAndBroadcast(tx, keys.active.privateKey);
+      // Die PQ-Anmeldedaten als Funktion, nicht als Wert: geholt werden sie nur, wenn die
+      // Autoritaet des Kontos post-quantum Schluessel fuehrt und der klassische Weg nicht
+      // traegt. Fuer jede andere Signatur bleibt das BitShares-Passwort ungelesen.
+      const pqCredentials = async () => {
+        try {
+          const stored = await this.getStoredPassword();
+          const creds = await this.getBitsharesPassword(stored, signingAccount.id);
+          return creds && creds.password
+            ? {accountName: creds.accountName, rootSecret: creds.password}
+            : null;
+        } catch (e) {
+          // Eine Brainkey-Wallet hat kein Kontopasswort. Dann gibt es keinen ableitbaren
+          // PQ-Schluessel, und chooseSigningMethod verweigert mit klarer Begruendung --
+          // besser als hier zu raten.
+          return null;
+        }
+      };
+
+      const result = await this.api.signAndBroadcast(
+        tx, keys.active.privateKey, pqCredentials);
       return { success: true, result };
     } catch (error) {
       console.error('Sign transaction error:', error);
