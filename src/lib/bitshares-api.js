@@ -17,6 +17,10 @@ export class BitSharesAPI {
       'wss://api.bitshares.dev/ws'        // in.abit, USA/Virginia, 543.5ms
     ];
     this.currentNodeIndex = 0;
+    // Vorgabe legacy, wie fc::raw::pq_format selbst. Wird beim Verbinden aus den
+    // Kettenparametern nachgezogen; solange sie unbekannt sind, ist legacy die einzige
+    // Annahme, die auf einer Kette vor dem Hardfork richtig ist.
+    this.pqSerializationActive = false;
     this.ws = null;
     this.callId = 0;
     this.pendingCalls = new Map();
@@ -353,6 +357,9 @@ export class BitSharesAPI {
 
     this.chainId = chainProps.chain_id;
     this.dynamicGlobalProperties = dynamicProps;
+    // Das Serialisierungsformat gehoert zu den Ketteneigenschaften, auch wenn es nicht in
+    // get_chain_properties steht: es entscheidet ueber die Bytes jeder Transaktion.
+    await this.refreshPqSerializationState();
   }
 
   /**
@@ -2090,6 +2097,101 @@ serializeOperationData(opType, opData) {
    * { weight_threshold: uint32, account_auths: map(account_id, uint16),
    *   key_auths: map(public_key, uint16), address_auths: map(address, uint16) }
    */
+  /**
+   * Ist die post-quantum Serialisierung auf der verbundenen Kette aktiv?
+   *
+   * Das ist keine Feinheit der Darstellung, sondern entscheidet ueber die BYTES. Unter dem
+   * neuen Format tragen authority und account_options je ein zusaetzliches Feld, und der
+   * Digest, ueber den signiert wird, ist der der gepackten Transaktion. Wer im falschen
+   * Format packt, unterschreibt etwas anderes als die Kette prueft -- und zwar unbemerkt,
+   * weil eine Signatur ueber einen falschen Digest genauso aussieht wie eine ueber den
+   * richtigen. Betroffen waeren account_create und account_update: die Operationen, die
+   * bestimmen, wem ein Konto gehoert.
+   *
+   * Wird beim Verbinden einmal ermittelt und danach gemerkt.
+   */
+  async refreshPqSerializationState() {
+    try {
+      const gp = await this.call(this.apiIds.database, 'get_global_properties', []);
+      const ext = (gp && gp.parameters && gp.parameters.extensions) || {};
+      this.pqSerializationActive = !!ext.pq_serialization_active;
+    } catch (e) {
+      // Ein Knoten, der die Kettenparameter nicht liefert, ist mit hoher Wahrscheinlichkeit
+      // ein alter -- und alt heisst legacy. Fehlschlagen darf das Verbinden daran nicht.
+      this.pqSerializationActive = false;
+    }
+    return this.pqSerializationActive;
+  }
+
+  /**
+   * Serialize pq_public_key_type: { algorithm (int64), data (bytes), legacy (optional) }.
+   *
+   * Nimmt die kanonische base58-Form entgegen, die die Kette im JSON liefert
+   * (PREFIX + "P" + base58(algorithmus || schluessel || pruefsumme)), oder die reflektierte
+   * Objektform. Der legacy-Teil wird nur weitergereicht, wenn er ausdruecklich als Objekt
+   * mitkommt; die base58-Form bildet ihn nicht ab.
+   */
+  serializePqPublicKey(key) {
+    let algorithm;
+    let data;
+    let legacy = null;
+
+    if (typeof key === 'string') {
+      const marker = key.indexOf('P');
+      if (marker < 0) {
+        throw new Error(`Invalid post-quantum key: no prefix marker in "${key.slice(0, 16)}..."`);
+      }
+      const decoded = this.base58Decode(key.slice(marker + 1));
+      if (decoded.length < 5) {
+        throw new Error('Invalid post-quantum key: too short');
+      }
+      algorithm = decoded[0];
+      data = decoded.slice(1, decoded.length - 4); // ohne die 4 Pruefbytes
+    } else if (key && typeof key === 'object') {
+      algorithm = Number(key.algorithm);
+      data = typeof key.data === 'string' ? hexToBytes(key.data) : key.data;
+      legacy = key.legacy || null;
+    } else {
+      throw new Error(`Invalid post-quantum key: ${typeof key}`);
+    }
+
+    const buffers = [
+      this.writeInt64LE(algorithm),
+      this.encodeVarint(data.length),
+      data,
+      legacy === null
+        ? new Uint8Array([0])
+        : this.concatBytes([new Uint8Array([1]), this.serializePublicKey(legacy)])
+    ];
+    return this.concatBytes(buffers);
+  }
+
+  /**
+   * Das gated Feld pq_key_auths beziehungsweise pq_memo_key.
+   *
+   * Unter dem alten Format wird NICHTS geschrieben -- kein leeres Feld, kein Nullbyte. Genau
+   * das meint fc::pq_gated: die Bytes bleiben identisch zu einer Kette vor dem Hardfork.
+   */
+  serializePqKeyAuths(pqKeyAuths) {
+    if (!this.pqSerializationActive) {
+      if (pqKeyAuths && pqKeyAuths.length) {
+        throw new Error(
+          'This transaction carries post-quantum key authorities, but the connected chain ' +
+          'has not enabled post-quantum serialization. Signing it would produce a signature ' +
+          'over bytes the chain does not expect.'
+        );
+      }
+      return new Uint8Array([]);
+    }
+    const entries = pqKeyAuths || [];
+    const buffers = [this.encodeVarint(entries.length)];
+    for (const [key, weight] of entries) {
+      buffers.push(this.serializePqPublicKey(key));
+      buffers.push(this.writeUint16LE(weight));
+    }
+    return this.concatBytes(buffers);
+  }
+
   serializeAuthority(auth) {
     if (!auth) {
       // Empty authority
@@ -2097,6 +2199,7 @@ serializeOperationData(opType, opData) {
         this.writeUint32LE(0), // weight_threshold
         this.encodeVarint(0),  // account_auths (empty)
         this.encodeVarint(0),  // key_auths (empty)
+        this.serializePqKeyAuths(null), // pq_key_auths -- leer, und nur wenn aktiv
         this.encodeVarint(0)   // address_auths (empty)
       ]);
     }
@@ -2116,6 +2219,10 @@ serializeOperationData(opType, opData) {
       buffers.push(this.serializePublicKey(pubKey));
       buffers.push(this.writeUint16LE(weight));
     }
+    // pq_key_auths steht zwischen key_auths und address_auths -- siehe pack_authority_impl
+    // in libraries/protocol/authority.cpp. An der falschen Stelle waere jede Autoritaet
+    // falsch gepackt.
+    buffers.push(this.serializePqKeyAuths(auth.pq_key_auths));
     // address_auths: array of [address, uint16]
     const addrAuths = auth.address_auths || [];
     buffers.push(this.encodeVarint(addrAuths.length));
@@ -2153,6 +2260,24 @@ serializeOperationData(opType, opData) {
     }
     // extensions (empty set)
     buffers.push(this.encodeVarint(0));
+    // pq_memo_key steht NACH extensions -- siehe pack_account_options_impl in
+    // libraries/protocol/account.cpp. Die Reflexionsreihenfolge dort ist eine andere; sie
+    // gilt fuer JSON, nicht fuer die Bytes.
+    if (this.pqSerializationActive) {
+      buffers.push(
+        opts.pq_memo_key
+          ? this.concatBytes([
+              new Uint8Array([1]),
+              this.serializePqPublicKey(opts.pq_memo_key)
+            ])
+          : new Uint8Array([0])
+      );
+    } else if (opts.pq_memo_key) {
+      throw new Error(
+        'These account options carry a post-quantum memo key, but the connected chain has ' +
+        'not enabled post-quantum serialization.'
+      );
+    }
     return this.concatBytes(buffers);
   }
 
