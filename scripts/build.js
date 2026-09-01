@@ -22,6 +22,10 @@ const SHARED_FILES = [
   // Vendored constant-time secp256k1 — crypto-utils.js imports it, so the wallet
   // cannot sign or derive keys without it. Must ship.
   'src/lib/noble-secp256k1.js',
+  // Vendored ML-DSA-65 (FIPS 204), bundled with the hash primitives it needs.
+  // bitshares-api.js imports it for post-quantum signing; without it the extension
+  // cannot satisfy an authority that has no classical key left.
+  'src/lib/noble-ml-dsa.js',
   'src/lib/qr-generator.js',
   'src/lib/jdenticon.js',
   // Biometric unlock: popup.js imports biometric-auth.js, and biometric.html

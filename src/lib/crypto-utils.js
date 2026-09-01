@@ -1395,4 +1395,4 @@ export async function runSelfTests() {
 }
 
 // Export helper functions for use in other modules
-export { sha256, doubleSha256, hexToBytes, bytesToHex, bigIntToBytes, bytesToBigInt, bytesToBase64, base64ToBytes, constantTimeEqual, G, SECP256K1, ECPoint, mod, modInverse };
+export { ripemd160, sha256, doubleSha256, hexToBytes, bytesToHex, bigIntToBytes, bytesToBigInt, bytesToBase64, base64ToBytes, constantTimeEqual, G, SECP256K1, ECPoint, mod, modInverse };

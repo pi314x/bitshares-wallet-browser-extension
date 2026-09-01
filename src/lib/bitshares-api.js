@@ -3,7 +3,8 @@
  * Handles all blockchain communication via WebSocket
  */
 
-import { CryptoUtils, sha256, hexToBytes, bytesToHex } from './crypto-utils.js';
+import { CryptoUtils, ripemd160, sha256, hexToBytes, bytesToHex } from './crypto-utils.js';
+import { ml_dsa65 } from './noble-ml-dsa.js';
 
 export class BitSharesAPI {
   constructor(nodes = null) {
@@ -1408,6 +1409,69 @@ export class BitSharesAPI {
       const opsJson = JSON.stringify(signedTx.operations, null, 2);
       throw new Error(`${broadcastErr.message}\n\n[ops JSON for diagnosis]:\n${opsJson}`);
     }
+  }
+
+  /**
+   * Den post-quantum Schluessel eines Kontos ableiten.
+   *
+   * Dieselbe Ableitung wie in der Referenz-Wallet (app/lib/common/PQKeys.js):
+   *   seed = sha256( kontoname + "pq" + wurzelgeheimnis )
+   * Damit ergibt dasselbe Konto in beiden Wallets denselben Schluessel, und es gibt nichts
+   * zusaetzlich zu sichern -- was das Konto wiederherstellt, stellt auch diesen Schluessel
+   * wieder her.
+   *
+   * NICHT aus dem klassischen Schluessel abgeleitet: ein Konto, dessen Autoritaet rein
+   * post-quantum ist, hat gar keinen -- und das ist der Fall, fuer den das hier existiert.
+   */
+  async derivePqKey(accountName, rootSecret) {
+    const seed = await sha256(new TextEncoder().encode(accountName + 'pq' + rootSecret));
+    return ml_dsa65.keygen(new Uint8Array(seed));
+  }
+
+  /**
+   * Die kanonische base58-Form eines PQ-Schluessels, wie die Kette sie fuehrt:
+   *   PREFIX + "P" + base58( algorithmus || schluessel || ripemd160(dasselbe)[0..4] )
+   */
+  pqPublicKeyToBase58(publicKey, algorithm = 2, prefix = 'BTS') {
+    const body = new Uint8Array(1 + publicKey.length);
+    body[0] = algorithm;
+    body.set(publicKey, 1);
+    const checksum = ripemd160(body).slice(0, 4);
+    const withCheck = new Uint8Array(body.length + 4);
+    withCheck.set(body);
+    withCheck.set(checksum, body.length);
+    return prefix + 'P' + CryptoUtils.base58Encode(withCheck);
+  }
+
+  /**
+   * Eine Transaktion post-quantum signieren.
+   *
+   * Der Digest ist derselbe wie fuer eine klassische Signatur -- sha256(chain_id ||
+   * gepackte Transaktion) --, die Kette prueft beide dagegen. Was sich unterscheidet, ist
+   * wohin die Signatur gehoert: pq_signatures statt signatures, jeweils mit dem Schluessel
+   * daneben, weil ML-DSA keine Schluesselrueckgewinnung kennt.
+   *
+   * Ersetzt die klassische Signatur, statt danebenzutreten. BitShares weist eine
+   * Transaktion mit ueberfluessigen Signaturen ab ("irrelevant signature included"), also
+   * waere beides anzuhaengen kein zusaetzlicher Schutz, sondern ein Fehlschlag.
+   */
+  async signTransactionPq(transaction, accountName, rootSecret, prefix = 'BTS') {
+    const serializedTx = this.serializeTransaction(transaction);
+    const chainIdBytes = hexToBytes(this.chainId);
+    const messageBytes = new Uint8Array(chainIdBytes.length + serializedTx.length);
+    messageBytes.set(chainIdBytes);
+    messageBytes.set(serializedTx, chainIdBytes.length);
+    const msgHash = await sha256(messageBytes);
+
+    const kp = await this.derivePqKey(accountName, rootSecret);
+    const signature = ml_dsa65.sign(new Uint8Array(msgHash), kp.secretKey);
+
+    transaction.signatures = [];
+    transaction.pq_signatures = [{
+      key: this.pqPublicKeyToBase58(kp.publicKey, 2, prefix),
+      signature: bytesToHex(signature)
+    }];
+    return transaction;
   }
 
   /**
