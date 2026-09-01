@@ -1343,7 +1343,7 @@ export class BitSharesAPI {
    * - Signs with the given private key
    * - Broadcasts via broadcast_transaction_with_callback
    */
-  async signAndBroadcast(tx, privateKeyWIF) {
+  async signAndBroadcast(tx, privateKeyWIF, pqCredentials = null) {
     // 0. Resolve any account names / asset symbols to proper object IDs.
     //    Some dApps send names like "alice" or symbols like "BTS" instead of
     //    numeric IDs like "1.2.xxx" / "1.3.0".  The BitShares node always
@@ -1398,7 +1398,27 @@ export class BitSharesAPI {
     };
 
     // 3. Sign
-    const signedTx = await this.signTransaction(freshTx, privateKeyWIF);
+    // Womit signiert wird, entscheidet die Autoritaet des Kontos -- nicht der Nutzer und
+    // nicht das Serialisierungsformat der Kette. Siehe chooseSigningMethod.
+    //
+    // Laesst sich das Konto nicht ermitteln (eine Operation ohne erkennbares Konto, etwa
+    // eine, die dieses Wallet gar nicht kennt), bleibt es beim klassischen Weg: das ist das
+    // Verhalten von vorher, und eine Vermutung ins Blaue waere hier schlechter als keine.
+    const signingAccount = this._accountOfOperations(freshTx.operations);
+    let method = {mode: 'classical'};
+    if (signingAccount) {
+      method = await this.chooseSigningMethod(signingAccount, privateKeyWIF, pqCredentials);
+    }
+
+    const signedTx =
+      method.mode === 'post-quantum'
+        ? await this.signTransactionPq(
+            freshTx,
+            pqCredentials.accountName,
+            pqCredentials.rootSecret,
+            pqCredentials.prefix || 'BTS'
+          )
+        : await this.signTransaction(freshTx, privateKeyWIF);
 
     // 4. Broadcast and wait for the real confirmation (see broadcastWithConfirmation)
     try {
@@ -1409,6 +1429,82 @@ export class BitSharesAPI {
       const opsJson = JSON.stringify(signedTx.operations, null, 2);
       throw new Error(`${broadcastErr.message}\n\n[ops JSON for diagnosis]:\n${opsJson}`);
     }
+  }
+
+  /**
+   * Das Konto, dessen Autoritaet diese Operationen brauchen.
+   *
+   * Die Operationen dieses Wallets tragen es unter wechselnden Namen -- `from` bei einer
+   * Ueberweisung, `account` bei den meisten anderen, `seller`, `owner`, `issuer` sonst.
+   * Sind es mehrere verschiedene, wird nichts zurueckgegeben: dann ist nicht eindeutig,
+   * wessen Autoritaet gemeint ist, und Raten waere schlimmer als der bisherige Weg.
+   */
+  _accountOfOperations(operations) {
+    const KEYS = ['from', 'account', 'seller', 'owner', 'issuer', 'fee_paying_account',
+                  'registrar', 'liquidator', 'payer'];
+    const found = new Set();
+    for (const [, data] of operations || []) {
+      for (const k of KEYS) {
+        if (data && typeof data[k] === 'string') {
+          found.add(data[k]);
+          break;
+        }
+      }
+    }
+    return found.size === 1 ? [...found][0] : null;
+  }
+
+  /**
+   * Womit ist die Autoritaet dieses Kontos erfuellbar -- klassisch oder post-quantum?
+   *
+   * Das ist keine Einstellung und nichts, wonach man den Nutzer fragt: es steht in der
+   * Autoritaet. Und es haengt auch NICHT daran, ob die Kette den PQ-Hardfork hinter sich
+   * hat. Der schaltet die Felder frei; er zieht keine klassischen Schluessel ein. Nach der
+   * Aktivierung gibt es weiterhin drei Faelle nebeneinander:
+   *
+   *   nur klassisch  -- die allermeisten Konten, denn die Migration ist freiwillig
+   *   hybrid         -- migrate_wallet() haengt einen PQ-Schluessel DANEBEN, gleiches
+   *                     Gewicht, also genuegt jede Signatur allein
+   *   nur PQ         -- migrate_wallet_pq_only() hat die klassischen entfernt
+   *
+   * Wer nach dem Hardfork pauschal post-quantum signiert, macht jedes klassische Konto
+   * unbenutzbar ("Missing Active Authority"). Wer bei einem hybriden Konto PQ waehlt, zahlt
+   * 5261 statt 65 Byte fuer nichts: solange der klassische Schluessel in der Autoritaet
+   * steht, ist das Konto ohnehin quantenangreifbar -- deshalb ist migrate_wallet() laut
+   * PQ-STATUS.md ausdruecklich KEINE Schutzmassnahme.
+   *
+   * Also: klassisch, wenn die Autoritaet das hergibt. Post-quantum genau dann, wenn nicht.
+   */
+  async chooseSigningMethod(accountIdOrName, signingKey, pqCredentials = null) {
+    const account = await this.getAccount(accountIdOrName);
+    if (!account) {
+      throw new Error(`Cannot determine how to sign: account ${accountIdOrName} not found`);
+    }
+
+    const local = await CryptoUtils.wifToKeys(signingKey);
+    const classicalKeys = (account.active && account.active.key_auths) || [];
+    if (classicalKeys.some(([pubKey]) => pubKey === local.publicKey)) {
+      return {mode: 'classical'};
+    }
+
+    const pqKeys = (account.active && account.active.pq_key_auths) || [];
+    if (pqKeys.length && pqCredentials && pqCredentials.accountName && pqCredentials.rootSecret) {
+      const kp = await this.derivePqKey(pqCredentials.accountName, pqCredentials.rootSecret);
+      const mine = this.pqPublicKeyToBase58(kp.publicKey, 2, pqCredentials.prefix || 'BTS');
+      if (pqKeys.some(([key]) => key === mine)) {
+        return {mode: 'post-quantum', keypair: kp, publicKey: mine};
+      }
+    }
+
+    // Weder noch. Frueher stand an der entsprechenden Stelle ein console.warn und es wurde
+    // trotzdem signiert -- die Kette lehnte dann ab, und der Nutzer sah einen Fehler, der
+    // nicht sagte warum.
+    throw new Error(
+      pqKeys.length
+        ? `This account's active authority holds ${pqKeys.length} post-quantum key(s) and no ` +
+          'key this wallet can reproduce. It cannot sign for it.'
+        : "This wallet's key is not in the account's active authority."
+    );
   }
 
   /**
