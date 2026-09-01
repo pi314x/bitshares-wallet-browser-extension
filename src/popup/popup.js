@@ -1694,6 +1694,50 @@ function handleAssetSearch() {
   });
 }
 
+/**
+ * Das Memo einer Ueberweisung in einen Historieneintrag schreiben.
+ *
+ * Ueber textContent, nie ueber eine HTML-Vorlage. Ein Memo ist Text, den ein beliebiger
+ * Fremder auf der Kette gewaehlt hat, und setHTML() parst echtes HTML -- ein <img onerror>
+ * im Memo wuerde dort ausgefuehrt. textContent kann das strukturell nicht.
+ *
+ * Scheitert das Entschluesseln, steht der Grund da statt gar nichts: gesperrte Wallet und
+ * fehlender Schluessel sind fuer den Nutzer verschiedene Lagen mit verschiedenen Auswegen.
+ */
+async function renderHistoryMemo(item, memo, accountId) {
+  const el = item.querySelector('.history-memo');
+  if (!el || !accountId) return;
+
+  const GRUENDE = {
+    locked:      '🔒 Unlock the wallet to read this memo',
+    no_memo_key: 'Memo cannot be read: this account was imported without its memo key',
+    no_pq_key:   'Post-quantum memo: this wallet holds no memo key for it',
+    pq_failed:   'Post-quantum memo: could not be decrypted',
+    failed:      'Memo could not be decrypted'
+  };
+
+  let result;
+  try {
+    result = await walletManager.decryptHistoryMemo(memo, accountId);
+  } catch (e) {
+    result = {unavailable: 'failed'};
+  }
+  if (result.unavailable === 'none') return;
+
+  el.hidden = false;
+  if (result.text !== undefined) {
+    el.textContent = result.text;
+    el.classList.remove('history-memo-unavailable');
+    if (memo.pq_ciphertext) {
+      el.title = 'Encrypted with ML-KEM-768 in addition to classical ECDH';
+      el.classList.add('history-memo-pq');
+    }
+  } else {
+    el.textContent = GRUENDE[result.unavailable] || GRUENDE.failed;
+    el.classList.add('history-memo-unavailable');
+  }
+}
+
 async function createHistoryItem(operation) {
   const op = operation.op;
   const opType = op[0];
@@ -1738,11 +1782,13 @@ async function createHistoryItem(operation) {
           <div class="history-type">${isSend ? 'Sent' : 'Received'}</div>
           <div class="history-date">${formatDate(operation.block_time)}</div>
           ${explorerLink(txId, blockNum)}
+          <div class="history-memo" hidden></div>
         </div>
         <div class="history-amount ${isSend ? 'negative' : 'positive'}">
           ${isSend ? '-' : '+'}${transferAmount}
         </div>
       `);
+      if (opData.memo) await renderHistoryMemo(item, opData.memo, currentAccount);
       break;
 
     case 1: // Limit Order Create

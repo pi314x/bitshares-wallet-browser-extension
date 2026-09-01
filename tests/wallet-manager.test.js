@@ -383,3 +383,69 @@ describe('authority fields per operation type', () => {
         expect(OP_AUTH_FIELD[86]).toBeUndefined();
     });
 });
+
+// ---------------------------------------------------------------------------
+// decryptHistoryMemo()
+//
+// Every failure here has to be a REASON, not an exception. A single memo that cannot be
+// read must not empty the history list, and the user needs to tell apart "unlock the
+// wallet" from "this account has no memo key" — those have different remedies.
+// ---------------------------------------------------------------------------
+describe('WalletManager.decryptHistoryMemo()', () => {
+  let wm;
+
+  beforeEach(() => {
+    resetStorage();
+    wm = new WalletManager();
+  });
+
+  test('an operation with no memo reports "none", not an error', async () => {
+    await expect(wm.decryptHistoryMemo(null, '1.2.100'))
+      .resolves.toEqual({unavailable: 'none'});
+    await expect(wm.decryptHistoryMemo({}, '1.2.100'))
+      .resolves.toEqual({unavailable: 'none'});
+  });
+
+  test('a locked wallet reports "locked" rather than throwing', async () => {
+    const memo = {from: 'BTS1', to: 'BTS2', nonce: '1', message: 'ab'};
+    const result = await wm.decryptHistoryMemo(memo, '1.2.100');
+    expect(result.text).toBeUndefined();
+    expect(['locked', 'no_memo_key']).toContain(result.unavailable);
+  });
+
+  test('a hybrid memo without the KEM key reports a post-quantum reason', async () => {
+    // Der Schluessel ist da, der post-quantum Anteil nicht: der Unterschied muss beim
+    // Nutzer ankommen, sonst sucht er den Fehler beim klassischen Memo-Schluessel.
+    wm.getAccountKeys = async () => ({memo: {privateKey:
+      '5JNxWXucnrvsZAcBvRatf2NnTjG7zSsWc1tzCmmUziL73zLdgT3'}});
+    wm._pqCredentialsFor = () => async () => null;
+
+    const memo = {
+      from: 'BTS1', to: 'BTS2', nonce: '1', message: 'ab',
+      pq_ciphertext: 'aa'.repeat(1088)
+    };
+    await expect(wm.decryptHistoryMemo(memo, '1.2.100'))
+      .resolves.toEqual({unavailable: 'locked'});
+  });
+
+  test('a wrong KEM key surfaces as pq_failed, not as garbled text', async () => {
+    // ML-KEM weist einen falschen Schluessel nicht zurueck (FIPS 203, implicit rejection),
+    // sondern liefert ein pseudozufaelliges Geheimnis. Auffallen darf das erst an der
+    // Pruefsumme -- aber auffallen MUSS es.
+    wm.getAccountKeys = async () => ({memo: {privateKey:
+      '5JNxWXucnrvsZAcBvRatf2NnTjG7zSsWc1tzCmmUziL73zLdgT3'}});
+    wm._pqCredentialsFor = () => async () => (
+      {accountName: 'somebody-else', rootSecret: 'a-different-secret'});
+
+    const memo = {
+      from: 'BTS8g9Uhs5WFAFtp8QbwhotamFApRUcx6SGEjDc4Mw2QMmX1Sqq4V',
+      to:   'BTS6XFoP7CtdZMiCA78T689UachQh8bAvJx7kXh5ST17QeKwqatxn',
+      nonce: '1234567890123456789',
+      message: 'bbcd8c51409a9f3363d0540707c033fb02f22f7af21df443bb94d7e8c45f168a5e0c41dcf713644e388939aca1f85748',
+      pq_ciphertext: 'aa'.repeat(1088)
+    };
+    const result = await wm.decryptHistoryMemo(memo, '1.2.100');
+    expect(result.text).toBeUndefined();
+    expect(result.unavailable).toBe('pq_failed');
+  }, 30000);
+});

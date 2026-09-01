@@ -1487,6 +1487,58 @@ export class WalletManager {
   }
 
   /**
+   * Ein Memo aus der Kontohistorie lesbar machen.
+   *
+   * Gibt {text} zurueck, oder {unavailable} mit einem Grund -- nie eine Ausnahme. Ein
+   * einzelnes unlesbares Memo darf nicht die ganze Historie leeren, und der Nutzer soll
+   * sehen WARUM es fehlt: gesperrte Wallet, fehlender Memo-Schluessel und fremdes Memo sind
+   * drei verschiedene Dinge mit drei verschiedenen Antworten.
+   *
+   * Bei hybriden Memos wird zusaetzlich der ML-KEM-Anteil gebraucht. Den hat nur der
+   * EMPFAENGER: die Einkapselung ist einseitig, der Absender hat das gemeinsame Geheimnis
+   * beim Verschluesseln erzeugt und nichts behalten, was es reproduziert. Ein selbst
+   * gesendetes post-quantum Memo laesst sich also nicht aus der Kette zurueckholen, anders
+   * als ein klassisches.
+   */
+  async decryptHistoryMemo(memo, accountId) {
+    if (!memo || !memo.message) return {unavailable: 'none'};
+
+    let keys;
+    try {
+      keys = await this.getAccountKeys(accountId);
+    } catch (e) {
+      return {unavailable: 'locked'};
+    }
+    const memoPrivateKey = keys?.memo?.privateKey;
+    if (!memoPrivateKey) return {unavailable: 'no_memo_key'};
+
+    let kemSecret = null;
+    if (memo.pq_ciphertext) {
+      const creds = await this._pqCredentialsFor(accountId)();
+      if (!creds) return {unavailable: 'locked'};
+
+      const kem = await CryptoUtils.derivePqMemoKey(creds.accountName, creds.rootSecret);
+      if (!kem) return {unavailable: 'no_pq_key'};
+
+      try {
+        kemSecret = CryptoUtils.decapsulateMemoSecret(
+          memo.pq_ciphertext, kem.secretKey);
+      } catch (e) {
+        return {unavailable: 'no_pq_key'};
+      }
+      // ML-KEM weist einen falschen Schluessel nicht zurueck, sondern liefert ein
+      // pseudozufaelliges Geheimnis (FIPS 203, 7.3). Ob es das richtige war, entscheidet
+      // erst die Pruefsumme des Memos weiter unten.
+    }
+
+    try {
+      return {text: await CryptoUtils.decryptMemo(memo, memoPrivateKey, kemSecret)};
+    } catch (e) {
+      return {unavailable: memo.pq_ciphertext ? 'pq_failed' : 'failed'};
+    }
+  }
+
+  /**
    * Den post-quantum Schluessel dieses Kontos an seine aktive Autoritaet anhaengen.
    *
    * ANHAENGEN, nicht ersetzen: die klassischen Schluessel bleiben mit ihrem Gewicht stehen,
@@ -1648,8 +1700,24 @@ export class WalletManager {
           if (!memoPrivateKey) {
             throw new Error("Cannot encrypt the memo: this account's memo private key is not in the wallet (it was likely imported with only its active key). Re-import the account with its password or brainkey — the transfer was NOT sent.");
           }
-          // ECIES-encrypt the memo using the sender's memo private key and recipient's memo public key
-          memoObject = await CryptoUtils.encryptMemo(memo, memoPrivateKey, toMemoKey);
+          // Hat der Empfaenger einen post-quantum Memo-Schluessel veroeffentlicht, wird
+          // hybrid verschluesselt: der AES-Schluessel entsteht aus dem ECDH-Geheimnis UND
+          // einem ML-KEM-Geheimnis, ein Angreifer muss also beides brechen. Von allem
+          // post-quantum hier ist das der Teil, der sich spaeter nicht mehr richten laesst
+          // -- ein Memo wird einmal verschluesselt und liegt fuer immer in der Kette.
+          //
+          // Nur wenn die Kette das neue Format wirklich fuehrt. Sonst faellt das
+          // Chiffretext-Feld beim Serialisieren weg, und weil der KEM-Anteil die halbe
+          // Schluessel ist, waere das Memo bestaetigt und fuer niemanden mehr lesbar.
+          const toPqMemoKey = toAccount.options?.pq_memo_key;
+          let kem = null;
+          if (toPqMemoKey && this.api.pqSerializationActive) {
+            kem = await CryptoUtils.encapsulateToMemoKey(toPqMemoKey);
+          }
+
+          memoObject = await CryptoUtils.encryptMemo(
+            memo, memoPrivateKey, toMemoKey, null, kem ? kem.sharedSecret : null);
+          if (kem) memoObject.pq_ciphertext = kem.cipherText;
         } else {
           throw new Error('Cannot send the memo: one or both accounts have no memo key on-chain — the transfer was NOT sent.');
         }

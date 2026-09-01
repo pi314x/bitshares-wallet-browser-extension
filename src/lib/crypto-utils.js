@@ -6,6 +6,7 @@
  */
 
 import { WORD_LIST } from './bip39-wordlist.js';
+import { ml_kem768 } from './noble-ml-kem.js';
 // Audited, constant-time secp256k1 (vendored). Used for every operation that
 // touches a SECRET scalar — public-key derivation, ECDSA signing, and ECDH —
 // so private keys never flow through the non-constant-time BigInt EC math in
@@ -1057,9 +1058,90 @@ export class CryptoUtils {
   }
 
   /**
+   * Der post-quantum MEMO-Schluessel eines Kontos, aus dem Wurzelgeheimnis der Wallet.
+   *
+   * Muss Byte fuer Byte dasselbe liefern wie derivePQMemoKey in der Referenz-Wallet
+   * (bitshares-ui, app/lib/common/PQKeys.js). Dasselbe Konto wird aus beiden benutzt, und
+   * veroeffentlicht wird nur EIN Schluessel im Feld pq_memo_key: leiten die beiden
+   * verschieden ab, ueberschreibt die zuletzt veroeffentlichende die andere, und deren
+   * Memos sind ab dann unlesbar. Deshalb sha512 und die Rolle "pqmemo", unveraendert.
+   *
+   * sha512 und nicht sha256, weil ML-KEM einen 64-Byte-Keim nimmt -- anders als ML-DSA.
+   */
+  static async derivePqMemoKey(accountName, rootSecret) {
+    if (!accountName || !rootSecret) return null;
+    const seed = await this.sha512(
+      new TextEncoder().encode(accountName + 'pqmemo' + rootSecret));
+    return ml_kem768.keygen(new Uint8Array(seed));
+  }
+
+  /**
+   * Das gemeinsame Geheimnis aus dem Chiffretext eines hybriden Memos zurueckgewinnen.
+   *
+   * Gibt IMMER 32 Bytes zurueck, auch bei falschem Schluessel: ML-KEM meldet keinen Fehler,
+   * sondern liefert ein pseudozufaelliges Geheimnis (FIPS 203, 7.3, implicit rejection).
+   * Ob es das richtige war, entscheidet erst die Pruefsumme des Memos.
+   */
+  static decapsulateMemoSecret(cipherTextHex, kemSecretKey) {
+    const ct = typeof cipherTextHex === 'string'
+      ? hexToBytes(cipherTextHex)
+      : Uint8Array.from(cipherTextHex);
+    if (ct.length !== 1088) {
+      throw new Error(`ML-KEM-768 ciphertext must be 1088 bytes, got ${ct.length}`);
+    }
+    return ml_kem768.decapsulate(ct, kemSecretKey);
+  }
+
+  /**
+   * Gegen den veroeffentlichten Memo-Schluessel eines Kontos einkapseln.
+   *
+   * Die Pruefbytes werden geprueft und nicht bloss abgeschnitten: an dieser Zeichenkette
+   * haengt, ob der Empfaenger sein Memo je wieder oeffnen kann. Ein einzelnes verdrehtes
+   * Zeichen ergaebe einen strukturell gueltigen, aber falschen Schluessel, und der Fehler
+   * faendet erst beim Empfaenger auf -- wo nichts mehr zu retten ist.
+   *
+   * Nur ML-KEM-768. account_options::validate der Kette laesst nichts anderes zu, weil
+   * memo_data keine eigene Algorithmus-Kennung traegt: der Absender koennte einen anderen
+   * Parametersatz gar nicht erkennen.
+   *
+   * @returns {{cipherText: string, sharedSecret: Uint8Array}} Chiffretext als Hex fuers Memo
+   */
+  static async encapsulateToMemoKey(base58Key) {
+    if (typeof base58Key !== 'string') throw new Error('Memo key must be a string');
+
+    const marker = base58Key.indexOf('P');
+    if (marker < 1) throw new Error('Not a post-quantum key: missing prefix');
+    const raw = this.base58Decode(base58Key.slice(marker + 1));
+    if (raw.length < 6) throw new Error('Post-quantum memo key is too short');
+
+    const body = raw.slice(0, raw.length - 4);
+    const check = raw.slice(raw.length - 4);
+    const expect = ripemd160(body).slice(0, 4);
+    for (let i = 0; i < 4; i++) {
+      if (check[i] !== expect[i]) {
+        throw new Error('Post-quantum memo key checksum mismatch');
+      }
+    }
+
+    const ML_KEM_768 = 5;
+    if (body[0] !== ML_KEM_768) {
+      throw new Error(
+        `Memo key is algorithm ${body[0]}, but memos require ML-KEM-768 (5)`);
+    }
+    const publicKey = body.slice(1);
+    if (publicKey.length !== 1184) {
+      throw new Error(
+        `ML-KEM-768 public key must be 1184 bytes, got ${publicKey.length}`);
+    }
+
+    const {cipherText, sharedSecret} = ml_kem768.encapsulate(publicKey);
+    return {cipherText: bytesToHex(cipherText), sharedSecret};
+  }
+
+  /**
    * Der AES-Schluessel eines Memos, genau wie ihn die Kette bildet.
    *
-   *   sha512( to_string(nonce) + ecdh_secret.str() )
+   *   sha512( to_string(nonce) + ecdh_secret.str() [+ to_hex(kem_secret)] )
    *
    * -- memo_aes_key in libraries/protocol/memo.cpp. Drei Feinheiten, an denen die frueher
    * hier stehende Fassung scheiterte, mit dem Ergebnis, dass jedes verschluesselte Memo
@@ -1071,10 +1153,13 @@ export class CryptoUtils {
    *   - Schluessel und IV sind die ersten 32 beziehungsweise die naechsten 16 Bytes des
    *     Ergebnisses -- das war als einziges schon richtig.
    *
+   * @param kemSecret optionales ML-KEM-Geheimnis fuer hybride Memos; ohne dieses Argument
+   *                  ist das Ergebnis byte-identisch zum klassischen Memo.
    */
-  static async memoAesKey(nonce, sharedXBytes) {
+  static async memoAesKey(nonce, sharedXBytes, kemSecret = null) {
     const ecdhSecret = await this.sha512(sharedXBytes);
-    const seedText = String(nonce) + bytesToHex(ecdhSecret);
+    let seedText = String(nonce) + bytesToHex(ecdhSecret);
+    if (kemSecret) seedText += bytesToHex(kemSecret);
 
     const keyHash = await this.sha512(new TextEncoder().encode(seedText));
     return {key: keyHash.slice(0, 32), iv: keyHash.slice(32, 48)};
@@ -1089,7 +1174,8 @@ export class CryptoUtils {
    * @param {BigInt} nonce - Optional nonce (if not provided, generates random)
    * @returns {Object} - { from, to, nonce, message } ready for blockchain
    */
-  static async encryptMemo(message, fromPrivateKeyWIF, toPublicKeyBTS, nonce = null) {
+  static async encryptMemo(message, fromPrivateKeyWIF, toPublicKeyBTS, nonce = null,
+                           kemSecret = null) {
     // Parse sender's private key
     const fromPrivateKeyBytes = await this.wifToPrivateKey(fromPrivateKeyWIF);
 
@@ -1118,7 +1204,7 @@ export class CryptoUtils {
     const sharedXBytes = nobleGetSharedSecret(fromPrivateKeyBytes, toPublicKeyBytes, true).slice(1, 33);
 
     const {key: encryptionKey, iv} = await this.memoAesKey(
-      nonce.toString(), sharedXBytes);
+      nonce.toString(), sharedXBytes, kemSecret);
 
     // Die Pruefsumme liegt INNERHALB des Chiffrats, nicht davor. Die Kette verschluesselt
     // memo_message = checksum(4, LE) || text am Stueck; eine vorangestellte Klartext-
@@ -1146,7 +1232,7 @@ export class CryptoUtils {
    * @param {string} privateKeyWIF - Your memo private key in WIF format
    * @returns {string} - Decrypted plaintext message
    */
-  static async decryptMemo(memoObject, privateKeyWIF) {
+  static async decryptMemo(memoObject, privateKeyWIF, kemSecret = null) {
     const { from, to, nonce, message } = memoObject;
 
     // Parse private key
@@ -1179,7 +1265,7 @@ export class CryptoUtils {
     const sharedXBytes = nobleGetSharedSecret(privateKeyBytes, otherPublicKeyBytes, true).slice(1, 33);
 
     const {key: decryptionKey, iv} = await this.memoAesKey(
-      String(nonce), sharedXBytes);
+      String(nonce), sharedXBytes, kemSecret);
 
     // Das gesamte Chiffrat entschluesseln; die Pruefsumme steckt darin. Ein falscher
     // Schluessel scheitert meist schon an der Blockauffuellung, also wirft aes256CbcDecrypt
@@ -1197,8 +1283,10 @@ export class CryptoUtils {
     // BitShares-Wallet lesen konnte. Sie liegen unveraenderlich in der Kette, und der
     // Nutzer soll wenigstens seine eigenen alten noch oeffnen koennen. Nur als Rueckfall,
     // nie zum Schreiben: was hier gelesen wird, wurde nach der Korrektur nie erzeugt.
-    const legacy = await this.decryptMemoLegacy(nonce, sharedXBytes, message);
-    if (legacy !== null) return legacy;
+    if (!kemSecret) {
+      const legacy = await this.decryptMemoLegacy(nonce, sharedXBytes, message);
+      if (legacy !== null) return legacy;
+    }
 
     throw new Error('Memo checksum verification failed');
   }

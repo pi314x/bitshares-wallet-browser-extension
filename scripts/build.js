@@ -26,6 +26,10 @@ const SHARED_FILES = [
   // bitshares-api.js imports it for post-quantum signing; without it the extension
   // cannot satisfy an authority that has no classical key left.
   'src/lib/noble-ml-dsa.js',
+  // Vendored ML-KEM-768 (FIPS 203) fuer hybride Memos. crypto-utils.js importiert es;
+  // ohne die Datei koennte die Wallet post-quantum verschluesselte Memos weder schreiben
+  // noch lesen -- und anders als bei Signaturen liesse sich das spaeter nicht nachholen.
+  'src/lib/noble-ml-kem.js',
   'src/lib/qr-generator.js',
   'src/lib/jdenticon.js',
   // Biometric unlock: popup.js imports biometric-auth.js, and biometric.html

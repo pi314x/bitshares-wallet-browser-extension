@@ -3726,3 +3726,28 @@ body.sidebar-view .wallet-container {
     height: 60px;
   }
 }
+
+/* Memo einer Ueberweisung in der Historie.
+   Umbruch erlaubt und Hoehe begrenzt: ein Memo darf bis 2 kB lang sein, und ohne Deckel
+   schiebt ein einziger Eintrag die ganze Liste auseinander. */
+.history-memo {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-secondary, #8a8f98);
+  overflow-wrap: anywhere;
+  max-height: 3.6em;
+  overflow-y: auto;
+}
+
+.history-memo-unavailable {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+/* Hybrid post-quantum verschluesselt: dezent markiert, damit der Unterschied sichtbar ist,
+   ohne die Liste zu zerreden. */
+.history-memo-pq::before {
+  content: "⚛ ";
+  opacity: 0.7;
+}

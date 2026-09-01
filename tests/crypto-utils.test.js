@@ -493,4 +493,36 @@ describe('memo compatibility with bitsharesjs / the chain', () => {
       V.text, V.aliceWif, V.bobPub, BigInt(V.nonce));
     expect(memo.message).toBe(V.klassischMessage);
   }, 30000);
+
+  test('decrypts a hybrid post-quantum memo produced by bitsharesjs', async () => {
+    const ss = Uint8Array.from(Buffer.from(V.hybridSharedSecret, 'hex'));
+    const text = await CryptoUtils.decryptMemo({
+      from: V.alicePub, to: V.bobPub, nonce: V.nonce, message: V.hybridMessage
+    }, V.bobWif, ss);
+    expect(text).toBe(V.text);
+  }, 30000);
+
+  test('produces a byte-identical hybrid memo', async () => {
+    const ss = Uint8Array.from(Buffer.from(V.hybridSharedSecret, 'hex'));
+    const memo = await CryptoUtils.encryptMemo(
+      V.text, V.aliceWif, V.bobPub, BigInt(V.nonce), ss);
+    expect(memo.message).toBe(V.hybridMessage);
+  }, 30000);
+
+  test('a hybrid memo cannot be read without the KEM secret', async () => {
+    await expect(CryptoUtils.decryptMemo({
+      from: V.alicePub, to: V.bobPub, nonce: V.nonce, message: V.hybridMessage
+    }, V.bobWif)).rejects.toThrow();
+  }, 30000);
+
+  test('encapsulates to a published ML-KEM-768 memo key', async () => {
+    const kem = await CryptoUtils.encapsulateToMemoKey(V.kemPub58);
+    expect(Buffer.from(kem.cipherText, 'hex').length).toBe(1088);
+    expect(kem.sharedSecret.length).toBe(32);
+  }, 30000);
+
+  test('rejects a memo key whose checksum does not verify', async () => {
+    const bad = V.kemPub58.slice(0, -3) + (V.kemPub58.slice(-3) === 'aaa' ? 'bbb' : 'aaa');
+    await expect(CryptoUtils.encapsulateToMemoKey(bad)).rejects.toThrow(/checksum|short/i);
+  }, 30000);
 });
