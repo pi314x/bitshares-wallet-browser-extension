@@ -1576,6 +1576,28 @@ export class WalletManager {
         return {success: false, error: `Account ${account.id} not found on chain`};
       }
 
+      // Die Schranke ist nicht das Anhaengen, sondern das spaetere BENUTZEN.
+      //
+      // Am Serialisierer gemessen: ein account_update mit dem 1952-Byte-Schluessel und
+      // klassischer Signatur sind rund 2,1 kB -- dafuer reichten 4 kB. Aber jede
+      // Transaktion, die dieser Schluessel danach unterschreibt, traegt den Schluessel UND
+      // eine 3309-Byte-Signatur: eine blosse Ueberweisung kommt auf 5,4 kB, mit hybridem
+      // Memo auf 6,5 kB.
+      //
+      // Bei 4 kB anzuhaengen hiesse, dem Nutzer einen Schluessel zu geben, mit dem er nie
+      // etwas unterschreiben kann -- und entfernt er danach die klassischen Schluessel, ist
+      // das Konto ausgesperrt.
+      const limit = this.api.maximumTransactionSize || 0;
+      if (limit && limit < 8192) {
+        return {
+          success: false,
+          error: `This chain limits a transaction to ${limit} bytes. A post-quantum ` +
+                 'signature is 3309 bytes and carries its 1952-byte key, so a signed ' +
+                 'transfer needs about 5.5 kB — the key would be unusable. The committee ' +
+                 'must raise maximum_transaction_size to at least 8192 first.'
+        };
+      }
+
       const kp = await this.api.derivePqKey(creds.accountName, creds.rootSecret);
       const mine = this.api.pqPublicKeyToBase58(kp.publicKey, 2, 'BTS');
 

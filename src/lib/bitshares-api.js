@@ -2297,10 +2297,12 @@ serializeOperationData(opType, opData) {
       const gp = await this.call(this.apiIds.database, 'get_global_properties', []);
       const ext = (gp && gp.parameters && gp.parameters.extensions) || {};
       this.pqSerializationActive = !!ext.pq_serialization_active;
+      this.maximumTransactionSize = gp?.parameters?.maximum_transaction_size || 0;
     } catch (e) {
       // Ein Knoten, der die Kettenparameter nicht liefert, ist mit hoher Wahrscheinlichkeit
       // ein alter -- und alt heisst legacy. Fehlschlagen darf das Verbinden daran nicht.
       this.pqSerializationActive = false;
+      this.maximumTransactionSize = 0;
     }
     return this.pqSerializationActive;
   }
