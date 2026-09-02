@@ -165,3 +165,53 @@ describe('all operations serialize + sign + recover (ops 0-77)', () => {
     expect(await CryptoUtils.verifySignature(digest, sig, WIF)).toBe(true);
   }, 20000);
 });
+
+// ---------------------------------------------------------------------------
+// Every pq_gated field, not just the ones we remembered.
+//
+// Three separate bugs of this exact shape have now been found: memo_data.pq_ciphertext,
+// witness_create.block_pq_signing_key and witness_update.new_pq_signing_key. Each was a
+// field the chain writes an absent-marker for once post-quantum serialization is active,
+// which this wallet simply did not write. The effect is not limited to post-quantum
+// transactions: EVERY memo, every witness update, would be one byte short, the signature
+// would cover different bytes than the node computes, and the operation would be rejected.
+//
+// So this test enumerates the gated fields from the protocol rather than from memory. If
+// the chain gains another one, the list here is what has to grow -- and a serializer that
+// ignores it fails on the length check below.
+// ---------------------------------------------------------------------------
+describe('post-quantum gated fields are all serialized', () => {
+  const PK = 'BTS6B1taKXkDojuC1qECjvC7g186d8AdeGtz8wnqWAsoRGC6RY8Rp';
+
+  // name → [serializer method, operation without the PQ field]
+  const GATED = {
+    'memo_data.pq_ciphertext': ['serializeMemo',
+      {from: PK, to: PK, nonce: '1', message: 'deadbeef'}],
+    'witness_create.block_pq_signing_key': ['serializeWitnessCreateOp',
+      {fee: {amount: 0, asset_id: '1.3.0'}, witness_account: '1.2.100',
+       url: 'https://w', block_signing_key: PK}],
+    'witness_update.new_pq_signing_key': ['serializeWitnessUpdateOp',
+      {fee: {amount: 0, asset_id: '1.3.0'}, witness: '1.6.5', witness_account: '1.2.100'}],
+    'account_options.pq_memo_key': ['serializeAccountOptions',
+      {memo_key: PK, voting_account: '1.2.5', num_witness: 0, num_committee: 0, votes: []}],
+  };
+
+  for (const [feld, [methode, op]] of Object.entries(GATED)) {
+    test(`${feld} adds exactly one byte when active and none when not`, () => {
+      const api = new BitSharesAPI();
+
+      api.pqSerializationActive = false;
+      const legacy = api[methode](op);
+
+      api.pqSerializationActive = true;
+      const aktiv = api[methode](op);
+
+      // Genau ein Byte: der Abwesenheitsmarker des optionalen Feldes.
+      expect(aktiv.length - legacy.length).toBe(1);
+      expect(aktiv[aktiv.length - 1]).toBe(0);
+      // Und alles davor unveraendert.
+      expect(Buffer.from(aktiv.slice(0, legacy.length)))
+        .toEqual(Buffer.from(legacy));
+    });
+  }
+});

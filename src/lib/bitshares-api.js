@@ -2947,12 +2947,36 @@ serializeOperationData(opType, opData) {
    * Serialize witness_create operation (op 20)
    * { fee, witness_account, url, block_signing_key }
    */
+  /**
+   * Ein gated optional<pq_public_key_type>, wie es die Witness-Operationen tragen.
+   *
+   * Ohne dieses Feld fehlt jeder witness_create und jedem witness_update nach der
+   * Aktivierung das Optional-Byte -- und zwar auch dann, wenn gar kein PQ-Schluessel
+   * gesetzt wird. Die Signatur deckte andere Bytes ab als der Knoten berechnet, die
+   * Operation wuerde abgewiesen. Derselbe Fehler wie beim Memo.
+   */
+  serializePqSigningKey(key) {
+    if (!this.pqSerializationActive) {
+      if (key) {
+        throw new Error(
+          'This operation carries a post-quantum block signing key, but the connected ' +
+          'chain has not enabled post-quantum serialization. Signing it would produce a ' +
+          'signature over bytes the chain does not expect.'
+        );
+      }
+      return new Uint8Array([]);
+    }
+    if (!key) return new Uint8Array([0]);
+    return this.concatBytes([new Uint8Array([1]), this.serializePqPublicKey(key)]);
+  }
+
   serializeWitnessCreateOp(op) {
     const buffers = [];
     buffers.push(this.serializeAssetAmount(op.fee));
     buffers.push(this.serializeObjectId(op.witness_account));
     buffers.push(this.serializeString(op.url || ''));
     buffers.push(this.serializePublicKey(op.block_signing_key));
+    buffers.push(this.serializePqSigningKey(op.block_pq_signing_key));
     return this.concatBytes(buffers);
   }
 
@@ -2967,6 +2991,7 @@ serializeOperationData(opType, opData) {
     buffers.push(this.serializeObjectId(op.witness_account));
     buffers.push(this.serializeOptional(op.new_url, v => this.serializeString(v)));
     buffers.push(this.serializeOptional(op.new_signing_key, v => this.serializePublicKey(v)));
+    buffers.push(this.serializePqSigningKey(op.new_pq_signing_key));
     return this.concatBytes(buffers);
   }
 
