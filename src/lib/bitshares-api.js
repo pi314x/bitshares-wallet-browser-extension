@@ -2711,10 +2711,26 @@ serializeOperationData(opType, opData) {
    * Serialize fill_order operation (op 4) - virtual operation
    * { fee, order_id, account_id, pays, receives }
    */
+  /**
+   * Ein object_id_type als volle 64 Bit -- nicht als Varint der Instanz.
+   *
+   * Der Unterschied ist der Typ auf der C++-Seite: ein typisiertes limit_order_id_type
+   * packt nur seine Instanz als Varint, ein generisches object_id_type dagegen die ganze
+   * ID mit Raum- und Typbits. fill_order_operation::order_id ist das generische
+   * (market.hpp), und nur dort wird das hier gebraucht.
+   *
+   * Raum 8 Bit, Typ 8 Bit, Instanz 48 Bit -- so setzt graphene die Zahl zusammen.
+   */
+  serializeFullObjectId(id) {
+    const [raum, typ, instanz] = String(id).split('.').map(Number);
+    const wert = (BigInt(raum) << 56n) | (BigInt(typ) << 48n) | BigInt(instanz);
+    return this.writeUint64LE(wert);
+  }
+
   serializeFillOrderOp(op) {
     const buffers = [];
     buffers.push(this.serializeAssetAmount(op.fee));
-    buffers.push(this.serializeObjectId(op.order_id));
+    buffers.push(this.serializeFullObjectId(op.order_id));
     buffers.push(this.serializeObjectId(op.account_id));
     buffers.push(this.serializeAssetAmount(op.pays));
     buffers.push(this.serializeAssetAmount(op.receives));
