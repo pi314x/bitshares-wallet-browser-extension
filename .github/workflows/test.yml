@@ -1,0 +1,44 @@
+# Bisher lief hier nur ein Release-Workflow, ausgeloest von einem Tag. Zwischen zwei
+# Releases pruefte niemand automatisch etwas -- und das ist die Wallet, die Schluessel
+# haelt und Transaktionen unterschreibt.
+#
+# Der Bau gehoert mitgeprueft, nicht nur die Tests. scripts/build.js fuehrt eine
+# ausdrueckliche Dateiliste; wer eine neue Datei anlegt und sie dort vergisst, hat eine
+# Erweiterung, die im Browser mit einem fehlenden Modul stirbt, waehrend jeder Test gruen
+# ist. Das faellt nur beim Bauen auf.
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Tests und Bau
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      # Beide Ziele, weil sie verschiedene Manifest-Fassungen schreiben und ein Fehler in
+      # einer davon sonst bis zum naechsten Release unentdeckt bliebe.
+      - name: Bau fuer Chrome und Firefox
+        run: npm run build:all
+
+      # Was der Bau ausliefert, muss die vendorierten Krypto-Bundles enthalten. Fehlen sie,
+      # kann die Wallet weder post-quantum signieren noch hybride Memos lesen -- und die
+      # Testsuite merkt davon nichts, weil sie direkt aus src/ laedt.
+      - name: Ausgelieferte Krypto-Bundles pruefen
+        run: |
+          for f in noble-secp256k1.js noble-ml-dsa.js noble-ml-kem.js; do
+            test -f "dist/src/lib/$f" || { echo "fehlt im Build: $f"; exit 1; }
+          done
+          echo "alle drei Bundles ausgeliefert"
