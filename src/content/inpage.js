@@ -25,13 +25,15 @@
       
       pendingRequests.set(id, { resolve, reject });
 
-      // Set timeout
+      // Set timeout: longer than the content script's (180 s), which is longer than the
+      // background's approval timeout (60 s) plus signing and broadcasting, so the first
+      // to answer is always the one that knows what happened.
       setTimeout(() => {
         if (pendingRequests.has(id)) {
           pendingRequests.delete(id);
           reject(new Error('Request timeout'));
         }
-      }, 120000); // 2 minute timeout for user interactions
+      }, 200000);
 
       window.postMessage({
         type: 'BITSHARES_WALLET_REQUEST',
@@ -329,7 +331,8 @@
      * Request identity (BeetEOS compatibility)
      */
     async requestIdentity() {
-      const account = await this.provider.connect();
+      // connect() resolves {account: {name, id}, balances}
+      const { account } = await this.provider.connect();
       return {
         accounts: [{
           name: account.name,

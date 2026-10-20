@@ -5,7 +5,7 @@
 
 // Import modules (would be bundled by webpack in production)
 import { WalletManager } from '../lib/wallet-manager.js';
-import { BitSharesAPI } from '../lib/bitshares-api.js';
+import { BitSharesAPI, coreFeeInAssetUnits, plainMemoCipherBytes } from '../lib/bitshares-api.js';
 import { CryptoUtils } from '../lib/crypto-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
@@ -6368,16 +6368,30 @@ async function renderOperationDetails(opType, opData) {
           // The encrypted memo is stored as a hex string in opData.memo.message;
           // its length / 2 gives the ciphertext byte count.
           if (opType === 0 && opData.memo && fp.price_per_kbyte) {
-            const cipherBytes = typeof opData.memo.message === 'string'
-              ? opData.memo.message.length / 2
-              : 0;
+            // an encrypted memo is a hex ciphertext; a plain-text memo is encrypted by the
+            // wallet when it signs (see plainMemoCipherBytes)
+            const cipherBytes = typeof opData.memo === 'string'
+              ? plainMemoCipherBytes(opData.memo)
+              : typeof opData.memo.message === 'string'
+                ? opData.memo.message.length / 2
+                : 0;
             const memoSerialised = 33 + 33 + 8 + cipherBytes; // from-key + to-key + nonce + ciphertext
             totalFee += Math.floor(memoSerialised * fp.price_per_kbyte / 1024);
           }
+          // The schedule is in the CORE asset. A fee in another asset is that amount at the
+          // asset's core exchange rate (the node converts it the same way, rounding up) --
+          // formatting core units with the other asset's precision showed a fee ten times too
+          // big for an asset of precision 4.
           const feeAssetId = opData.fee?.asset_id || '1.3.0';
           const feeAsset = await btsAPI.getAsset(feeAssetId);
+          let feeUnits = totalFee;
+          if (feeAssetId !== '1.3.0') {
+            const raw = await btsAPI.call(btsAPI.apiIds.database, 'get_assets', [[feeAssetId]]);
+            feeUnits = coreFeeInAssetUnits(
+              totalFee, feeAssetId, raw && raw[0] && raw[0].options && raw[0].options.core_exchange_rate);
+          }
           const precision = Math.pow(10, feeAsset.precision);
-          feeStr = `${(totalFee / precision).toFixed(feeAsset.precision)} ${feeAsset.symbol}`;
+          feeStr = `${(feeUnits / precision).toFixed(feeAsset.precision)} ${feeAsset.symbol}`;
         }
       }
     } catch (e) {

@@ -6,6 +6,30 @@
 import { CryptoUtils, ripemd160, sha256, hexToBytes, bytesToHex } from './crypto-utils.js';
 import { ml_dsa65 } from './noble-ml-dsa.js';
 
+/**
+ * A fee quoted in the CORE asset, in the units of another asset: the amount at the asset's core
+ * exchange rate, rounded up (the node converts it the same way). `cer` is the asset's
+ * options.core_exchange_rate, `{base, quote}` with the asset on one side and the core asset on
+ * the other. Throws when the rate cannot be used.
+ */
+export function coreFeeInAssetUnits(coreFee, assetId, cer) {
+  if (assetId === '1.3.0') return coreFee;
+  if (!cer || !cer.base || !cer.quote) throw new Error('no core exchange rate');
+  const [assetSide, coreSide] = cer.base.asset_id === assetId
+    ? [Number(cer.base.amount), Number(cer.quote.amount)]
+    : [Number(cer.quote.amount), Number(cer.base.amount)];
+  if (!(assetSide > 0) || !(coreSide > 0)) throw new Error('no core exchange rate');
+  return Math.ceil(coreFee * assetSide / coreSide);
+}
+
+/**
+ * The bytes of the ciphertext of a plain-text memo once the wallet has encrypted it:
+ * the text and a 4-byte checksum, padded to a multiple of 16 with at least one byte.
+ */
+export function plainMemoCipherBytes(text) {
+  return Math.ceil((new TextEncoder().encode(String(text)).length + 4 + 1) / 16) * 16;
+}
+
 export class BitSharesAPI {
   constructor(nodes = null) {
     // Updated list of reliable BitShares nodes (January 2026)
@@ -1342,6 +1366,23 @@ export class BitSharesAPI {
   }
 
   /**
+   * The asset a transaction's fee is to be paid in: the `fee.asset_id` its operations name
+   * (they must agree), or the core asset when none does.
+   */
+  _requestedFeeAssetId(operations) {
+    const wanted = new Set();
+    for (const op of operations || []) {
+      const data = Array.isArray(op) ? op[1] : op;
+      const id = data && data.fee && data.fee.asset_id;
+      if (typeof id === 'string' && /^1\.3\.\d+$/.test(id)) wanted.add(id);
+    }
+    if (wanted.size > 1) {
+      throw new Error('All operations of one transaction must pay their fee in the same asset.');
+    }
+    return wanted.size ? [...wanted][0] : '1.3.0';
+  }
+
+  /**
    * Sign a complete transaction (with operations already set) and broadcast it.
    * - Fills in required fees via get_required_fees
    * - Refreshes block reference headers so the tx doesn't expire
@@ -1355,9 +1396,13 @@ export class BitSharesAPI {
     //    rejects non-dotted strings with "Missing the first dot".
     await this._resolveOperationIds(tx.operations);
 
-    // 1. Fill required fees for every operation
+    // 1. Fill required fees for every operation, in the asset the transaction asks for
+    //    (the core asset when it names none): `fee.asset_id` of its operations. One
+    //    transaction pays one fee asset, so operations asking for different ones are refused
+    //    here rather than silently rewritten to something the user did not choose.
+    const feeAssetId = this._requestedFeeAssetId(tx.operations);
     try {
-      const feeAsset = await this.getAsset('1.3.0');
+      const feeAsset = await this.getAsset(feeAssetId);
       const requiredFees = await this.call(
         this.apiIds.database,
         'get_required_fees',
@@ -1372,6 +1417,14 @@ export class BitSharesAPI {
         }
       }
     } catch (feeErr) {
+      // Core asset: the node's answer was only a convenience (the operations may carry a
+      // fee already), so go on. Any other asset: the user chose it and it cannot be
+      // priced -- going on would send fee 0 and fail later with a worse message.
+      if (feeAssetId !== '1.3.0') {
+        throw new Error(
+          `Cannot pay the fee in ${feeAssetId}: ${String(feeErr && feeErr.message || feeErr).split('\n')[0]}`
+        );
+      }
       console.warn('get_required_fees failed, proceeding with existing fees:', feeErr);
     }
 
@@ -1489,7 +1542,12 @@ export class BitSharesAPI {
 
     const local = await CryptoUtils.wifToKeys(signingKey);
     const classicalKeys = (account.active && account.active.key_auths) || [];
-    if (classicalKeys.some(([pubKey]) => pubKey === local.publicKey)) {
+    // Compare the keys, not their spelling: the local key is always written with the prefix
+    // BTS, the chain writes its own (TEST on the testnet), and the part after the prefix --
+    // the key and its checksum -- is the same. Comparing whole strings made every signature
+    // on the testnet fail with "This wallet's key is not in the account's active authority".
+    const body = key => String(key).replace(/^(BTS|TEST|GPH)/, '');
+    if (classicalKeys.some(([pubKey]) => body(pubKey) === body(local.publicKey))) {
       return {mode: 'classical'};
     }
 

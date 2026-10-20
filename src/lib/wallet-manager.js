@@ -33,7 +33,60 @@ export const OP_AUTH_FIELD = {
   85: 'owner',      // futures_order_cancel
   87: 'owner',      // futures_position_adjust_margin
   88: 'liquidator', // futures_liquidate -- permissionless, so not the position owner
-  89: 'owner'       // futures_settle
+  89: 'owner',      // futures_settle
+
+  // The rest of what a dApp may submit (DAPP_ALLOWED_OPERATIONS) whose signer is NOT in the
+  // shared list. Without an entry the boundary check sees no account field in the operation
+  // and constrains nothing, and the signer is guessed from the current account.
+  32: 'creator',            // vesting_balance_create -- `owner` there is the beneficiary
+  33: 'owner',              // vesting_balance_withdraw
+  37: 'deposit_to_account', // balance_claim (the claimed balance's own key must also sign)
+  45: 'bidder',             // bid_collateral
+  50: 'redeemer',           // htlc_redeem
+  52: 'update_issuer',      // htlc_extend
+  64: 'owner_account',      // samet_fund_create
+  65: 'owner_account',      // samet_fund_delete
+  66: 'owner_account',      // samet_fund_update
+  67: 'borrower',           // samet_fund_borrow
+  69: 'owner_account',      // credit_offer_create
+  70: 'owner_account',      // credit_offer_delete
+  71: 'owner_account',      // credit_offer_update
+  72: 'borrower'            // credit_offer_accept
+};
+
+/**
+ * The operations a dApp may submit through `signTransaction`, by id. Only operations the
+ * wallet understands and that cannot drain funds or mutate account authorities in
+ * unexpected ways. `getCapabilities` reports this list, so a site can tell before it asks.
+ * 86 (futures_fill) is deliberately absent: it is a VIRTUAL operation the chain emits itself.
+ */
+export const DAPP_ALLOWED_OPERATIONS = {
+  0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
+  3: 'call_order_update',
+  32: 'vesting_balance_create', 33: 'vesting_balance_withdraw',
+  37: 'balance_claim', 39: 'transfer_to_blind',
+  40: 'blind_transfer', 41: 'transfer_from_blind',
+  45: 'bid_collateral', 47: 'asset_claim_pool',
+  49: 'htlc_create', 50: 'htlc_redeem', 52: 'htlc_extend',
+  57: 'ticket_create', 58: 'ticket_update',
+  59: 'liquidity_pool_create',
+  60: 'liquidity_pool_delete', 61: 'liquidity_pool_deposit',
+  62: 'liquidity_pool_withdraw', 63: 'liquidity_pool_exchange',
+  64: 'samet_fund_create', 65: 'samet_fund_delete',
+  66: 'samet_fund_update', 67: 'samet_fund_borrow',
+  68: 'samet_fund_repay',
+  69: 'credit_offer_create', 70: 'credit_offer_delete',
+  71: 'credit_offer_update', 72: 'credit_offer_accept',
+  73: 'credit_deal_repay', 75: 'liquidity_pool_update',
+  76: 'credit_deal_update', 77: 'limit_order_update',
+  // Oracles. oracle_delete is included because it only ever removes an object the signing
+  // account owns, and cannot touch balances.
+  78: 'oracle_create', 79: 'oracle_update',
+  80: 'oracle_delete', 81: 'oracle_publish',
+  82: 'futures_market_create', 83: 'futures_market_update',
+  84: 'futures_order_create', 85: 'futures_order_cancel',
+  87: 'futures_position_adjust_margin', 88: 'futures_liquidate',
+  89: 'futures_settle'
 };
 
 /// Which fields to consult for one operation, given as [opType, opData].
@@ -1656,6 +1709,93 @@ export class WalletManager {
   }
 
   /**
+   * Encrypt `text` for the recipient of a transfer: an on-chain memo object
+   * `{from, to, nonce, message}` (plus `pq_ciphertext` when the recipient has a
+   * post-quantum memo key and the chain carries the field).
+   *
+   * Never returns "no memo": every failure throws, because a memo that was asked for
+   * and silently left out can strand funds (bridges and exchanges route BY the memo).
+   *
+   * @param {Object} fromAccount - the sending wallet account ({id, name})
+   * @param {Object} toAccount   - the recipient as the chain reports it (fresh api.getAccount())
+   * @param {string} text        - the plain-text memo
+   * @param {Object} keys        - the sending account's keys (keys.memo.privateKey)
+   */
+  async _encryptMemo(fromAccount, toAccount, text, keys) {
+    // The sender's memo key MUST come from a fresh chain lookup: the wallet's stored
+    // account record is only {name, id, network, …} and never carries options.memo_key —
+    // reading it off the stored record (as this used to) made the key always look missing,
+    // which is how transfers ended up silently sent memo-less. toAccount is already a fresh
+    // api.getAccount() result.
+    const fromChain = await this.api.getAccount(fromAccount.name || fromAccount.id);
+    const fromMemoKey = fromChain?.options?.memo_key || fromAccount.options?.memo_key;
+    const toMemoKey = toAccount.options?.memo_key;
+
+    // A memo was explicitly requested, so it matters — some recipients (bridges, exchanges)
+    // route funds BY the memo, and a transfer that silently arrives without it strands the
+    // money. Fail the whole transfer instead of sending memo-less.
+    if (!(fromMemoKey && toMemoKey && fromMemoKey.length > 10 && toMemoKey.length > 10)) {
+      throw new Error('Cannot send the memo: one or both accounts have no memo key on-chain — the transfer was NOT sent.');
+    }
+    const memoPrivateKey = keys.memo?.privateKey;
+    if (!memoPrivateKey) {
+      throw new Error("Cannot encrypt the memo: this account's memo private key is not in the wallet (it was likely imported with only its active key). Re-import the account with its password or brainkey — the transfer was NOT sent.");
+    }
+    // Hat der Empfaenger einen post-quantum Memo-Schluessel veroeffentlicht, wird hybrid
+    // verschluesselt: der AES-Schluessel entsteht aus dem ECDH-Geheimnis UND einem
+    // ML-KEM-Geheimnis, ein Angreifer muss also beides brechen. Von allem post-quantum hier
+    // ist das der Teil, der sich spaeter nicht mehr richten laesst -- ein Memo wird einmal
+    // verschluesselt und liegt fuer immer in der Kette.
+    //
+    // Nur wenn die Kette das neue Format wirklich fuehrt. Sonst faellt das Chiffretext-Feld
+    // beim Serialisieren weg, und weil der KEM-Anteil die halbe Schluessel ist, waere das
+    // Memo bestaetigt und fuer niemanden mehr lesbar.
+    const toPqMemoKey = toAccount.options?.pq_memo_key;
+    let kem = null;
+    if (toPqMemoKey && this.api.pqSerializationActive) {
+      kem = await CryptoUtils.encapsulateToMemoKey(toPqMemoKey);
+    }
+
+    const memoObject = await CryptoUtils.encryptMemo(
+      text, memoPrivateKey, toMemoKey, null, kem ? kem.sharedSecret : null);
+    if (kem) memoObject.pq_ciphertext = kem.cipherText;
+    return memoObject;
+  }
+
+  /**
+   * A dApp that wants a memo sends it as PLAIN TEXT in the operation's `memo` field
+   * (`{from, to, amount, memo: "invoice 42"}`) and the wallet encrypts it here, with the
+   * signing account's memo key for the recipient's. A `memo` that already is an object
+   * (`{from, to, nonce, message}`, the dApp encrypted it itself) is passed through as it
+   * is. Only a transfer carries a memo, and only for the account that signs.
+   */
+  async _encryptStringMemos(operations, signingAccount, keys) {
+    for (const op of operations) {
+      const type = Array.isArray(op) ? op[0] : op.type;
+      const data = Array.isArray(op) ? op[1] : op;
+      if (!data || typeof data.memo !== 'string') continue;
+      if (!data.memo.trim()) {
+        delete data.memo;
+        continue;
+      }
+      if (type !== 0) {
+        throw new Error(`Operation type ${type} cannot carry a plain-text memo (only a transfer can).`);
+      }
+      if (data.memo.length > 2048) {
+        throw new Error('Memo too long (max 2048 characters)');
+      }
+      if (typeof data.to !== 'string' || !data.to) {
+        throw new Error('A memo needs the transfer\'s recipient.');
+      }
+      const toAccount = await this.api.getAccount(data.to);
+      if (!toAccount) {
+        throw new Error('Recipient account not found');
+      }
+      data.memo = await this._encryptMemo(signingAccount, toAccount, data.memo, keys);
+    }
+  }
+
+  /**
    * Send a transfer transaction
    */
   async sendTransfer(to, amount, assetId, memo, encryptMemo = false, accountId = null) {
@@ -1703,46 +1843,7 @@ export class WalletManager {
       // Build transfer operation
       let memoObject = null;
       if (memo && memo.trim()) {
-        // The sender's memo key MUST come from a fresh chain lookup: the
-        // wallet's stored account record is only {name, id, network, …} and
-        // never carries options.memo_key — reading it off the stored record
-        // (as this used to) made the key always look missing, which is how
-        // transfers ended up silently sent memo-less. toAccount is already a
-        // fresh api.getAccount() result.
-        const fromChain = await this.api.getAccount(fromAccount.name || fromAccount.id);
-        const fromMemoKey = fromChain?.options?.memo_key || fromAccount.options?.memo_key;
-        const toMemoKey = toAccount.options?.memo_key;
-
-        // A memo was explicitly requested, so it matters — some recipients
-        // (bridges, exchanges) route funds BY the memo, and a transfer that
-        // silently arrives without it strands the money. Fail the whole
-        // transfer instead of sending memo-less.
-        if (fromMemoKey && toMemoKey && fromMemoKey.length > 10 && toMemoKey.length > 10) {
-          const memoPrivateKey = keys.memo?.privateKey;
-          if (!memoPrivateKey) {
-            throw new Error("Cannot encrypt the memo: this account's memo private key is not in the wallet (it was likely imported with only its active key). Re-import the account with its password or brainkey — the transfer was NOT sent.");
-          }
-          // Hat der Empfaenger einen post-quantum Memo-Schluessel veroeffentlicht, wird
-          // hybrid verschluesselt: der AES-Schluessel entsteht aus dem ECDH-Geheimnis UND
-          // einem ML-KEM-Geheimnis, ein Angreifer muss also beides brechen. Von allem
-          // post-quantum hier ist das der Teil, der sich spaeter nicht mehr richten laesst
-          // -- ein Memo wird einmal verschluesselt und liegt fuer immer in der Kette.
-          //
-          // Nur wenn die Kette das neue Format wirklich fuehrt. Sonst faellt das
-          // Chiffretext-Feld beim Serialisieren weg, und weil der KEM-Anteil die halbe
-          // Schluessel ist, waere das Memo bestaetigt und fuer niemanden mehr lesbar.
-          const toPqMemoKey = toAccount.options?.pq_memo_key;
-          let kem = null;
-          if (toPqMemoKey && this.api.pqSerializationActive) {
-            kem = await CryptoUtils.encapsulateToMemoKey(toPqMemoKey);
-          }
-
-          memoObject = await CryptoUtils.encryptMemo(
-            memo, memoPrivateKey, toMemoKey, null, kem ? kem.sharedSecret : null);
-          if (kem) memoObject.pq_ciphertext = kem.cipherText;
-        } else {
-          throw new Error('Cannot send the memo: one or both accounts have no memo key on-chain — the transfer was NOT sent.');
-        }
+        memoObject = await this._encryptMemo(fromAccount, toAccount, memo, keys);
       }
 
       const operation = {
@@ -1876,84 +1977,8 @@ export class WalletManager {
       // validation in _resolveOperationIds, which can crash the serializer on
       // malformed fields instead of being rejected up front.
       if (isDappRequest) {
-        const ALLOWED_OP_TYPES = new Set([
-          0,  // transfer
-          1,  // limit_order_create
-          2,  // limit_order_cancel
-          3,  // call_order_update
-          32, // vesting_balance_create
-          33, // vesting_balance_withdraw
-          37, // balance_claim
-          39, // transfer_to_blind
-          40, // blind_transfer
-          41, // transfer_from_blind
-          45, // bid_collateral
-          47, // asset_claim_pool
-          49, // htlc_create
-          50, // htlc_redeem
-          52, // htlc_extend
-          57, // ticket_create
-          58, // ticket_update
-          59, // liquidity_pool_create
-          60, // liquidity_pool_delete
-          61, // liquidity_pool_deposit
-          62, // liquidity_pool_withdraw
-          63, // liquidity_pool_exchange
-          64, // samet_fund_create
-          65, // samet_fund_delete
-          66, // samet_fund_update
-          67, // samet_fund_borrow
-          68, // samet_fund_repay
-          69, // credit_offer_create
-          70, // credit_offer_delete
-          71, // credit_offer_update
-          72, // credit_offer_accept
-          73, // credit_deal_repay
-          75, // liquidity_pool_update
-          76, // credit_deal_update
-          77, // limit_order_update
-          // Oracles. oracle_delete is included because it only ever removes an object the
-          // signing account owns, and cannot touch balances.
-          78, // oracle_create
-          79, // oracle_update
-          80, // oracle_delete
-          81, // oracle_publish
-          // Futures. 86 (futures_fill) is deliberately absent: it is a VIRTUAL operation
-          // the chain emits itself, and no wallet should ever be asked to sign one.
-          82, // futures_market_create
-          83, // futures_market_update
-          84, // futures_order_create
-          85, // futures_order_cancel
-          87, // futures_position_adjust_margin
-          88, // futures_liquidate
-          89  // futures_settle
-        ]);
-        const OP_NAMES = {
-          0: 'transfer', 1: 'limit_order_create', 2: 'limit_order_cancel',
-          3: 'call_order_update',
-          32: 'vesting_balance_create', 33: 'vesting_balance_withdraw',
-          37: 'balance_claim', 39: 'transfer_to_blind',
-          40: 'blind_transfer', 41: 'transfer_from_blind',
-          45: 'bid_collateral', 47: 'asset_claim_pool',
-          49: 'htlc_create', 50: 'htlc_redeem', 52: 'htlc_extend',
-          57: 'ticket_create', 58: 'ticket_update',
-          59: 'liquidity_pool_create',
-          60: 'liquidity_pool_delete', 61: 'liquidity_pool_deposit',
-          62: 'liquidity_pool_withdraw', 63: 'liquidity_pool_exchange',
-          64: 'samet_fund_create', 65: 'samet_fund_delete',
-          66: 'samet_fund_update', 67: 'samet_fund_borrow',
-          68: 'samet_fund_repay',
-          69: 'credit_offer_create', 70: 'credit_offer_delete',
-          71: 'credit_offer_update', 72: 'credit_offer_accept',
-          73: 'credit_deal_repay', 75: 'liquidity_pool_update',
-          76: 'credit_deal_update', 77: 'limit_order_update',
-          78: 'oracle_create', 79: 'oracle_update',
-          80: 'oracle_delete', 81: 'oracle_publish',
-          82: 'futures_market_create', 83: 'futures_market_update',
-          84: 'futures_order_create', 85: 'futures_order_cancel',
-          87: 'futures_position_adjust_margin', 88: 'futures_liquidate',
-          89: 'futures_settle'
-        };
+        const OP_NAMES = DAPP_ALLOWED_OPERATIONS;
+        const ALLOWED_OP_TYPES = new Set(Object.keys(DAPP_ALLOWED_OPERATIONS).map(Number));
         for (const op of tx.operations) {
           const opType = Array.isArray(op) ? op[0] : (typeof op.type === 'number' ? op.type : null);
           if (opType !== null && !ALLOWED_OP_TYPES.has(opType)) {
@@ -1978,6 +2003,9 @@ export class WalletManager {
       }
 
       const keys = await this.getAccountKeys(signingAccount.id);
+
+      // A plain-text memo is encrypted here, by the wallet that holds the memo key.
+      await this._encryptStringMemos(ops, signingAccount, keys);
 
       // Sign the transaction AND broadcast it (fills fees, refreshes headers, signs, broadcasts)
       const result = await this.api.signAndBroadcast(

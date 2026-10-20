@@ -350,8 +350,11 @@ to object IDs, refreshes block headers, signs with the user's active
 key, and broadcasts to the network.
 
 Each operation triggers a human-readable confirmation dialog in the
-extension popup. The user has **2 minutes** to approve or reject before
-the request times out.
+extension popup. The user has **60 seconds** to approve or reject (the
+dialog shows the countdown) before the request is rejected with a timeout
+error. Once approved, signing and broadcasting may take a few more seconds;
+the page-side request only gives up after 200 s, so the answer you get is
+always the wallet's own (success, rejection, timeout, or the node's error).
 
 ```javascript
 // Transfer (operation type 0)
@@ -362,7 +365,7 @@ const result = await window.bitsharesWallet.signTransaction({
       from: account.id,         // or account name, e.g. 'my-account'
       to: '1.2.yyyyy',          // or account name
       amount: { amount: 100000, asset_id: '1.3.0' },
-      memo: { message: 'hello' } // optional — plain text, hex, or full memo_data
+      memo: 'hello'             // optional — see "Memos" below
     }]
   ]
 });
@@ -387,17 +390,47 @@ const orderResult = await window.bitsharesWallet.signTransaction({
 
 > **Notes**
 > - `fee` can be `{ amount: 0, asset_id: '1.3.0' }` — the wallet fills the real fee.
+> - **Fee asset:** the `fee.asset_id` of the operations is the asset the fee is paid in
+>   (all operations of one transaction must name the same one; none means the core asset).
+>   The node prices it with the asset's core exchange rate, so the asset needs a funded
+>   fee pool. The wallet reports `feeAsset: true` in `getCapabilities()`.
 > - Account fields (`from`, `to`, `seller`, …) accept either object IDs (`1.2.xxxxx`) or account names (`my-account`).
 > - Asset fields accept either object IDs (`1.3.0`) or symbols (`BTS`).
 > - Multi-operation transactions are supported — each operation is shown as a separate labeled section in the confirmation dialog.
+
+#### Memos
+
+A transfer's `memo` is **plain text**: the wallet encrypts it with the signing account's
+memo key for the recipient's memo key (hybrid with the recipient's post-quantum memo key
+when they have published one), so it never lands on the chain unencrypted. If either account
+has no memo key, or the wallet does not hold this account's memo private key, the whole
+transaction is refused — a memo that was asked for is never silently dropped.
+
+A `memo` that already is an object (`{ from, to, nonce, message }`, encrypted by the dApp
+itself) is passed through unchanged. Only a transfer can carry a memo. The wallet reports
+`memoEncryption: true` in `getCapabilities()`.
+
+#### Capabilities
+
+```javascript
+const caps = await window.bitsharesWallet.request('getCapabilities', {});
+// { protocol: 2, version: '0.8.x', operations: [0, 1, 2, 3, 32, ...],
+//   memoEncryption: true, feeAsset: true }
+```
+
+`operations` lists the operation ids `signTransaction` accepts from a site; any other is
+answered with an error. No connection or unlock is needed to ask. An older wallet answers
+"Unknown method": treat that as `{ memoEncryption: false, feeAsset: false }` and the
+operations of the first versions.
 
 ### Transfers (Convenience Method)
 
 ```javascript
 const result = await window.bitsharesWallet.transfer({
   to: 'recipient-name',
-  amount: { amount: 100000, asset_id: '1.3.0' },
-  memo: 'Thanks!'
+  amount: 1.5,              // in whole units of the asset, as a number or a string
+  asset: 'BTS',             // a symbol or an object id (default: the core asset)
+  memo: 'Thanks!'           // optional plain text, encrypted by the wallet
 });
 ```
 
@@ -428,8 +461,9 @@ window.bitsharesWallet.removeAllListeners('accountChanged');
 
 ### BeetEOS Compatibility
 
-The wallet also exposes `window.beet` and `window.scatter` for
-compatibility with existing BeetEOS / Scatter dApps:
+The wallet also exposes `window.beet` for compatibility with existing BeetEOS dApps
+(`window.scatter` is deliberately **not** set: Scatter is an EOS wallet with different
+signing semantics, and aliasing it would invite confused-deputy calls):
 
 ```javascript
 // Using Beet-style API

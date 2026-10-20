@@ -209,13 +209,16 @@
       const id = ++messageId;
       pendingResponses.set(id, { resolve, reject });
 
-      // Set timeout for response
+      // Set timeout for response. It must outlast the background's own approval timeout
+      // (60 s) PLUS the time to sign and broadcast: this used to be 60 s too, so a request
+      // approved at 59 s was reported as a bare "Request timeout" while the transaction
+      // was in fact signed and sent. The background answers (and says why) long before this.
       setTimeout(() => {
         if (pendingResponses.has(id)) {
           pendingResponses.delete(id);
           reject(new Error('Request timeout'));
         }
-      }, 60000); // 60 second timeout
+      }, 180000);
 
       port.postMessage({ method, params: sanitizeForPort(params), id });
     });

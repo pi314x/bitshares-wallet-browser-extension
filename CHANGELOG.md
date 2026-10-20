@@ -7,7 +7,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`getCapabilities`** — a site can ask (no connection or unlock needed) which operations
+  `signTransaction` accepts, and whether memos are encrypted by the wallet and the fee asset
+  is honoured, instead of finding out from an error.
+- **Memos through `signTransaction`** — a transfer's `memo` given as plain text is encrypted
+  by the wallet (same code as `transfer`: the signing account's memo key for the recipient's,
+  hybrid post-quantum when the recipient has a PQ memo key). A memo that cannot be encrypted
+  fails the transaction; it is never sent unencrypted or dropped. A memo object is passed
+  through as before.
+- **Fee asset** — the `fee.asset_id` of a transaction's operations is the asset its fee is
+  paid in (one asset per transaction, none = the core asset). Before, every fee was silently
+  rewritten to the core asset. A fee asset the node cannot price is an error, not fee 0.
+
+### Changed
+- The signer field of every operation a site may submit is now known (`OP_AUTH_FIELD`:
+  `vesting_balance_*`, `bid_collateral`, `htlc_redeem` / `htlc_extend`, `samet_fund_*`,
+  `credit_offer_*`, `balance_claim`). Before, `owner_account`, `borrower`, `owner`, `bidder`,
+  `redeemer`, `update_issuer`, `creator` were not constrained to the accounts a site is
+  connected to, and the signer was guessed from the current account.
+- Timeouts: the content script waits 180 s (was 60 s, the same as the background's approval
+  timeout, so a request approved at 59 s was reported as a bare "Request timeout" while the
+  transaction was signed and sent) and the page 200 s (was 120 s); the approval itself still
+  expires after 60 s.
+
 ### Fixed
+- `window.beet.requestIdentity()` read `.name` off the `{ account, balances }` that
+  `connect()` resolves, and so returned an undefined name.
+- README: `transfer({ amount })` is whole units as a number or string (the example showed
+  `{ amount, asset_id }`, which the handler rejects); the approval window is 60 s (not 2
+  minutes); `window.scatter` is not exposed.
 - **`bitsharesPassword` actually stored for created and imported wallets** —
   `createWallet` and `importWallet` now persist the BitShares password inside
   the PBKDF2-encrypted blob so "Retrieve Private Key → BitShares Password"

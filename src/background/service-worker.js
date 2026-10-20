@@ -3,7 +3,7 @@
  * Handles blockchain connections, dApp communication, and wallet state
  */
 
-import { WalletManager } from '../lib/wallet-manager.js';
+import { WalletManager, DAPP_ALLOWED_OPERATIONS } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 
 // Firefox MV2 compat: chrome.* APIs are callback-only; proxy through browser.* (Promise-based).
@@ -577,6 +577,9 @@ class BackgroundService {
       case 'isLocked':
         return { locked: !(await this.walletManager.isUnlocked()) };
 
+      case 'getCapabilities':
+        return this.getCapabilities();
+
       case 'signMessage':
         return await this.handleSignMessage(origin, params, id, tabId);
 
@@ -592,6 +595,26 @@ class BackgroundService {
       default:
         throw new Error(`Unknown method: ${method}`);
     }
+  }
+
+  /**
+   * What a site may rely on, so it can tell before it asks (an older extension answers
+   * "Unknown method" and the site falls back to what every version does).
+   *   - operations:     the operation ids `signTransaction` accepts from a site
+   *   - memoEncryption: a transfer's plain-text `memo` string is encrypted here, with the
+   *                     account's memo key; a memo object is passed through as it is
+   *   - feeAsset:       the `fee.asset_id` of the operations is honoured (one asset per
+   *                     transaction); with none, the core asset pays
+   * Nothing here is private, so no connection or unlock is needed to ask.
+   */
+  getCapabilities() {
+    return {
+      protocol: 2,
+      version: chrome.runtime.getManifest().version,
+      operations: Object.keys(DAPP_ALLOWED_OPERATIONS).map(Number),
+      memoEncryption: true,
+      feeAsset: true
+    };
   }
 
   async handleConnectionRequest(origin, params, messageId, tabId, _port) {
@@ -1094,7 +1117,7 @@ class BackgroundService {
   /**
    * Immediately reject any pending request with a custom reason message.
    * Used when the popup detects a network mismatch so the dApp gets a clear
-   * error rather than waiting for the 90-second timeout.
+   * error rather than waiting for the 60-second timeout.
    */
   async rejectPendingRequest(requestId, reason = 'Request rejected') {
     let request = this.pendingRequests.get(requestId);

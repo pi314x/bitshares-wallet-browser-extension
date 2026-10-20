@@ -355,7 +355,7 @@ describe('authority fields per operation type', () => {
         // If `owner` were added to AUTH_FIELDS globally, creating a vesting balance for
         // somebody else would start being rejected as "not connected to this site".
         const fields = authFieldsFor([32, {creator: '1.2.17', owner: '1.2.99'}]);
-        expect(fields).toBe(AUTH_FIELDS);
+        expect(fields).toEqual(['creator']);
         expect(fields).not.toContain('owner');
     });
 
