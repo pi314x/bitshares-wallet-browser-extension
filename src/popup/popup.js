@@ -7,6 +7,7 @@
 import { WalletManager } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 import { CryptoUtils } from '../lib/crypto-utils.js';
+import { parseAmountToBaseUnits, formatBaseUnits, rescaleBaseUnits } from '../lib/amount-utils.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
@@ -3399,50 +3400,94 @@ async function handleRecipientInput(e) {
   }, 500);
 }
 
+// Precision and exact on-chain balance (base units) of the asset selected in
+// the send form. Read from the option's data-* attributes rather than from the
+// displayed balance text, so no float parsing is involved.
+function getSelectedSendAsset() {
+  const select = document.getElementById('send-asset');
+  const opt = select?.options[select.selectedIndex];
+  const precision = parseInt(opt?.dataset.precision, 10);
+  return {
+    precision: Number.isInteger(precision) ? precision : 5,
+    balanceUnits: BigInt(/^\d+$/.test(opt?.dataset.amount || '') ? opt.dataset.amount : '0'),
+  };
+}
+
 async function handleMaxAmount() {
-  const availableBalance = document.getElementById('available-balance')?.textContent || '0';
-  let amount = parseFloat(availableBalance) || 0;
-  if (amount <= 0) {
-    document.getElementById('send-amount').value = '';
+  const amountInput = document.getElementById('send-amount');
+  const { precision, balanceUnits } = getSelectedSendAsset();
+  let units = balanceUnits;
+  if (units <= BigInt(0)) {
+    amountInput.value = '';
     return;
   }
 
   // When the send asset is the same as the fee asset (BTS), subtract the fee
   const assetId = document.getElementById('send-asset')?.value || '1.3.0';
   if (assetId === '1.3.0') {
+    let feeUnits;
     try {
       const fee = btsAPI && btsAPI.isConnected
         ? await btsAPI.getOperationFee('transfer')
         : null;
-      const feeAmount = fee ? fee.amount / Math.pow(10, fee.precision) : 0.01;
-      amount = Math.max(0, amount - feeAmount);
-      if (amount <= 0) {
-        document.getElementById('send-amount').value = '';
-        showToast('Balance too low to cover the network fee', 'error');
-        return;
+      if (fee) {
+        feeUnits = rescaleBaseUnits(fee.amount, fee.precision, precision);
+      } else {
+        feeUnits = parseAmountToBaseUnits(0.01, precision);
       }
-      const _feeNetwork = document.getElementById('network-select')?.value || 'mainnet';
-      showToast(`Network fee (${feeAmount} ${getCoreSymbol(_feeNetwork)}) reserved from max amount`, 'info');
     } catch (_) {
       // If fee lookup fails, deduct a safe default
-      amount = Math.max(0, amount - 0.01);
+      feeUnits = parseAmountToBaseUnits(0.01, precision);
     }
+    const feeText = formatBaseUnits(feeUnits, precision);
+    units = units > feeUnits ? units - feeUnits : BigInt(0);
+    if (units <= BigInt(0)) {
+      amountInput.value = '';
+      showToast('Balance too low to cover the network fee', 'error');
+      return;
+    }
+    const _feeNetwork = document.getElementById('network-select')?.value || 'mainnet';
+    showToast(`Network fee (${feeText} ${getCoreSymbol(_feeNetwork)}) reserved from max amount`, 'info');
   }
 
-  // Use up to 5 decimal places, trim trailing zeros
-  document.getElementById('send-amount').value = parseFloat(amount.toFixed(5));
+  // Exact, full asset precision — never rounded (and so never above the balance)
+  amountInput.value = formatBaseUnits(units, precision);
+}
+
+// Parse the send form's amount exactly. Returns { units, text } or null after
+// showing the reason; `text` is the normalized amount that will really be sent.
+function readSendAmount() {
+  const raw = document.getElementById('send-amount')?.value?.trim();
+  const { precision } = getSelectedSendAsset();
+  try {
+    const units = parseAmountToBaseUnits(raw, precision);
+    if (units <= BigInt(0)) {
+      showToast('Amount must be greater than zero', 'error');
+      return null;
+    }
+    return { units, text: formatBaseUnits(units, precision) };
+  } catch (e) {
+    showToast(e.message, 'error');
+    return null;
+  }
 }
 
 async function handleSendReview() {
   const to = document.getElementById('send-to')?.value;
-  const amount = document.getElementById('send-amount')?.value;
+  const rawAmount = document.getElementById('send-amount')?.value;
   const memo = document.getElementById('send-memo')?.value;
   const assetSelect = document.getElementById('send-asset');
 
-  if (!to || !amount) {
+  if (!to || !rawAmount) {
     showToast('Please fill in all required fields', 'error');
     return;
   }
+
+  // Validate the amount against the asset's precision before showing the
+  // confirmation, so the dialog displays exactly what will be sent
+  const parsed = readSendAmount();
+  if (!parsed) return;
+  const amount = parsed.text;
 
   // Get asset symbol from selected option
   const selectedOption = assetSelect.options[assetSelect.selectedIndex];
@@ -3469,9 +3514,16 @@ async function handleSendReview() {
 
 async function handleConfirmTransaction() {
   const to = document.getElementById('send-to')?.value;
-  const amount = document.getElementById('send-amount')?.value;
   const memo = document.getElementById('send-memo')?.value;
   const assetId = document.getElementById('send-asset')?.value || '1.3.0';
+
+  // Re-derive the same normalized amount the confirmation dialog showed
+  const parsed = readSendAmount();
+  if (!parsed) {
+    hideModal('tx-confirm-modal');
+    return;
+  }
+  const amount = parsed.text;
 
   try {
     hideModal('tx-confirm-modal');
