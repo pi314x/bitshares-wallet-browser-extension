@@ -978,6 +978,8 @@
     }
 
     .spotlight-content {
+      width: 100%;
+      min-width: 0;
       max-width: 720px;
       margin: 0 auto;
       text-align: center;
@@ -1017,6 +1019,25 @@
       margin-top: 16px;
       font-size: 12px;
       color: var(--text-muted);
+    }
+
+    /* A second spotlight sits directly under the first: no double gap */
+    .spotlight + .spotlight {
+      padding-top: 0;
+    }
+
+    .spotlight-links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0 24px;
+    }
+
+    .spotlight-content .code-block {
+      text-align: left;
+      max-width: none;
+      margin: 8px 0 16px;
+      padding: 16px 20px;
     }
 
     .carousel-btn {
@@ -1775,6 +1796,37 @@
           <p>Connect this wallet and every one of those actions &mdash; a limit order, a pool swap, a credit deal &mdash; routes through its real BitShares operation (<code>limit_order_create</code>, <code>liquidity_pool_exchange</code>, <code>credit_offer_accept</code>, and so on), decoded field-by-field into a plain-English confirmation before you ever sign. That's the same human-readable review this wallet gives all 78 operation types, from a basic transfer to a SameT Fund borrow.</p>
           <a class="spotlight-link" href="https://trade.xbts.io" target="_blank" rel="noopener">Visit trade.xbts.io &#x2197;</a>
           <p class="spotlight-note">Independent community dApp shown as a usage example &mdash; not affiliated with or endorsed by this extension.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Additional reference: BitShares Desk (the BitShares UI) -->
+  <section class="spotlight" id="bitshares-desk">
+    <div class="container">
+      <div class="spotlight-box">
+        <div class="spotlight-content">
+          <span class="spotlight-eyebrow">Additional reference</span>
+          <h3>BitShares Desk</h3>
+          <p><strong>BitShares Desk</strong> is a modernized version of the BitShares UI, the reference web wallet of the chain. It has a dashboard (what your account is worth and what needs attention), portfolio, payments, order-book trading with a chart, <strong>liquidity pools</strong>, instant trade, <strong>Credit Offers</strong> and SameT funds, a block explorer, and <strong>Advanced operations</strong> for the chain operations that have no screen of their own. Ten languages, light and dark theme.</p>
+          <p>Your keys stay in your browser. Desk can sign with its own local wallet or with this extension &mdash; open <strong>More &rarr; Wallet extension</strong> in Desk for the install-and-connect guide.</p>
+          <p><strong>Run it yourself.</strong> You need Node.js 20, yarn 1, git, python3, make and g++:</p>
+          <div class="code-block">
+            <pre><span class="function">nvm</span> install 20 &amp;&amp; <span class="function">nvm</span> use 20      <span class="comment"># or any Node 20 you have</span>
+
+<span class="function">git</span> clone --branch <span class="string">claude/bitshares-ui-migration-pu5y14</span> \
+  <span class="string">https://github.com/pi314x/bitshares-ui.git</span>
+<span class="function">cd</span> bitshares-ui
+
+<span class="function">yarn</span> install     <span class="comment"># a few minutes</span>
+<span class="function">yarn</span> start       <span class="comment"># http://localhost:8080</span></pre>
+          </div>
+          <p>The first start compiles for a few minutes. Open <code>http://localhost:8080</code> in the browser where this extension is installed. The extension only connects to <code>https://</code> pages and to <code>http://localhost</code>, so use <code>localhost</code> (not a network address) unless you serve Desk over HTTPS. Prefer Docker? <code>docker compose up --build</code> serves the same page on port 8080. Desk connects to the BitShares mainnet by default; Settings &rarr; Nodes switches to the testnet.</p>
+          <div class="spotlight-links">
+            <a class="spotlight-link" href="https://github.com/pi314x/bitshares-ui/tree/claude/bitshares-ui-migration-pu5y14" target="_blank" rel="noopener">BitShares Desk on GitHub &#x2197;</a>
+            <a class="spotlight-link" href="https://github.com/bitshares/bitshares-ui" target="_blank" rel="noopener">Original BitShares UI &#x2197;</a>
+          </div>
+          <p class="spotlight-note">A separate project from this extension, shown as an additional reference for using and testing it.</p>
         </div>
       </div>
     </div>
