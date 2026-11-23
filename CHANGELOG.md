@@ -5,6 +5,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **`bitsharesPassword` actually stored for created and imported wallets** —
+  `createWallet` and `importWallet` now persist the BitShares password inside
+  the PBKDF2-encrypted blob so "Retrieve Private Key → BitShares Password"
+  works for the primary account (the v0.4.0 entry below claimed this fix for
+  `importWallet`, but it was never applied to the code; only
+  `addAccountByCredentials` stored it). Existing wallets created or imported
+  before this change still need the account removed and re-added via
+  *Settings → Add Account* to enable retrieval.
+
+---
+
 ## [0.4.0] — 2026-03-01
 
 ### Added
