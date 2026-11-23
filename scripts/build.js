@@ -16,6 +16,8 @@ const SHARED_FILES = [
   'src/popup/popup.css',
   'src/popup/popup.js',
   'src/lib/wallet-manager.js',
+  'src/lib/amount-utils.js',
+  'src/lib/swap-math.js',
   'src/lib/bitshares-api.js',
   'src/lib/bip39-wordlist.js',
   'src/lib/crypto-utils.js',

@@ -7,6 +7,8 @@
 import { WalletManager } from '../lib/wallet-manager.js';
 import { BitSharesAPI } from '../lib/bitshares-api.js';
 import { CryptoUtils } from '../lib/crypto-utils.js';
+import { parseAmountToBaseUnits, formatBaseUnits, rescaleBaseUnits } from '../lib/amount-utils.js';
+import { ammOutBase, ammInBase, minReceivedBase } from '../lib/swap-math.js';
 import { generateQRCode } from '../lib/qr-generator.js';
 import { getAssetLogo } from '../assets/asset-logos.js';
 import { initLogoCache } from '../assets/logo-cache.js';
@@ -3399,50 +3401,94 @@ async function handleRecipientInput(e) {
   }, 500);
 }
 
+// Precision and exact on-chain balance (base units) of the asset selected in
+// the send form. Read from the option's data-* attributes rather than from the
+// displayed balance text, so no float parsing is involved.
+function getSelectedSendAsset() {
+  const select = document.getElementById('send-asset');
+  const opt = select?.options[select.selectedIndex];
+  const precision = parseInt(opt?.dataset.precision, 10);
+  return {
+    precision: Number.isInteger(precision) ? precision : 5,
+    balanceUnits: BigInt(/^\d+$/.test(opt?.dataset.amount || '') ? opt.dataset.amount : '0'),
+  };
+}
+
 async function handleMaxAmount() {
-  const availableBalance = document.getElementById('available-balance')?.textContent || '0';
-  let amount = parseFloat(availableBalance) || 0;
-  if (amount <= 0) {
-    document.getElementById('send-amount').value = '';
+  const amountInput = document.getElementById('send-amount');
+  const { precision, balanceUnits } = getSelectedSendAsset();
+  let units = balanceUnits;
+  if (units <= BigInt(0)) {
+    amountInput.value = '';
     return;
   }
 
   // When the send asset is the same as the fee asset (BTS), subtract the fee
   const assetId = document.getElementById('send-asset')?.value || '1.3.0';
   if (assetId === '1.3.0') {
+    let feeUnits;
     try {
       const fee = btsAPI && btsAPI.isConnected
         ? await btsAPI.getOperationFee('transfer')
         : null;
-      const feeAmount = fee ? fee.amount / Math.pow(10, fee.precision) : 0.01;
-      amount = Math.max(0, amount - feeAmount);
-      if (amount <= 0) {
-        document.getElementById('send-amount').value = '';
-        showToast('Balance too low to cover the network fee', 'error');
-        return;
+      if (fee) {
+        feeUnits = rescaleBaseUnits(fee.amount, fee.precision, precision);
+      } else {
+        feeUnits = parseAmountToBaseUnits(0.01, precision);
       }
-      const _feeNetwork = document.getElementById('network-select')?.value || 'mainnet';
-      showToast(`Network fee (${feeAmount} ${getCoreSymbol(_feeNetwork)}) reserved from max amount`, 'info');
     } catch (_) {
       // If fee lookup fails, deduct a safe default
-      amount = Math.max(0, amount - 0.01);
+      feeUnits = parseAmountToBaseUnits(0.01, precision);
     }
+    const feeText = formatBaseUnits(feeUnits, precision);
+    units = units > feeUnits ? units - feeUnits : BigInt(0);
+    if (units <= BigInt(0)) {
+      amountInput.value = '';
+      showToast('Balance too low to cover the network fee', 'error');
+      return;
+    }
+    const _feeNetwork = document.getElementById('network-select')?.value || 'mainnet';
+    showToast(`Network fee (${feeText} ${getCoreSymbol(_feeNetwork)}) reserved from max amount`, 'info');
   }
 
-  // Use up to 5 decimal places, trim trailing zeros
-  document.getElementById('send-amount').value = parseFloat(amount.toFixed(5));
+  // Exact, full asset precision — never rounded (and so never above the balance)
+  amountInput.value = formatBaseUnits(units, precision);
+}
+
+// Parse the send form's amount exactly. Returns { units, text } or null after
+// showing the reason; `text` is the normalized amount that will really be sent.
+function readSendAmount() {
+  const raw = document.getElementById('send-amount')?.value?.trim();
+  const { precision } = getSelectedSendAsset();
+  try {
+    const units = parseAmountToBaseUnits(raw, precision);
+    if (units <= BigInt(0)) {
+      showToast('Amount must be greater than zero', 'error');
+      return null;
+    }
+    return { units, text: formatBaseUnits(units, precision) };
+  } catch (e) {
+    showToast(e.message, 'error');
+    return null;
+  }
 }
 
 async function handleSendReview() {
   const to = document.getElementById('send-to')?.value;
-  const amount = document.getElementById('send-amount')?.value;
+  const rawAmount = document.getElementById('send-amount')?.value;
   const memo = document.getElementById('send-memo')?.value;
   const assetSelect = document.getElementById('send-asset');
 
-  if (!to || !amount) {
+  if (!to || !rawAmount) {
     showToast('Please fill in all required fields', 'error');
     return;
   }
+
+  // Validate the amount against the asset's precision before showing the
+  // confirmation, so the dialog displays exactly what will be sent
+  const parsed = readSendAmount();
+  if (!parsed) return;
+  const amount = parsed.text;
 
   // Get asset symbol from selected option
   const selectedOption = assetSelect.options[assetSelect.selectedIndex];
@@ -3469,9 +3515,16 @@ async function handleSendReview() {
 
 async function handleConfirmTransaction() {
   const to = document.getElementById('send-to')?.value;
-  const amount = document.getElementById('send-amount')?.value;
   const memo = document.getElementById('send-memo')?.value;
   const assetId = document.getElementById('send-asset')?.value || '1.3.0';
+
+  // Re-derive the same normalized amount the confirmation dialog showed
+  const parsed = readSendAmount();
+  if (!parsed) {
+    hideModal('tx-confirm-modal');
+    return;
+  }
+  const amount = parsed.text;
 
   try {
     hideModal('tx-confirm-modal');
@@ -7288,33 +7341,30 @@ async function calculatePoolRates(pools) {
   return poolsWithRates;
 }
 
-// Constant-product AMM output including price impact and the pool's taker fee,
-// all in integer base units — matching how the chain actually fills a
-// liquidity_pool_exchange. Using the spot rate here (as the old quote did)
-// overstates the output for any non-trivial trade, so min_to_receive landed
-// above the real fill and the node rejected it ("Unable to exchange at
-// expected price"). BigInt avoids precision loss on large reserves.
-function poolReserves(pool) {
-  const inBase = pool.isAssetAFrom ? BigInt(pool.balance_a) : BigInt(pool.balance_b);
-  const outBase = pool.isAssetAFrom ? BigInt(pool.balance_b) : BigInt(pool.balance_a);
-  const feeBps = BigInt(parseInt(pool.taker_fee_percent) || 0); // out of 10000 (=100%)
-  return { inBase, outBase, feeBps };
+// AMM quote math (ammOutBase / ammInBase / minReceivedBase) lives in
+// src/lib/swap-math.js so it is unit-tested.
+
+// Asset precision, defaulting only when it is genuinely unknown. The old
+// `precision || 5` treated precision 0 (a whole-number asset) as 5 decimals.
+function assetPrecision(asset) {
+  return Number.isInteger(asset?.precision) ? asset.precision : 5;
 }
-// amountInBase -> amountOutBase
-function ammOutBase(pool, amountInBase) {
-  const { inBase, outBase, feeBps } = poolReserves(pool);
-  const amtIn = BigInt(Math.floor(amountInBase));
-  if (amtIn <= 0n) return 0n;
-  const inAfterFee = amtIn * (10000n - feeBps) / 10000n;
-  return outBase * inAfterFee / (inBase + inAfterFee);
-}
-// desired amountOutBase -> required amountInBase (inverse of ammOutBase)
-function ammInBase(pool, amountOutBase) {
-  const { inBase, outBase, feeBps } = poolReserves(pool);
-  const amtOut = BigInt(Math.floor(amountOutBase));
-  if (amtOut <= 0n || amtOut >= outBase) return 0n; // can't extract >= the whole reserve
-  const inAfterFee = inBase * amtOut / (outBase - amtOut) + 1n; // +1 to cover flooring
-  return inAfterFee * 10000n / (10000n - feeBps) + 1n;
+
+// Parse the swap form's FROM amount exactly. On failure shows the reason and
+// returns null. `units` is a BigInt in base units; `text` is the normalized
+// amount that will really be sent.
+async function readSwapFromAmount() {
+  const raw = (document.getElementById('swap-from-amount')?.value || '').trim();
+  try {
+    const fromAsset = await btsAPI.getAsset(swapState.fromAsset);
+    const precision = assetPrecision(fromAsset);
+    const units = parseAmountToBaseUnits(raw, precision);
+    if (units <= 0n) throw new Error('Please enter a valid amount');
+    return { units, precision, text: formatBaseUnits(units, precision) };
+  } catch (e) {
+    showToast(raw ? e.message : 'Please enter a valid amount', 'error');
+    return null;
+  }
 }
 
 function displaySwapPools(pools) {
@@ -7386,61 +7436,92 @@ async function updateSwapDetails() {
 
 // Calculate TO amount based on FROM amount
 async function handleSwapFromAmountChange() {
-  const amount = parseFloat(document.getElementById('swap-from-amount').value) || 0;
+  const raw = (document.getElementById('swap-from-amount').value || '').trim();
   const pool = swapState.selectedPool;
 
-  if (!pool || amount <= 0) {
+  const clearOutput = () => {
     document.getElementById('swap-to-amount').value = '';
     document.getElementById('swap-min-received').textContent = '-';
+  };
+
+  if (!pool || !raw) {
+    clearOutput();
     return;
   }
 
   const fromAsset = await btsAPI.getAsset(swapState.fromAsset);
   const toAsset = await btsAPI.getAsset(swapState.toAsset);
-  const toPrecision = toAsset?.precision || 5;
+  const fromPrecision = assetPrecision(fromAsset);
+  const toPrecision = assetPrecision(toAsset);
+
+  // Exact base units. Not a valid amount for this asset (e.g. more decimals
+  // than it supports) -> no quote; the confirm step explains why.
+  let amountInBase;
+  try {
+    amountInBase = parseAmountToBaseUnits(raw, fromPrecision);
+  } catch (_) {
+    clearOutput();
+    return;
+  }
+  if (amountInBase <= 0n) {
+    clearOutput();
+    return;
+  }
 
   // Constant-product output (includes price impact + pool fee), then 1%
   // slippage on top of that real figure.
-  const amountInBase = amount * Math.pow(10, fromAsset?.precision || 5);
   const outBase = ammOutBase(pool, amountInBase);
-  const outputAmount = Number(outBase) / Math.pow(10, toPrecision);
 
-  document.getElementById('swap-to-amount').value = outputAmount.toFixed(toPrecision);
+  document.getElementById('swap-to-amount').value =
+    formatBaseUnits(outBase, toPrecision, { trim: false });
 
-  const minReceived = outputAmount * (1 - SWAP_SLIPPAGE);
   const toSymbolLabel = toAsset?.symbol || '';
   document.getElementById('swap-min-received').textContent =
-    `${minReceived.toFixed(toPrecision)}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
+    `${formatBaseUnits(minReceivedBase(outBase), toPrecision, { trim: false })}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
 }
 
 // Calculate FROM amount based on TO amount (reverse calculation)
 async function handleSwapToAmountChange() {
-  const outputAmount = parseFloat(document.getElementById('swap-to-amount').value) || 0;
+  const raw = (document.getElementById('swap-to-amount').value || '').trim();
   const pool = swapState.selectedPool;
 
-  if (!pool || outputAmount <= 0) {
+  const clearInput = () => {
     document.getElementById('swap-from-amount').value = '';
     document.getElementById('swap-min-received').textContent = '-';
+  };
+
+  if (!pool || !raw) {
+    clearInput();
     return;
   }
 
   // Get asset precisions
   const fromAsset = await btsAPI.getAsset(swapState.fromAsset);
   const toAsset = await btsAPI.getAsset(swapState.toAsset);
-  const fromPrecision = fromAsset?.precision || 5;
-  const toPrecision = toAsset?.precision || 5;
+  const fromPrecision = assetPrecision(fromAsset);
+  const toPrecision = assetPrecision(toAsset);
+
+  let outBase;
+  try {
+    outBase = parseAmountToBaseUnits(raw, toPrecision);
+  } catch (_) {
+    clearInput();
+    return;
+  }
+  if (outBase <= 0n) {
+    clearInput();
+    return;
+  }
 
   // Reverse constant-product: required input for the desired output.
-  const outBase = outputAmount * Math.pow(10, toAsset?.precision || 5);
   const inBase = ammInBase(pool, outBase);
-  const inputAmount = Number(inBase) / Math.pow(10, fromAsset?.precision || 5);
 
-  document.getElementById('swap-from-amount').value = inputAmount.toFixed(fromPrecision);
+  document.getElementById('swap-from-amount').value =
+    formatBaseUnits(inBase, fromPrecision, { trim: false });
 
-  const minReceived = outputAmount * (1 - SWAP_SLIPPAGE);
   const toSymbolLabel = toAsset?.symbol || '';
   document.getElementById('swap-min-received').textContent =
-    `${minReceived.toFixed(toPrecision)}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
+    `${formatBaseUnits(minReceivedBase(outBase), toPrecision, { trim: false })}${toSymbolLabel ? ' ' + toSymbolLabel : ''}`;
 }
 
 function handleSwapMax() {
@@ -7488,12 +7569,15 @@ async function handleSwapDirection() {
 
 async function handleShowSwapConfirmation() {
   const pool = swapState.selectedPool;
-  const amount = parseFloat(document.getElementById('swap-from-amount').value);
-
-  if (!pool || !amount || amount <= 0) {
+  if (!pool) {
     showToast('Please enter a valid amount', 'error');
     return;
   }
+
+  // Exact amount; the dialog shows the normalized figure that will be sold
+  const parsed = await readSwapFromAmount();
+  if (!parsed) return;
+  const amount = parsed.text;
 
   // Get asset symbols
   const fromSelect = document.getElementById('swap-from-asset');
@@ -7530,48 +7614,46 @@ async function handleShowSwapConfirmation() {
   showModal('swap-confirm-modal');
 }
 
-// Default swap slippage tolerance (fraction). The quote already accounts for
-// price impact via the constant-product formula, so this is a genuine buffer
-// for reserve movement between quote and broadcast — not a fudge for impact.
-const SWAP_SLIPPAGE = 0.01;
-
 async function handleExecuteSwap() {
   hideModal('swap-confirm-modal');
 
   const pool = swapState.selectedPool;
-  const amount = parseFloat(document.getElementById('swap-from-amount').value);
-
-  if (!pool || !amount || amount <= 0) {
+  if (!pool) {
     showToast('Please enter a valid amount', 'error');
     return;
   }
+
+  // Exact base units — no float multiply, no silent rounding of extra decimals
+  const parsed = await readSwapFromAmount();
+  if (!parsed) return;
 
   try {
     showToast('Preparing swap transaction...', 'info');
 
     const account = await walletManager.getCurrentAccount();
-    const fromAsset = await btsAPI.getAsset(swapState.fromAsset);
-    const toAsset = await btsAPI.getAsset(swapState.toAsset);
 
-    const fromPrecision = Math.pow(10, fromAsset.precision);
-    const toPrecision = Math.pow(10, toAsset.precision);
-
-    const amountToSell = Math.floor(amount * fromPrecision);
+    const amountToSell = parsed.units;
     // Recompute the expected output from live reserves via the constant-product
     // formula (not the possibly-stale displayed value), then apply slippage.
     const expectedOutBase = ammOutBase(pool, amountToSell);
-    const minToReceive = Math.floor(Number(expectedOutBase) * (1 - SWAP_SLIPPAGE));
+    const minToReceive = minReceivedBase(expectedOutBase);
+
+    // Amounts are serialized as JS numbers, which are exact only up to 2^53.
+    // Refuse anything larger rather than sign a silently different amount.
+    if (amountToSell > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('Swap amount exceeds the maximum precise value for this asset — the swap was NOT sent.');
+    }
 
     // Build liquidity pool exchange operation
     const opData = {
       account: account.id,
       pool: pool.id,
       amount_to_sell: {
-        amount: amountToSell,
+        amount: Number(amountToSell),
         asset_id: swapState.fromAsset
       },
       min_to_receive: {
-        amount: minToReceive,
+        amount: Number(minToReceive),
         asset_id: swapState.toAsset
       },
       extensions: []

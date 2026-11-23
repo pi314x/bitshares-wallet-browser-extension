@@ -339,3 +339,91 @@ describe('WalletManager.isUnlocked()', () => {
     expect(result).toBe(true);
   });
 }, 60000);
+
+// ---------------------------------------------------------------------------
+// sendTransfer — exact amount conversion (regression: send amount rounding)
+// ---------------------------------------------------------------------------
+describe('WalletManager.sendTransfer() amount handling', () => {
+  /** A manager with all I/O stubbed; captures the transfer op that gets signed. */
+  function makeManager(assetPrecision) {
+    const mgr = new WalletManager();
+    const broadcast = jest.fn(async () => ({ id: 'tx' }));
+    mgr.ensureUnlocked = jest.fn(async () => {});
+    mgr.touch = jest.fn();
+    mgr.ensureApiConnected = jest.fn(async () => {});
+    mgr.getCurrentAccount = jest.fn(async () => ({ id: '1.2.100', name: 'alice' }));
+    mgr.getAccountKeys = jest.fn(async () => ({ active: { privateKey: 'PRIVKEY' } }));
+    mgr.api = {
+      getAccount: jest.fn(async () => ({ id: '1.2.200', name: 'bob', options: {} })),
+      getAsset: jest.fn(async () => ({ id: '1.3.0', precision: assetPrecision })),
+      broadcastTransaction: broadcast,
+    };
+    return { mgr, broadcast };
+  }
+
+  const sentAmount = (broadcast) => broadcast.mock.calls[0][1].amount.amount;
+
+  test('signs the exact base-unit amount', async () => {
+    const { mgr, broadcast } = makeManager(5);
+    const res = await mgr.sendTransfer('bob', '1.23456', '1.3.0');
+    expect(res.success).toBe(true);
+    expect(sentAmount(broadcast)).toBe(123456);
+    await silentLock(mgr);
+  });
+
+  test('does not silently round extra decimals — transfer is refused, nothing broadcast', async () => {
+    const { mgr, broadcast } = makeManager(5);
+    const res = await mgr.sendTransfer('bob', '1.234567', '1.3.0');
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/at most 5 decimal places/);
+    expect(broadcast).not.toHaveBeenCalled();
+    await silentLock(mgr);
+  });
+
+  test('keeps all 8 decimals of a precision-8 asset', async () => {
+    const { mgr, broadcast } = makeManager(8);
+    const res = await mgr.sendTransfer('bob', '0.12345678', '1.3.0');
+    expect(res.success).toBe(true);
+    expect(sentAmount(broadcast)).toBe(12345678);
+    await silentLock(mgr);
+  });
+
+  test('does not lose a unit on large precise amounts (float multiply used to)', async () => {
+    // Math.round(parseFloat('89670486.48729477') * 1e8) === 8967048648729476,
+    // i.e. one base unit short — and still inside the safe-integer range, so
+    // the old guard did not catch it.
+    const { mgr, broadcast } = makeManager(8);
+    const res = await mgr.sendTransfer('bob', '89670486.48729477', '1.3.0');
+    expect(res.success).toBe(true);
+    expect(sentAmount(broadcast)).toBe(8967048648729477);
+    await silentLock(mgr);
+  });
+
+  test('numeric amounts from a dApp are rounded to precision rather than rejected', async () => {
+    const { mgr, broadcast } = makeManager(5);
+    const res = await mgr.sendTransfer('bob', 0.1 + 0.2, '1.3.0');
+    expect(res.success).toBe(true);
+    expect(sentAmount(broadcast)).toBe(30000);
+    await silentLock(mgr);
+  });
+
+  test.each([['0'], ['0.000000'], ['abc'], ['-1'], ['']])(
+    'refuses invalid / zero amount %p',
+    async (bad) => {
+      const { mgr, broadcast } = makeManager(5);
+      const res = await mgr.sendTransfer('bob', bad, '1.3.0');
+      expect(res.success).toBe(false);
+      expect(broadcast).not.toHaveBeenCalled();
+      await silentLock(mgr);
+    }
+  );
+
+  test('refuses amounts beyond the safe-integer range', async () => {
+    const { mgr, broadcast } = makeManager(8);
+    const res = await mgr.sendTransfer('bob', '90071992.54740994', '1.3.0');
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/maximum precise value/);
+    expect(broadcast).not.toHaveBeenCalled();
+    await silentLock(mgr);
+  });
+});

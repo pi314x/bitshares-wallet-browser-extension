@@ -5,6 +5,7 @@
 
 import { CryptoUtils, bytesToBase64, base64ToBytes } from './crypto-utils.js';
 import { BitSharesAPI } from './bitshares-api.js';
+import { parseAmountToBaseUnits } from './amount-utils.js';
 
 export class WalletManager {
   constructor() {
@@ -1484,17 +1485,25 @@ export class WalletManager {
 
       // Get asset info
       const asset = await this.api.getAsset(assetId);
-      const precision = Math.pow(10, asset.precision);
-      const amountInt = Math.round(parseFloat(amount) * precision);
 
+      // Exact decimal -> base-unit conversion. parseFloat(x) * 10^p used to be
+      // here: it silently rounded surplus decimals (the confirm dialog showed
+      // one amount, another was signed) and lost a unit near 2^53. A string
+      // with more decimals than the asset supports now throws instead.
+      const amountBig = parseAmountToBaseUnits(amount, Number(asset.precision));
+
+      if (amountBig <= BigInt(0)) {
+        throw new Error('Transfer amount must be greater than zero');
+      }
       // Validate the *base-unit* amount, not the human amount. A modest human
       // figure times a high asset precision can overflow the safe-integer range
       // and silently lose value before it is serialized as an int64. Reject
       // here where precision is finally known, rather than sending a wrong
       // amount on-chain.
-      if (!Number.isSafeInteger(amountInt) || amountInt <= 0) {
-        throw new Error('Transfer amount is invalid or exceeds the maximum precise value for this asset — the transfer was NOT sent.');
+      if (amountBig > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error('Transfer amount exceeds the maximum precise value for this asset — the transfer was NOT sent.');
       }
+      const amountInt = Number(amountBig);
 
       // Build transfer operation
       let memoObject = null;
